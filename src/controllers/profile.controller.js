@@ -1,4 +1,4 @@
-import { updateProfile, updateProfileImage } from '../services/profile.service.js';
+import { updateProfile, updateProfileImage, removeProfileImage } from '../services/profile.service.js';
 
 export const ProfileController = {
   update: async (req, res, next) => {
@@ -17,6 +17,14 @@ export const ProfileController = {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const url = `${baseUrl}/uploads/${req.file.filename}`;
       const user = await updateProfileImage(req.user.id, url);
+      return res.json({ user });
+    } catch (err) {
+      next(err);
+    }
+  },
+  deletePhoto: async (req, res, next) => {
+    try {
+      const user = await removeProfileImage(req.user.id);
       return res.json({ user });
     } catch (err) {
       next(err);

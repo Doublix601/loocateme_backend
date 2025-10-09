@@ -8,5 +8,6 @@ const router = Router();
 
 router.put('/', requireAuth, validate(validators.profileUpdate), ProfileController.update);
 router.post('/photo', requireAuth, upload.single('photo'), ProfileController.uploadPhoto);
+router.delete('/photo', requireAuth, ProfileController.deletePhoto);
 
 export default router;

@@ -59,3 +59,22 @@ export async function setVisibility(userId, isVisible) {
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
   return user;
 }
+
+export async function removeProfileImage(userId) {
+  // Get current user to know old image
+  const current = await User.findById(userId).select('profileImageUrl');
+  if (!current) throw Object.assign(new Error('User not found'), { status: 404 });
+
+  // Clear the profileImageUrl
+  const user = await User.findByIdAndUpdate(userId, { profileImageUrl: '' }, { new: true });
+  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+
+  // Delete old local file if exists
+  try {
+    const oldUrl = current.profileImageUrl;
+    const p = localPathFromUrl(oldUrl);
+    if (p && fs.existsSync(p)) fs.unlink(p, () => {});
+  } catch {}
+
+  return user;
+}

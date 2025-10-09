@@ -5,8 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 
 function signAccessToken(userId) {
+  // Issue a non-expiring access token. It will remain valid until the user logs out or changes password.
   return jwt.sign({}, process.env.JWT_ACCESS_SECRET, {
-    expiresIn: process.env.JWT_ACCESS_EXPIRES || '15m',
     subject: userId.toString(),
   });
 }

@@ -42,7 +42,6 @@ export const AuthController = {
       const doc = await RefreshToken.findOne({ token, revoked: false });
       if (!doc || doc.expiresAt < new Date()) return res.status(401).json({ code: 'REFRESH_INVALID', message: 'Invalid refresh token' });
       const accessToken = jwt.sign({}, process.env.JWT_ACCESS_SECRET, {
-        expiresIn: process.env.JWT_ACCESS_EXPIRES || '15m',
         subject: payload.sub,
       });
       return res.json({ accessToken });
