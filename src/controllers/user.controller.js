@@ -3,8 +3,11 @@ import { getNearbyUsers, updateLocation, getUsersByEmails } from '../services/us
 export const UserController = {
   me: async (req, res, next) => {
     try {
-      // In a real app, return detailed me; here we just confirm auth
-      return res.json({ userId: req.user.id });
+      // Return full user profile (sans password)
+      const { User } = await import('../models/User.js');
+      const user = await User.findById(req.user.id).select('-password');
+      if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'User not found' });
+      return res.json({ user });
     } catch (err) {
       next(err);
     }

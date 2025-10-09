@@ -13,7 +13,8 @@ export const ProfileController = {
   uploadPhoto: async (req, res, next) => {
     try {
       if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-      const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+      // Build absolute URL from the request host to ensure correct domain on devices
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
       const url = `${baseUrl}/uploads/${req.file.filename}`;
       const user = await updateProfileImage(req.user.id, url);
       return res.json({ user });
