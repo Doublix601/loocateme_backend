@@ -139,5 +139,15 @@ Paramètres
 - npm run db:init: crée les indexes sur MongoDB.
 - Migration: utiliser des outils comme migrate-mongo ou Atlas Triggers si nécessaire.
 
+Persistance des données (Docker)
+- Les données MongoDB et Redis sont montées sur le disque hôte pour survivre aux redémarrages, rebuilds et `docker system prune`.
+- Dossiers utilisés sur l’hôte:
+  - ./data/mongo -> /data/db (MongoDB)
+  - ./data/redis -> /data (Redis, AOF activé)
+  - ./uploads -> /app/uploads (fichiers uploadés)
+- Astuces:
+  - Évitez `docker-compose down -v` qui supprime les volumes. Avec les bind mounts, vos données restent dans le repo.
+  - Sauvegardez ces dossiers si besoin (backup/restore).
+
 Notes
 - Photo de profil: si aucune image fournie, le front peut afficher une image par défaut. Vous pouvez aussi définir BASE_URL/uploads/default.png si vous déposez une image par défaut dans uploads/.
