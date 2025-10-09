@@ -1,0 +1,45 @@
+services:
+  api:
+    build: .
+    container_name: loocateme-api
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - NODE_ENV=development
+      - CORS_ORIGIN=http://localhost:19006
+      - MONGODB_URI=mongodb://mongo:27017/loocateme
+      - JWT_ACCESS_SECRET=change-me-access
+      - JWT_REFRESH_SECRET=change-me-refresh
+      - JWT_ACCESS_EXPIRES=15m
+      - JWT_REFRESH_EXPIRES=30d
+      - REDIS_URL=redis://redis:6379
+      - UPLOAD_DIR=uploads
+      - BASE_URL=http://localhost:4000
+    volumes:
+      - ./:/app
+      - uploads:/app/uploads
+    depends_on:
+      - mongo
+      - redis
+    command: sh -c "if [ -f package-lock.json ]; then npm ci; else npm install; fi && npm run db:init && npm run dev"
+  mongo:
+    image: mongo:6
+    container_name: loocateme-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+  redis:
+    image: redis:7-alpine
+    container_name: loocateme-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+volumes:
+  mongo_data:
+  redis_data:
+  uploads:
