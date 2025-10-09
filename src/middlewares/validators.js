@@ -5,7 +5,7 @@ export const validate = (validations) => {
     await Promise.all(validations.map((v) => v.run(req)));
     const errors = validationResult(req);
     if (errors.isEmpty()) return next();
-    return res.status(400).json({ message: 'Validation error', details: errors.array() });
+    return res.status(400).json({ code: 'VALIDATION_ERROR', message: 'Validation error', details: errors.array() });
   };
 };
 

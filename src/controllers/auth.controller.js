@@ -37,17 +37,17 @@ export const AuthController = {
   refresh: async (req, res) => {
     try {
       const token = req.cookies?.refreshToken;
-      if (!token) return res.status(401).json({ message: 'Missing refresh token' });
+      if (!token) return res.status(401).json({ code: 'REFRESH_MISSING', message: 'Missing refresh token' });
       const payload = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
       const doc = await RefreshToken.findOne({ token, revoked: false });
-      if (!doc || doc.expiresAt < new Date()) return res.status(401).json({ message: 'Invalid refresh token' });
+      if (!doc || doc.expiresAt < new Date()) return res.status(401).json({ code: 'REFRESH_INVALID', message: 'Invalid refresh token' });
       const accessToken = jwt.sign({}, process.env.JWT_ACCESS_SECRET, {
         expiresIn: process.env.JWT_ACCESS_EXPIRES || '15m',
         subject: payload.sub,
       });
       return res.json({ accessToken });
     } catch (err) {
-      return res.status(401).json({ message: 'Invalid or expired refresh token' });
+      return res.status(401).json({ code: 'REFRESH_INVALID', message: 'Invalid or expired refresh token' });
     }
   },
   logout: async (req, res, next) => {
