@@ -20,6 +20,9 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Trust proxy so req.protocol respects X-Forwarded-Proto (useful behind reverse proxies)
+app.set('trust proxy', 1);
+
 const PORT = process.env.PORT || 4000;
 const ORIGIN = process.env.CORS_ORIGIN || '*';
 

@@ -114,7 +114,9 @@ Utilisateurs & géolocalisation
 
 Profil
 - PUT /profile (auth) body: { name?, bio? }
-- POST /profile/photo (auth) form-data: photo=<fichier> -> { user }
+- POST /profile/photo (auth) form-data: photo=<fichier image> -> { user }
+  - Types acceptés: JPEG, PNG, WEBP, GIF (<= 5 Mo)
+  - La réponse contient user.profileImageUrl (URL absolue). Si aucun fichier n’est envoyé ou type non supporté -> 400.
 
 Réseaux sociaux
 - PUT /social (auth) body: { type, handle }

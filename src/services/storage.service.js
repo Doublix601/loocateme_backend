@@ -16,10 +16,17 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const name = `profile_${req.user?.id || 'anon'}_${Date.now()}${ext}`;
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext) ? ext : '';
+    const name = `profile_${req.user?.id || 'anon'}_${Date.now()}${safeExt}`;
     cb(null, name);
   },
 });
 
-export const upload = multer({ storage });
+const fileFilter = (req, file, cb) => {
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (allowed.includes(file.mimetype)) return cb(null, true);
+  cb(new Error('Unsupported file type'));
+};
+
+export const upload = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
