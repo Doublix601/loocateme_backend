@@ -1,4 +1,4 @@
-import { getNearbyUsers, updateLocation, getUserByEmail } from '../services/user.service.js';
+import { getNearbyUsers, updateLocation, getUsersByEmails } from '../services/user.service.js';
 
 export const UserController = {
   me: async (req, res, next) => {
@@ -34,9 +34,9 @@ export const UserController = {
   },
   getByEmail: async (req, res, next) => {
     try {
-      const { email } = req.query;
-      const user = await getUserByEmail(email);
-      return res.json({ user });
+      const emails = req.query.email; // after validator, this is an array of normalized emails
+      const users = await getUsersByEmails(emails);
+      return res.json({ users });
     } catch (err) {
       next(err);
     }

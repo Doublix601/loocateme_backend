@@ -9,6 +9,12 @@ export async function getUserByEmail(email) {
   return user;
 }
 
+export async function getUsersByEmails(emails) {
+  const unique = Array.from(new Set(emails));
+  const users = await User.find({ email: { $in: unique } }).select('-password');
+  return users;
+}
+
 export async function updateLocation(userId, { lat, lon }) {
   const update = {
     location: { type: 'Point', coordinates: [lon, lat], updatedAt: new Date() },

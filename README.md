@@ -107,7 +107,10 @@ Utilisateurs & géolocalisation
   body: { lat: number, lon: number }
 - GET /users/nearby?lat=..&lon=..&radius=300 (auth) -> { users: [...] }
   radius en mètres (1..1000, défaut 300)
-- GET /users/by-email?email=... (auth) -> { user } (password exclu)
+- GET /users/by-email?email=alice@example.com (auth) -> { users: [...] } (password exclu)
+  - Supporte plusieurs emails via virgules ou paramètres répétés:
+    - /users/by-email?email=alice@example.com,bob@example.com
+    - /users/by-email?email=alice@example.com&email=bob@example.com
 
 Profil
 - PUT /profile (auth) body: { name?, bio? }

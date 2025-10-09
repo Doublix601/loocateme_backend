@@ -31,9 +31,24 @@ export const validators = {
     query('lon').isFloat({ min: -180, max: 180 }),
     query('radius').optional().isInt({ min: 1, max: 1000 }),
   ],
-  getUserByEmail: [
+  getUsersByEmail: [
+    // Accept: ?email=a@x.com or ?email=a@x.com,b@y.com or repeated ?email=a@x.com&email=b@y.com
     query('email')
+      .exists()
+      .bail()
+      .customSanitizer((value) => {
+        if (Array.isArray(value)) return value;
+        if (typeof value === 'string') {
+          return value
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+        }
+        return [];
+      }),
+    query('email.*')
       .isEmail()
+      .withMessage('All email values must be valid emails')
       .normalizeEmail({
         gmail_remove_dots: false,
         gmail_remove_subaddress: false,

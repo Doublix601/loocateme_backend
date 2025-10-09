@@ -8,6 +8,6 @@ const router = Router();
 router.get('/me', requireAuth, UserController.me);
 router.post('/location', requireAuth, validate(validators.updateLocation), UserController.updateLocation);
 router.get('/nearby', requireAuth, validate(validators.nearby), UserController.nearby);
-router.get('/by-email', requireAuth, validate(validators.getUserByEmail), UserController.getByEmail);
+router.get('/by-email', requireAuth, validate(validators.getUsersByEmail), UserController.getByEmail);
 
 export default router;
