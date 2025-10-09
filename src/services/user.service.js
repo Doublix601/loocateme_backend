@@ -3,6 +3,12 @@ import { redisClient } from '../config/redis.js';
 
 const GEO_CACHE_TTL = 5; // seconds
 
+export async function getUserByEmail(email) {
+  const user = await User.findOne({ email }).select('-password');
+  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+  return user;
+}
+
 export async function updateLocation(userId, { lat, lon }) {
   const update = {
     location: { type: 'Point', coordinates: [lon, lat], updatedAt: new Date() },

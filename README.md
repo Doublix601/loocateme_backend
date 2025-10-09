@@ -98,11 +98,16 @@ Auth
 - POST /auth/logout (auth)
 - POST /auth/forgot-password { email } -> { success }
 
+Notes:
+- L'email est conservé strictement tel que saisi (pas de suppression des points ni des sous-adresses pour Gmail/Outlook/Yahoo/iCloud).
+- Unicité par email: lors du signup, si des comptes existent déjà avec le même email, ils sont supprimés avant la création du nouveau compte (et leurs refresh tokens invalidés).
+
 Utilisateurs & géolocalisation
 - POST /users/location (auth)
   body: { lat: number, lon: number }
 - GET /users/nearby?lat=..&lon=..&radius=300 (auth) -> { users: [...] }
   radius en mètres (1..1000, défaut 300)
+- GET /users/by-email?email=... (auth) -> { user } (password exclu)
 
 Profil
 - PUT /profile (auth) body: { name?, bio? }

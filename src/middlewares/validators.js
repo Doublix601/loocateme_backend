@@ -31,6 +31,17 @@ export const validators = {
     query('lon').isFloat({ min: -180, max: 180 }),
     query('radius').optional().isInt({ min: 1, max: 1000 }),
   ],
+  getUserByEmail: [
+    query('email')
+      .isEmail()
+      .normalizeEmail({
+        gmail_remove_dots: false,
+        gmail_remove_subaddress: false,
+        outlookdotcom_remove_subaddress: false,
+        yahoo_remove_subaddress: false,
+        icloud_remove_subaddress: false,
+      }),
+  ],
   profileUpdate: [
     body('name').optional().isString().isLength({ max: 80 }),
     body('bio').optional().isString().isLength({ max: 500 }),

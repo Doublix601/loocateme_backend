@@ -1,4 +1,4 @@
-import { getNearbyUsers, updateLocation } from '../services/user.service.js';
+import { getNearbyUsers, updateLocation, getUserByEmail } from '../services/user.service.js';
 
 export const UserController = {
   me: async (req, res, next) => {
@@ -28,6 +28,15 @@ export const UserController = {
         radiusMeters: radius ? parseInt(radius, 10) : 300,
       });
       return res.json({ users });
+    } catch (err) {
+      next(err);
+    }
+  },
+  getByEmail: async (req, res, next) => {
+    try {
+      const { email } = req.query;
+      const user = await getUserByEmail(email);
+      return res.json({ user });
     } catch (err) {
       next(err);
     }
