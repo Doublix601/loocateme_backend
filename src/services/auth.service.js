@@ -34,8 +34,14 @@ function parseExpiry(str) {
 }
 
 export async function signup({ email, password, name }) {
-  const existing = await User.findOne({ email });
-  if (existing) throw Object.assign(new Error('Email already in use'), { status: 400 });
+  // Ensure uniqueness by email: remove all existing accounts with the same email before creating a new one
+  const duplicates = await User.find({ email }).select('_id');
+  if (duplicates.length > 0) {
+    const ids = duplicates.map((d) => d._id);
+    // Clean up refresh tokens tied to these accounts
+    await RefreshToken.deleteMany({ user: { $in: ids } });
+    await User.deleteMany({ _id: { $in: ids } });
+  }
   const user = new User({ email, password, name });
   await user.save();
   const accessToken = signAccessToken(user._id);
