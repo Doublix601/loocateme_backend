@@ -40,7 +40,11 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 300 }) {
       COUNT: 100,
     });
     if (Array.isArray(members) && members.length > 0) {
-      const ids = members.map((m) => m.member);
+      const requesterId = String(userId);
+      const ids = members
+        .map((m) => m.member)
+        .filter((id) => id && id !== requesterId);
+      if (ids.length === 0) return [];
       const users = await User.find({ _id: { $in: ids }, isVisible: true }).select('-password');
       return users;
     }
