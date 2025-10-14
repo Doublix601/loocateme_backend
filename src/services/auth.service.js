@@ -51,9 +51,9 @@ export async function signup({ email, password, name }) {
 
 export async function login({ email, password }) {
   const user = await User.findOne({ email }).select('+password');
-  if (!user) throw Object.assign(new Error('Invalid credentials'), { status: 401, code: 'INVALID_CREDENTIALS' });
+  if (!user) throw Object.assign(new Error('Authentification échouée'), { status: 401, code: 'INVALID_CREDENTIALS' });
   const ok = await user.comparePassword(password);
-  if (!ok) throw Object.assign(new Error('Invalid credentials'), { status: 401, code: 'INVALID_CREDENTIALS' });
+  if (!ok) throw Object.assign(new Error('Authentification échouée'), { status: 401, code: 'INVALID_CREDENTIALS' });
   const accessToken = signAccessToken(user._id);
   const refreshToken = await createRefreshToken(user._id);
   return { user: sanitize(user), accessToken, refreshToken };
