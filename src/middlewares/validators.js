@@ -63,7 +63,37 @@ export const validators = {
   ],
   socialUpsert: [
     body('type').isIn(['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin']),
-    body('handle').isString().isLength({ min: 1, max: 100 }),
+    body('handle')
+      .isString()
+      .bail()
+      .customSanitizer((value, { req }) => {
+        let v = String(value || '').trim();
+        // If type is instagram, extract username from full URL if pasted
+        const type = String(req.body?.type || '').toLowerCase();
+        if (type === 'instagram') {
+          try {
+            if (/^https?:\/\//i.test(v)) {
+              const u = new URL(v);
+              const path = (u.pathname || '').replace(/^\/+|\/+$/g, '');
+              v = (path.split('/')[0] || '').trim();
+            }
+          } catch (_e) { /* ignore */ }
+          if (v.startsWith('@')) v = v.slice(1);
+        }
+        return v;
+      })
+      .isLength({ min: 1, max: 100 })
+      .bail()
+      .custom((value, { req }) => {
+        const type = String(req.body?.type || '').toLowerCase();
+        if (type === 'instagram') {
+          const re = /^(?!.*\.\.)(?!.*\.$)[A-Za-z0-9](?:[A-Za-z0-9._]{0,28}[A-Za-z0-9])?$/;
+          if (!re.test(value)) {
+            throw new Error('Invalid Instagram username');
+          }
+        }
+        return true;
+      }),
   ],
   socialRemove: [param('type').isIn(['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin'])],
   visibility: [body('isVisible').isBoolean()],
