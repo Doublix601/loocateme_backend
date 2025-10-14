@@ -28,7 +28,7 @@ export const UserController = {
         userId: req.user.id,
         lat: parseFloat(lat),
         lon: parseFloat(lon),
-        radiusMeters: radius ? parseInt(radius, 10) : 300,
+        radiusMeters: radius ? parseInt(radius, 10) : 2000,
       });
       return res.json({ users });
     } catch (err) {

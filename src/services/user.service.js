@@ -28,7 +28,7 @@ export async function updateLocation(userId, { lat, lon }) {
   return user;
 }
 
-export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 300 }) {
+export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) {
   // Try Redis first
   try {
     const members = await redisClient.geoSearch('geo:users', {

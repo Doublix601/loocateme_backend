@@ -29,7 +29,7 @@ export const validators = {
   nearby: [
     query('lat').isFloat({ min: -90, max: 90 }),
     query('lon').isFloat({ min: -180, max: 180 }),
-    query('radius').optional().isInt({ min: 1, max: 1000 }),
+    query('radius').optional().isInt({ min: 1, max: 5000 }),
   ],
   getUsersByEmail: [
     // Accept: ?email=a@x.com or ?email=a@x.com,b@y.com or repeated ?email=a@x.com&email=b@y.com
