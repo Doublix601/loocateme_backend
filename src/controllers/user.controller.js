@@ -6,7 +6,7 @@ export const UserController = {
       // Return full user profile (sans password)
       const { User } = await import('../models/User.js');
       const user = await User.findById(req.user.id).select('-password');
-      if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'User not found' });
+      if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
       return res.json({ user });
     } catch (err) {
       next(err);
