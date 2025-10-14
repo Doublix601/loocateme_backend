@@ -26,7 +26,7 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 4000;
 const ORIGIN = process.env.CORS_ORIGIN || '*';
 
-app.use(cors({ origin: ORIGIN, credentials: true }));
+app.use(cors({ origin: ORIGIN === '*' ? true : ORIGIN, credentials: true }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
