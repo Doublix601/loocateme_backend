@@ -29,6 +29,8 @@ export async function updateLocation(userId, { lat, lon }) {
 }
 
 export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) {
+  const freshnessMs = 60 * 60 * 1000; // 1 hour
+  const threshold = new Date(Date.now() - freshnessMs);
   // Try Redis first
   try {
     const members = await redisClient.geoSearch('geo:users', {
@@ -45,7 +47,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
         .map((m) => m.member)
         .filter((id) => id && id !== requesterId);
       if (ids.length === 0) return [];
-      const users = await User.find({ _id: { $in: ids }, isVisible: true }).select('-password');
+      const users = await User.find({ _id: { $in: ids }, isVisible: true, 'location.updatedAt': { $gte: threshold } }).select('-password');
       return users;
     }
   } catch {}
@@ -54,6 +56,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
   const users = await User.find({
     _id: { $ne: userId },
     isVisible: true,
+    'location.updatedAt': { $gte: threshold },
     location: {
       $near: {
         $geometry: { type: 'Point', coordinates: [lon, lat] },
