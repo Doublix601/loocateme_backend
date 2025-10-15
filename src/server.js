@@ -14,6 +14,7 @@ import profileRoutes from './routes/profile.routes.js';
 import socialRoutes from './routes/social.routes.js';
 import settingsRoutes from './routes/settings.routes.js';
 import gdprRoutes from './routes/gdpr.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 import { errorHandler, notFound } from './middlewares/error.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -47,6 +48,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/gdpr', gdprRoutes);
+app.use('/api/admin', adminRoutes);
 
 // 404 and error
 app.use(notFound);
