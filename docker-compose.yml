@@ -18,7 +18,7 @@ services:
       - BASE_URL=http://localhost:4000
     volumes:
       - ./:/app
-      - ./uploads:/app/uploads
+      - uploads:/app/uploads
     depends_on:
       - mongo
       - redis
@@ -30,7 +30,7 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - ./data/mongo:/data/db
+      - mongo_data:/data/db
   redis:
     image: redis:7-alpine
     container_name: loocateme-redis
@@ -38,4 +38,9 @@ services:
       - "6379:6379"
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - ./data/redis:/data
+      - redis_data:/data
+
+volumes:
+  mongo_data:
+  redis_data:
+  uploads:
