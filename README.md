@@ -100,7 +100,7 @@ Auth
 
 Notes:
 - L'email est conservé strictement tel que saisi (pas de suppression des points ni des sous-adresses pour Gmail/Outlook/Yahoo/iCloud).
-- Unicité par email: lors du signup, si des comptes existent déjà avec le même email, ils sont supprimés avant la création du nouveau compte (et leurs refresh tokens invalidés).
+- Unicité par email: lors du signup, si un compte existe déjà avec le même email, l'API renvoie 409 (EMAIL_TAKEN) et ne supprime aucun compte existant.
 
 Utilisateurs & géolocalisation
 - POST /users/location (auth)

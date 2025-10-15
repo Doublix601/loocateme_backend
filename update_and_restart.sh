@@ -100,12 +100,16 @@ fi
 log "Resetting working tree to origin/$BRANCH..."
 git reset --hard "origin/$BRANCH"
 
-# --- Fix permissions for Docker volumes ---
+# --- Ensure data directories exist and fix permissions ---
+mkdir -p ./data/mongo ./data/redis ./data/uploads || true
 if [[ -d ./data ]]; then
-  log "Fixing permissions for ./data..."
+  log "Ensuring data directories exist (./data/mongo, ./data/redis, ./data/uploads) and fixing permissions..."
   sudo chown -R "$USER:docker" ./data || true
   sudo chmod -R 770 ./data || true
 fi
+
+# Safety notice about volumes
+log "Note: data is persisted under ./data/. Do NOT delete this folder if you want to keep your database and uploads."
 
 # --- Docker restart ---
 log "Stopping current services..."
