@@ -34,13 +34,13 @@ function parseExpiry(str) {
 }
 
 export async function signup({ email, password, name }) {
-  // Ensure uniqueness by email: remove all existing accounts with the same email before creating a new one
-  const duplicates = await User.find({ email }).select('_id');
-  if (duplicates.length > 0) {
-    const ids = duplicates.map((d) => d._id);
-    // Clean up refresh tokens tied to these accounts
-    await RefreshToken.deleteMany({ user: { $in: ids } });
-    await User.deleteMany({ _id: { $in: ids } });
+  // Refuse signup if an account already exists for this email (do NOT delete existing accounts)
+  const existing = await User.findOne({ email }).select('_id');
+  if (existing) {
+    const err = new Error('Un compte existe déjà avec cet email');
+    err.status = 409;
+    err.code = 'EMAIL_TAKEN';
+    throw err;
   }
   // Normalize and validate name defensively (validators already sanitize)
   let normalizedName = String(name || '').trim();
