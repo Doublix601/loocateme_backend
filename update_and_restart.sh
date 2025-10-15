@@ -84,14 +84,12 @@ if [[ ! -d .git ]]; then
 fi
 
 log "Fetching latest changes from origin..."
-# Fetch all and prune
- git fetch --all --prune
+git fetch --all --prune
 
-# Checkout target branch (in case container runs detached on a different branch)
+# Checkout target branch
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
   log "Switching branch: $CURRENT_BRANCH -> $BRANCH"
-  # Create local tracking branch if it doesn't exist
   if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
     git checkout "$BRANCH"
   else
@@ -100,8 +98,14 @@ if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
 fi
 
 log "Resetting working tree to origin/$BRANCH..."
-# Discard local changes and sync to remote branch head
- git reset --hard "origin/$BRANCH"
+git reset --hard "origin/$BRANCH"
+
+# --- Fix permissions for Docker volumes ---
+if [[ -d ./data ]]; then
+  log "Fixing permissions for ./data..."
+  sudo chown -R "$USER:docker" ./data || true
+  sudo chmod -R 770 ./data || true
+fi
 
 # --- Docker restart ---
 log "Stopping current services..."
@@ -112,7 +116,6 @@ $DC pull || true
 
 if [[ "$BUILD" -eq 1 ]]; then
   log "Building images..."
-  # Build backend image defined in compose (no cache can be heavy; skip by default)
   $DC build
 else
   log "Skipping build (per --no-build)"
@@ -122,8 +125,7 @@ log "Starting services in the background..."
 $DC up -d
 
 log "Pruning dangling images (safe cleanup)..."
-# Remove dangling images only
-( docker image prune -f >/dev/null 2>&1 || true )
+docker image prune -f >/dev/null 2>&1 || true
 
 log "Services restarted."
 
