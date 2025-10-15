@@ -25,7 +25,7 @@ services:
     depends_on:
       - mongo
       - redis
-    command: sh -c "if [ -f package-lock.json ]; then npm ci; else npm install; fi && npm run dev"
+    command: sh -c "if [ -f package-lock.json ]; then npm ci || npm install; else npm install; fi && npm run dev"
   mongo:
     image: mongo:6
     container_name: loocateme-mongo

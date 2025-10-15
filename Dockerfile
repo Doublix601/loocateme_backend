@@ -6,7 +6,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package.json package-lock.json* .npmrc* ./
-RUN sh -c "if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi"
+# Prefer lockfile installation; if lockfile is out of sync, fall back to npm install to regenerate
+RUN sh -c "if [ -f package-lock.json ]; then (npm ci --omit=dev || npm install --omit=dev); else npm install --omit=dev; fi"
 
 COPY . .
 
