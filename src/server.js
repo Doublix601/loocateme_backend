@@ -55,6 +55,14 @@ app.use(errorHandler);
 // Start server after DB connections
 (async () => {
   await connectMongo();
+  // Ensure indexes are created (notably 2dsphere on location)
+  try {
+    const { User } = await import('./models/User.js');
+    await User.createIndexes();
+    console.log('MongoDB indexes ensured for User');
+  } catch (e) {
+    console.warn('Failed to ensure MongoDB indexes for User:', e?.message || e);
+  }
   await redisClient.connect().catch(() => {
     console.warn('Redis connection failed. Continuing without Redis.');
   });
