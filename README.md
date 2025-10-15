@@ -142,15 +142,15 @@ Paramètres
 - Migration: utiliser des outils comme migrate-mongo ou Atlas Triggers si nécessaire.
 
 Persistance des données (Docker)
-- Les données MongoDB, Redis et les uploads sont maintenant stockées dans des dossiers du projet via des bind mounts pour éviter toute perte même si vous exécutez `down -v`.
-- Dossiers utilisés (relatifs à loocateme_backend):
-  - ./data/mongo -> monté sur /data/db (MongoDB)
-  - ./data/redis -> monté sur /data (Redis, AOF activé)
-  - ./data/uploads -> monté sur /app/uploads (fichiers uploadés)
+- MongoDB et Redis utilisent désormais des volumes nommés (gérés par Docker) pour éviter toute suppression accidentelle liée au dossier du projet ou à des scripts Git.
+- Détails:
+  - Volume nommé: mongo_data -> monté sur /data/db (MongoDB)
+  - Volume nommé: redis_data -> monté sur /data (Redis, AOF activé)
+  - Dossier hôte: ./data/uploads -> monté sur /app/uploads (fichiers uploadés)
 - Astuces:
-  - Ces dossiers sont persistents sur l’hôte. Évitez de les supprimer manuellement si vous souhaitez conserver vos données.
-  - Sauvegarde/restauration: compressez simplement les dossiers (ex: `tar czf mongo_backup.tgz -C data mongo`).
-  - Si vous migrez depuis d’anciens volumes nommés, copiez les données depuis les volumes vers `./data/*` avant de relancer.
+  - Les volumes nommés ne sont pas affectés par les opérations Git (ex: reset --hard). Ils ne sont supprimés que via `docker volume rm` ou `docker compose down -v`.
+  - Sauvegarde/restauration Mongo/Redis: `docker run --rm -v mongo_data:/data -v "$PWD":/backup alpine tar czf /backup/mongo_backup.tgz -C / data` (adapter pour Redis avec redis_data).
+  - Sauvegarde/restauration uploads: compressez le dossier `./data/uploads` (ex: `tar czf uploads_backup.tgz -C data uploads`).
 
 Notes
 - Photo de profil: si aucune image fournie, le front peut afficher une image par défaut. Vous pouvez aussi définir BASE_URL/uploads/default.png si vous déposez une image par défaut dans uploads/.

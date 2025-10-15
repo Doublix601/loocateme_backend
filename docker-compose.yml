@@ -2,6 +2,7 @@ services:
   api:
     build: .
     container_name: loocateme-api
+    restart: unless-stopped
     ports:
       - "4000:4000"
     environment:
@@ -22,7 +23,7 @@ services:
     depends_on:
       - mongo
       - redis
-    command: sh -c "if [ -f package-lock.json ]; then npm ci; else npm install; fi && npm run db:init && npm run dev"
+    command: sh -c "if [ -f package-lock.json ]; then npm ci; else npm install; fi && npm run dev"
   mongo:
     image: mongo:6
     container_name: loocateme-mongo
@@ -30,12 +31,17 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - ./data/mongo:/data/db
+      - mongo_data:/data/db
   redis:
     image: redis:7-alpine
     container_name: loocateme-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - ./data/redis:/data
+      - redis_data:/data
+
+volumes:
+  mongo_data:
+  redis_data:
