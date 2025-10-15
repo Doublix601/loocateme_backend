@@ -21,6 +21,16 @@ const UserSchema = new mongoose.Schema(
     bio: { type: String, default: '' },
     profileImageUrl: { type: String, default: '' },
     isVisible: { type: Boolean, default: true },
+    // GDPR consent and privacy preferences
+    consent: {
+      accepted: { type: Boolean, default: false },
+      version: { type: String, default: '' },
+      consentAt: { type: Date },
+    },
+    privacyPreferences: {
+      analytics: { type: Boolean, default: false },
+      marketing: { type: Boolean, default: false },
+    },
     location: {
       type: { type: String, enum: ['Point'], default: 'Point' },
       coordinates: { type: [Number], default: [0, 0], index: '2dsphere' }, // [lon, lat]
