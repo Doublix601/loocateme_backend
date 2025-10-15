@@ -17,6 +17,8 @@ services:
       - REDIS_URL=redis://default:${REDIS_PASSWORD:-change-me-redis}@redis:6379
       - UPLOAD_DIR=uploads
       - BASE_URL=http://localhost:4000
+      - MONGO_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-change-me-root}
+      - MONGO_APP_PASSWORD=${MONGO_APP_PASSWORD:-change-me-app}
     volumes:
       - ./:/app
       - ./data/uploads:/app/uploads
