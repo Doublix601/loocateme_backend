@@ -94,7 +94,7 @@ export const validators = {
       .bail()
       .customSanitizer((value, { req }) => {
         let v = String(value || '').trim();
-        // If type is instagram, extract username from full URL if pasted
+        // If type is instagram or tiktok, extract username from full URL if pasted
         const type = String(req.body?.type || '').toLowerCase();
         if (type === 'instagram') {
           try {
@@ -102,6 +102,17 @@ export const validators = {
               const u = new URL(v);
               const path = (u.pathname || '').replace(/^\/+|\/+$/g, '');
               v = (path.split('/')[0] || '').trim();
+            }
+          } catch (_e) { /* ignore */ }
+          if (v.startsWith('@')) v = v.slice(1);
+        } else if (type === 'tiktok') {
+          try {
+            if (/^https?:\/\//i.test(v)) {
+              const u = new URL(v);
+              const path = (u.pathname || '').replace(/^\/+|\/+$/g, '');
+              // Expect path like "@username" or "@username/video/..."
+              const firstSeg = (path.split('/')[0] || '').trim();
+              v = firstSeg.startsWith('@') ? firstSeg.slice(1) : firstSeg;
             }
           } catch (_e) { /* ignore */ }
           if (v.startsWith('@')) v = v.slice(1);
@@ -116,6 +127,12 @@ export const validators = {
           const re = /^(?!.*\.\.)(?!.*\.$)[A-Za-z0-9](?:[A-Za-z0-9._]{0,28}[A-Za-z0-9])?$/;
           if (!re.test(value)) {
             throw new Error('Invalid Instagram username');
+          }
+        } else if (type === 'tiktok') {
+          // TikTok usernames are typically 2-24 chars, letters, numbers, dot, underscore
+          const re = /^[A-Za-z0-9._]{2,24}$/;
+          if (!re.test(value)) {
+            throw new Error('Invalid TikTok username');
           }
         }
         return true;

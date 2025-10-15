@@ -22,6 +22,24 @@ export async function addOrUpdateSocial(userId, { type, handle }) {
       err.code = 'INVALID_INSTAGRAM_HANDLE';
       throw err;
     }
+  } else if (cleanType === 'tiktok') {
+    // Sanitize tiktok handle from URLs like https://www.tiktok.com/@username or /@username/video/...
+    try {
+      if (/^https?:\/\//i.test(cleanHandle)) {
+        const u = new URL(cleanHandle);
+        const path = (u.pathname || '').replace(/^\/+|\/+$/g, '');
+        const firstSeg = (path.split('/')[0] || '').trim();
+        cleanHandle = firstSeg.startsWith('@') ? firstSeg.slice(1) : firstSeg;
+      }
+    } catch (_e) { /* ignore */ }
+    if (cleanHandle.startsWith('@')) cleanHandle = cleanHandle.slice(1);
+    const re = /^[A-Za-z0-9._]{2,24}$/;
+    if (!re.test(cleanHandle)) {
+      const err = new Error('Invalid TikTok username');
+      err.status = 400;
+      err.code = 'INVALID_TIKTOK_HANDLE';
+      throw err;
+    }
   }
   const idx = user.socialNetworks.findIndex((s) => s.type === cleanType);
   if (idx >= 0) user.socialNetworks[idx].handle = cleanHandle;
