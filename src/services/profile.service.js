@@ -26,7 +26,17 @@ function localPathFromUrl(url) {
 }
 
 export async function updateProfile(userId, { name, bio }) {
-  const user = await User.findByIdAndUpdate(userId, { name, bio }, { new: true });
+  const update = {};
+  if (typeof name === 'string') {
+    let v = name.trim();
+    if (v) {
+      const lower = v.toLowerCase();
+      v = lower.charAt(0).toUpperCase() + lower.slice(1);
+    }
+    update.name = v;
+  }
+  if (typeof bio === 'string') update.bio = bio;
+  const user = await User.findByIdAndUpdate(userId, update, { new: true });
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
   return user;
 }

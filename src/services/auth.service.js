@@ -42,7 +42,13 @@ export async function signup({ email, password, name }) {
     await RefreshToken.deleteMany({ user: { $in: ids } });
     await User.deleteMany({ _id: { $in: ids } });
   }
-  const user = new User({ email, password, name });
+  // Normalize and validate name defensively (validators already sanitize)
+  let normalizedName = String(name || '').trim();
+  if (normalizedName) {
+    const lower = normalizedName.toLowerCase();
+    normalizedName = lower.charAt(0).toUpperCase() + lower.slice(1);
+  }
+  const user = new User({ email, password, name: normalizedName });
   await user.save();
   const accessToken = signAccessToken(user._id);
   const refreshToken = await createRefreshToken(user._id);
