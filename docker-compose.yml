@@ -9,7 +9,7 @@ services:
       - PORT=4000
       - NODE_ENV=development
       - CORS_ORIGIN=http://localhost:19006
-      - MONGODB_URI=mongodb://appuser:${MONGO_APP_PASSWORD:-change-me-app}@mongo:27017/loocateme?authSource=admin
+      - MONGODB_URI=mongodb://appuser:${MONGO_APP_PASSWORD:-change-me-app}@mongo:27017/loocateme
       - JWT_ACCESS_SECRET=change-me-access
       - JWT_REFRESH_SECRET=change-me-refresh
       - JWT_ACCESS_EXPIRES=15m

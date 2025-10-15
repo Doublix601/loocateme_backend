@@ -166,7 +166,7 @@ Sécurité (IMPORTANT)
   - MONGO_APP_PASSWORD=mot_de_passe_app_fort
   - REDIS_PASSWORD=mot_de_passe_redis_fort
 - Connexions côté API (déjà configurées via variables d’environnement):
-  - MONGODB_URI=mongodb://appuser:${MONGO_APP_PASSWORD}@mongo:27017/loocateme?authSource=admin
+  - MONGODB_URI=mongodb://appuser:${MONGO_APP_PASSWORD}@mongo:27017/loocateme
   - REDIS_URL=redis://default:${REDIS_PASSWORD}@redis:6379
 - Migration/rotation:
   1) Si vous utilisiez des données existantes sur un volume non authentifié, sauvegardez d’abord (si encore disponible).
