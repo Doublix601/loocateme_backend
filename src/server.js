@@ -59,6 +59,23 @@ app.use(errorHandler);
   try {
     const { User } = await import('./models/User.js');
     await User.createIndexes();
+    // Verify geospatial index exists on `location`
+    const indexes = await User.collection.indexes();
+    const hasLocationIndex = indexes.some((i) => i.key && i.key.location === '2dsphere');
+    if (!hasLocationIndex) {
+      await User.collection.createIndex({ location: '2dsphere' }, { name: 'location_2dsphere' });
+      console.log('Created missing 2dsphere index on `location`');
+    }
+    // Optionally drop wrong index on `location.coordinates` if present (not used by $near on GeoJSON)
+    const wrongIdx = indexes.find((i) => i.key && i.key['location.coordinates'] === '2dsphere');
+    if (wrongIdx) {
+      try {
+        await User.collection.dropIndex(wrongIdx.name || 'location.coordinates_2dsphere');
+        console.log('Dropped incorrect 2dsphere index on `location.coordinates`');
+      } catch (dropErr) {
+        console.warn('Could not drop incorrect `location.coordinates` index:', dropErr?.message || dropErr);
+      }
+    }
     console.log('MongoDB indexes ensured for User');
   } catch (e) {
     console.warn('Failed to ensure MongoDB indexes for User:', e?.message || e);

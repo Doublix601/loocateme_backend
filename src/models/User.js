@@ -33,7 +33,7 @@ const UserSchema = new mongoose.Schema(
     },
     location: {
       type: { type: String, enum: ['Point'], default: 'Point' },
-      coordinates: { type: [Number], default: [0, 0], index: '2dsphere' }, // [lon, lat]
+      coordinates: { type: [Number], default: [0, 0] }, // [lon, lat]
       updatedAt: { type: Date, default: Date.now },
     },
     socialNetworks: [SocialSchema],
