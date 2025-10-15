@@ -9,12 +9,12 @@ services:
       - PORT=4000
       - NODE_ENV=development
       - CORS_ORIGIN=http://localhost:19006
-      - MONGODB_URI=mongodb://mongo:27017/loocateme
+      - MONGODB_URI=mongodb://appuser:${MONGO_APP_PASSWORD}@mongo:27017/loocateme?authSource=admin
       - JWT_ACCESS_SECRET=change-me-access
       - JWT_REFRESH_SECRET=change-me-refresh
       - JWT_ACCESS_EXPIRES=15m
       - JWT_REFRESH_EXPIRES=30d
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://default:${REDIS_PASSWORD}@redis:6379
       - UPLOAD_DIR=uploads
       - BASE_URL=http://localhost:4000
     volumes:
@@ -28,17 +28,22 @@ services:
     image: mongo:6
     container_name: loocateme-mongo
     restart: unless-stopped
-    ports:
-      - "27017:27017"
+    # Do NOT expose Mongo to the Internet. Only the API should access it over the internal Docker network.
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=loocateme
+      - MONGO_APP_PASSWORD=${MONGO_APP_PASSWORD}
     volumes:
       - mongo_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    command: ["bash", "-lc", "echo 'Waiting for mongod...' && docker-entrypoint.sh mongod --bind_ip_all --auth"]
   redis:
     image: redis:7-alpine
     container_name: loocateme-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+    # Do NOT expose Redis to the Internet
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     volumes:
       - redis_data:/data
 

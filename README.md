@@ -153,4 +153,22 @@ Persistance des données (Docker)
   - Sauvegarde/restauration uploads: compressez le dossier `./data/uploads` (ex: `tar czf uploads_backup.tgz -C data uploads`).
 
 Notes
-- Photo de profil: si aucune image fournie, le front peut afficher une image par défaut. Vous pouvez aussi définir BASE_URL/uploads/default.png si vous déposez une image par défaut dans uploads/.
+ - Photo de profil: si aucune image fournie, le front peut afficher une image par défaut. Vous pouvez aussi définir BASE_URL/uploads/default.png si vous déposez une image par défaut dans uploads/.
+
+Sécurité (IMPORTANT)
+- Les logs fournis montrent des connexions à MongoDB depuis des IP externes et l’exécution de dropDatabase, ainsi que des tentatives d’attaque sur Redis. Cela arrive lorsque Mongo/Redis sont exposés à Internet sans authentification.
+- Le docker-compose a été durci pour corriger cela:
+  - MongoDB: authentification activée, création d’un utilisateur applicatif (scripts/mongo-init.js), plus d’exposition de port vers l’hôte.
+  - Redis: mot de passe requis et non exposé publiquement.
+  - L’API est la seule à accéder à Mongo/Redis via le réseau interne Docker.
+- Variables à définir (ex: dans un fichier .env exporté dans l’environnement shell avant docker compose up):
+  - MONGO_ROOT_PASSWORD=mot_de_passe_admin_fort
+  - MONGO_APP_PASSWORD=mot_de_passe_app_fort
+  - REDIS_PASSWORD=mot_de_passe_redis_fort
+- Connexions côté API (déjà configurées via variables d’environnement):
+  - MONGODB_URI=mongodb://appuser:${MONGO_APP_PASSWORD}@mongo:27017/loocateme?authSource=admin
+  - REDIS_URL=redis://default:${REDIS_PASSWORD}@redis:6379
+- Migration/rotation:
+  1) Si vous utilisiez des données existantes sur un volume non authentifié, sauvegardez d’abord (si encore disponible).
+  2) Définissez les variables ci-dessus, puis relancez: docker compose down && docker compose up -d --build.
+  3) Vérifiez que Mongo/Redis ne sont pas exposés (aucun mapping de port 27017/6379). Utilisez un pare-feu/Security Group pour n’autoriser que le port 4000 (API).
