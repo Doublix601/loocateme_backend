@@ -39,7 +39,8 @@ services:
     volumes:
       - mongo_data:/data/db
       - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-    command: ["mongod", "--bind_ip_all", "--auth"]
+      - ./scripts/mongo-entrypoint.sh:/docker-entrypoint-initdb.d/mongo-entrypoint.sh:ro
+    command: ["bash", "/docker-entrypoint-initdb.d/mongo-entrypoint.sh"]
   redis:
     image: redis:7-alpine
     container_name: loocateme-redis
