@@ -142,14 +142,15 @@ Paramètres
 - Migration: utiliser des outils comme migrate-mongo ou Atlas Triggers si nécessaire.
 
 Persistance des données (Docker)
-- Les données MongoDB, Redis et les uploads sont maintenant stockées dans des volumes Docker nommés pour éviter toute suppression accidentelle liée au dossier du projet.
-- Volumes utilisés:
-  - mongo_data -> monté sur /data/db (MongoDB)
-  - redis_data -> monté sur /data (Redis, AOF activé)
-  - uploads -> monté sur /app/uploads (fichiers uploadés)
+- Les données MongoDB, Redis et les uploads sont maintenant stockées dans des dossiers du projet via des bind mounts pour éviter toute perte même si vous exécutez `down -v`.
+- Dossiers utilisés (relatifs à loocateme_backend):
+  - ./data/mongo -> monté sur /data/db (MongoDB)
+  - ./data/redis -> monté sur /data (Redis, AOF activé)
+  - ./data/uploads -> monté sur /app/uploads (fichiers uploadés)
 - Astuces:
-  - Attention: `docker-compose down -v` SUPPRIME les volumes nommés (donc les données). Utilisez simplement `docker-compose down` ou `docker compose stop` pour préserver les données.
-  - Pour sauvegarder/restaurer: utilisez `docker run --rm -v mongo_data:/data -v $(pwd):/backup busybox tar czf /backup/mongo_backup.tgz /data` (exemple), et l'équivalent pour redis_data et uploads.
+  - Ces dossiers sont persistents sur l’hôte. Évitez de les supprimer manuellement si vous souhaitez conserver vos données.
+  - Sauvegarde/restauration: compressez simplement les dossiers (ex: `tar czf mongo_backup.tgz -C data mongo`).
+  - Si vous migrez depuis d’anciens volumes nommés, copiez les données depuis les volumes vers `./data/*` avant de relancer.
 
 Notes
 - Photo de profil: si aucune image fournie, le front peut afficher une image par défaut. Vous pouvez aussi définir BASE_URL/uploads/default.png si vous déposez une image par défaut dans uploads/.
