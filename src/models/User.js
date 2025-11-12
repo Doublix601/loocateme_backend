@@ -21,6 +21,7 @@ const UserSchema = new mongoose.Schema(
     bio: { type: String, default: '' },
     profileImageUrl: { type: String, default: '' },
     isVisible: { type: Boolean, default: true },
+    profileViews: { type: Number, default: 0, index: true },
     // GDPR consent and privacy preferences
     consent: {
       accepted: { type: Boolean, default: false },

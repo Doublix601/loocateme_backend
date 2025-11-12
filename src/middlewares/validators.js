@@ -44,6 +44,9 @@ export const validators = {
     query('lon').isFloat({ min: -180, max: 180 }),
     query('radius').optional().isInt({ min: 1, max: 5000 }),
   ],
+  popular: [
+    query('limit').optional().isInt({ min: 1, max: 50 }),
+  ],
   getUsersByEmail: [
     // Accept: ?email=a@x.com or ?email=a@x.com,b@y.com or repeated ?email=a@x.com&email=b@y.com
     query('email')

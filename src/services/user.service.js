@@ -69,3 +69,14 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
 
   return users;
 }
+
+export async function getPopularUsers({ userId = null, limit = 10 } = {}) {
+  const safeLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 10));
+  const query = { isVisible: true };
+  if (userId) Object.assign(query, { _id: { $ne: userId } });
+  const users = await User.find(query)
+    .sort({ profileViews: -1, createdAt: -1 })
+    .limit(safeLimit)
+    .select('-password');
+  return users;
+}

@@ -1,4 +1,4 @@
-import { getNearbyUsers, updateLocation, getUsersByEmails } from '../services/user.service.js';
+import { getNearbyUsers, updateLocation, getUsersByEmails, getPopularUsers } from '../services/user.service.js';
 
 export const UserController = {
   me: async (req, res, next) => {
@@ -46,6 +46,15 @@ export const UserController = {
     try {
       const emails = req.query.email; // after validator, this is an array of normalized emails
       const users = await getUsersByEmails(emails);
+      return res.json({ users });
+    } catch (err) {
+      next(err);
+    }
+  },
+  popular: async (req, res, next) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit, 10) : 10;
+      const users = await getPopularUsers({ userId: req.user?.id, limit });
       return res.json({ users });
     } catch (err) {
       next(err);
