@@ -167,6 +167,7 @@ Configuration SMTP (emails transactionnels)
   - SMTP_SECURE=true
   - SMTP_USER=no-reply@loocate.me
   - SMTP_PASS=<mot_de_passe>
+  - SMTP_AUTH_METHOD=LOGIN | PLAIN (par défaut: LOGIN)
   - MAIL_FROM="LoocateMe <no-reply@loocate.me>"
   - BASE_URL (ex: http://localhost:4000) -> utilisé pour construire les liens dans les emails
   - APP_PUBLIC_URL (ex: http://localhost:19006) -> redirection après vérification email
@@ -188,6 +189,16 @@ Sécurité
 - Les tokens envoyés par email sont opaques côté client et stockés hashés côté serveur (SHA-256) avec TTL strict.
 - Les réponses à forgot-password ne divulguent pas l’existence d’un email.
 - Les mots de passe sont hashés par bcrypt via un hook Mongoose pre-save.
+
+Problèmes courants SMTP OVH et dépannage
+- 535 5.7.1 Authentication failed:
+  - Vérifiez que SMTP_USER est l’adresse complète (ex: no-reply@loocate.me) et que SMTP_PASS est correct (testez via le webmail OVH).
+  - Essayez d’alterner la méthode d’authentification: SMTP_AUTH_METHOD=LOGIN (recommandé), ou PLAIN si nécessaire.
+  - Testez plusieurs combinaisons d’hôte/port: ssl0.ovh.net:465 (SSL), ssl0.ovh.net:587 (STARTTLS), smtp.mail.ovh.net:465, smtp.mail.ovh.net:587.
+  - Redémarrez le backend et utilisez /api/admin/smtp-status et /api/admin/test-email pour diagnostiquer.
+- Délivrabilité faible (mails reçus en spam ou non reçus):
+  - Vérifiez vos enregistrements DNS: SPF (include:mx.ovh.com), DKIM activé chez OVH, DMARC (même permissif p=none) conseillé.
+  - Utilisez une adresse d’expéditeur MAIL_FROM alignée sur le domaine (ex: « LoocateMe <no-reply@loocate.me> »).
 
 Sécurité (IMPORTANT)
 - Les logs fournis montrent des connexions à MongoDB depuis des IP externes et l’exécution de dropDatabase, ainsi que des tentatives d’attaque sur Redis. Cela arrive lorsque Mongo/Redis sont exposés à Internet sans authentification.

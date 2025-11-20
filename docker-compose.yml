@@ -27,7 +27,7 @@ services:
       # OVH supporte AUTH LOGIN et AUTH PLAIN. Par défaut, on force LOGIN pour éviter les erreurs 535.
       - SMTP_AUTH_METHOD=LOGIN
       - MAIL_FROM="LoocateMe <no-reply@loocate.me>"
-      - SMTP_DEBUG=true
+      - SMTP_DEBUG=false
       - EMAIL_TEST_SECRET=change-me-test
       - EMAIL_VERIF_TOKEN_TTL=24h
       - PWD_RESET_TOKEN_TTL=1h
