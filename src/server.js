@@ -16,6 +16,7 @@ import settingsRoutes from './routes/settings.routes.js';
 import gdprRoutes from './routes/gdpr.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import { errorHandler, notFound } from './middlewares/error.js';
+import { verifyMailTransport } from './services/email.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -85,5 +86,14 @@ app.use(errorHandler);
   await redisClient.connect().catch(() => {
     console.warn('Redis connection failed. Continuing without Redis.');
   });
+  // Verify SMTP transport at startup to surface configuration issues early
+  try {
+    const res = await verifyMailTransport();
+    if (!res.ok) {
+      console.warn('[email] SMTP not ready:', res.error);
+    }
+  } catch (e) {
+    console.warn('[email] SMTP verification threw:', e?.message || e);
+  }
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 })();

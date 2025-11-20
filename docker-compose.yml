@@ -22,8 +22,11 @@ services:
       - SMTP_PORT=465
       - SMTP_SECURE=true
       - SMTP_USER=no-reply@loocate.me
-      - SMTP_PASS=Anouk601!
-      - MAIL_FROM=LoocateMe <no-reply@loocate.me>
+      # IMPORTANT: quote passwords with special characters (like '!') to avoid YAML parsing issues
+      - SMTP_PASS="Anouk601!"
+      - MAIL_FROM="LoocateMe <no-reply@loocate.me>"
+      - SMTP_DEBUG=true
+      - EMAIL_TEST_SECRET=change-me-test
       - EMAIL_VERIF_TOKEN_TTL=24h
       - PWD_RESET_TOKEN_TTL=1h
       - MONGO_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-change-me-root}
