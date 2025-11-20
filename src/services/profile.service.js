@@ -32,9 +32,22 @@ export async function updateProfile(userId, { username, firstName, lastName, cus
   const now = new Date();
   const FIFTEEN_DAYS_MS = 15 * 24 * 60 * 60 * 1000;
 
-  // Username change with 15-day cooldown
+  // Build prospective next values starting from current ones
+  let nextUsername = user.username || '';
+  let nextFirst = user.firstName || '';
+  let nextLast = user.lastName || '';
+  let nextCustom = user.customName || '';
+  let nextBio = (typeof bio === 'string') ? bio : user.bio;
+
+  // Username change with 15-day cooldown (and cannot be empty)
   if (typeof username === 'string') {
     const v = String(username).trim();
+    if (v.length === 0) {
+      const err = new Error("Le nom d'utilisateur est obligatoire et ne peut pas être vide.");
+      err.status = 400;
+      err.code = 'USERNAME_REQUIRED';
+      throw err;
+    }
     if (v !== user.username) {
       const last = user.lastUsernameChangeAt ? new Date(user.lastUsernameChangeAt).getTime() : 0;
       if (last && (now.getTime() - last) < FIFTEEN_DAYS_MS && user.username) {
@@ -43,17 +56,14 @@ export async function updateProfile(userId, { username, firstName, lastName, cus
         err.code = 'USERNAME_CHANGE_RATE_LIMIT';
         throw err;
       }
-      user.username = v;
-      user.lastUsernameChangeAt = now;
-      // Keep legacy name in sync for backward compatibility
-      user.name = v;
+      nextUsername = v;
     }
   }
 
-  // First name change with 15-day cooldown (independent)
+  // First name change with 15-day cooldown (independent). Empty string allowed.
   if (typeof firstName === 'string') {
-    const nextFirst = String(firstName).trim();
-    if (nextFirst !== user.firstName) {
+    const v = String(firstName).trim();
+    if (v !== user.firstName) {
       const lastFirst = user.lastFirstNameChangeAt ? new Date(user.lastFirstNameChangeAt).getTime() : 0;
       if (lastFirst && (now.getTime() - lastFirst) < FIFTEEN_DAYS_MS && user.firstName) {
         const err = new Error('Le prénom ne peut être modifié qu’une fois tous les 15 jours.');
@@ -61,15 +71,14 @@ export async function updateProfile(userId, { username, firstName, lastName, cus
         err.code = 'FIRSTNAME_CHANGE_RATE_LIMIT';
         throw err;
       }
-      user.firstName = nextFirst;
-      user.lastFirstNameChangeAt = now;
+      nextFirst = v;
     }
   }
 
-  // Last name change with 15-day cooldown (independent)
+  // Last name change with 15-day cooldown (independent). Empty string allowed.
   if (typeof lastName === 'string') {
-    const nextLast = String(lastName).trim();
-    if (nextLast !== user.lastName) {
+    const v = String(lastName).trim();
+    if (v !== user.lastName) {
       const lastLast = user.lastLastNameChangeAt ? new Date(user.lastLastNameChangeAt).getTime() : 0;
       if (lastLast && (now.getTime() - lastLast) < FIFTEEN_DAYS_MS && user.lastName) {
         const err = new Error('Le nom ne peut être modifié qu’une fois tous les 15 jours.');
@@ -77,16 +86,45 @@ export async function updateProfile(userId, { username, firstName, lastName, cus
         err.code = 'LASTNAME_CHANGE_RATE_LIMIT';
         throw err;
       }
-      user.lastName = nextLast;
-      user.lastLastNameChangeAt = now;
+      nextLast = v;
     }
   }
 
+  // Custom name: empty string allowed
   if (typeof customName === 'string') {
-    user.customName = String(customName).trim();
+    nextCustom = String(customName).trim();
   }
-  if (typeof bio === 'string') {
-    user.bio = bio;
+
+  // Business constraints on identity fields
+  const hasCustom = nextCustom.length > 0;
+  const hasFirst = nextFirst.length > 0;
+  const hasLast = nextLast.length > 0;
+  if (!hasCustom && !(hasFirst && hasLast)) {
+    const err = new Error('Renseigne un Nom personnalisé OU un Prénom ET un Nom.');
+    err.status = 400;
+    err.code = 'NAME_REQUIREMENTS';
+    throw err;
+  }
+
+  // If we reached here, apply changes and timestamps
+  if (nextUsername !== user.username) {
+    user.username = nextUsername;
+    user.lastUsernameChangeAt = now;
+    user.name = nextUsername; // keep legacy in sync
+  }
+  if (nextFirst !== user.firstName) {
+    user.firstName = nextFirst;
+    user.lastFirstNameChangeAt = now;
+  }
+  if (nextLast !== user.lastName) {
+    user.lastName = nextLast;
+    user.lastLastNameChangeAt = now;
+  }
+  if (nextCustom !== user.customName) {
+    user.customName = nextCustom;
+  }
+  if (typeof nextBio === 'string' && nextBio !== user.bio) {
+    user.bio = nextBio;
   }
 
   await user.save();
