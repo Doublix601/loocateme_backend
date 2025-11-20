@@ -24,6 +24,8 @@ services:
       - SMTP_USER=no-reply@loocate.me
       # IMPORTANT: quote passwords with special characters (like '!') to avoid YAML parsing issues
       - SMTP_PASS="Anouk601!"
+      # OVH supporte AUTH LOGIN et AUTH PLAIN. Par défaut, on force LOGIN pour éviter les erreurs 535.
+      - SMTP_AUTH_METHOD=LOGIN
       - MAIL_FROM="LoocateMe <no-reply@loocate.me>"
       - SMTP_DEBUG=true
       - EMAIL_TEST_SECRET=change-me-test
