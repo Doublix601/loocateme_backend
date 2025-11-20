@@ -50,23 +50,35 @@ export async function updateProfile(userId, { username, firstName, lastName, cus
     }
   }
 
-  // First/Last name change with 15-day cooldown (on either change)
-  const wantFirst = (typeof firstName === 'string');
-  const wantLast = (typeof lastName === 'string');
-  if (wantFirst || wantLast) {
-    const nextFirst = wantFirst ? String(firstName).trim() : user.firstName;
-    const nextLast = wantLast ? String(lastName).trim() : user.lastName;
-    if (nextFirst !== user.firstName || nextLast !== user.lastName) {
-      const last = user.lastNameFieldsChangeAt ? new Date(user.lastNameFieldsChangeAt).getTime() : 0;
-      if (last && (now.getTime() - last) < FIFTEEN_DAYS_MS && (user.firstName || user.lastName)) {
-        const err = new Error('Le prénom/nom ne peuvent être modifiés qu’une fois tous les 15 jours.');
+  // First name change with 15-day cooldown (independent)
+  if (typeof firstName === 'string') {
+    const nextFirst = String(firstName).trim();
+    if (nextFirst !== user.firstName) {
+      const lastFirst = user.lastFirstNameChangeAt ? new Date(user.lastFirstNameChangeAt).getTime() : 0;
+      if (lastFirst && (now.getTime() - lastFirst) < FIFTEEN_DAYS_MS && user.firstName) {
+        const err = new Error('Le prénom ne peut être modifié qu’une fois tous les 15 jours.');
         err.status = 429;
-        err.code = 'NAME_FIELDS_CHANGE_RATE_LIMIT';
+        err.code = 'FIRSTNAME_CHANGE_RATE_LIMIT';
         throw err;
       }
       user.firstName = nextFirst;
+      user.lastFirstNameChangeAt = now;
+    }
+  }
+
+  // Last name change with 15-day cooldown (independent)
+  if (typeof lastName === 'string') {
+    const nextLast = String(lastName).trim();
+    if (nextLast !== user.lastName) {
+      const lastLast = user.lastLastNameChangeAt ? new Date(user.lastLastNameChangeAt).getTime() : 0;
+      if (lastLast && (now.getTime() - lastLast) < FIFTEEN_DAYS_MS && user.lastName) {
+        const err = new Error('Le nom ne peut être modifié qu’une fois tous les 15 jours.');
+        err.status = 429;
+        err.code = 'LASTNAME_CHANGE_RATE_LIMIT';
+        throw err;
+      }
       user.lastName = nextLast;
-      user.lastNameFieldsChangeAt = now;
+      user.lastLastNameChangeAt = now;
     }
   }
 

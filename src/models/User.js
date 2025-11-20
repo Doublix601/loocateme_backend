@@ -31,7 +31,9 @@ const UserSchema = new mongoose.Schema(
     profileViews: { type: Number, default: 0, index: true },
     // Rate-limit name changes
     lastUsernameChangeAt: { type: Date },
-    lastNameFieldsChangeAt: { type: Date },
+    // Split first/last name cooldowns: each field is independent
+    lastFirstNameChangeAt: { type: Date },
+    lastLastNameChangeAt: { type: Date },
     // GDPR consent and privacy preferences
     consent: {
       accepted: { type: Boolean, default: false },

@@ -43,11 +43,11 @@ export const validators = {
       .customSanitizer((value) => {
         const v = String(value || '').trim();
         if (!v) return '';
-        const lower = v.toLowerCase();
-        return lower.charAt(0).toUpperCase() + lower.slice(1);
+        const lower = v.toLocaleLowerCase('fr');
+        return lower.charAt(0).toLocaleUpperCase('fr') + lower.slice(1);
       })
-      .matches(/^[A-Z][a-z]*$/)
-      .withMessage('Le prénom doit respecter le format: ^[A-Z][a-z]*$'),
+      .matches(/^\p{Lu}[\p{L}\p{M}' -]*$/u)
+      .withMessage('Le prénom doit commencer par une majuscule et peut contenir des lettres (accents autorisés), espaces, apostrophes ou tirets.'),
     body('lastName')
       .optional()
       .isString()
@@ -56,11 +56,11 @@ export const validators = {
       .customSanitizer((value) => {
         const v = String(value || '').trim();
         if (!v) return '';
-        const lower = v.toLowerCase();
-        return lower.charAt(0).toUpperCase() + lower.slice(1);
+        const lower = v.toLocaleLowerCase('fr');
+        return lower.charAt(0).toLocaleUpperCase('fr') + lower.slice(1);
       })
-      .matches(/^[A-Z][a-z]*$/)
-      .withMessage('Le nom doit respecter le format: ^[A-Z][a-z]*$'),
+      .matches(/^\p{Lu}[\p{L}\p{M}' -]*$/u)
+      .withMessage('Le nom doit commencer par une majuscule et peut contenir des lettres (accents autorisés), espaces, apostrophes ou tirets.'),
     body('customName').optional().isString().isLength({ max: 80 }),
   ],
   login: [body('email').isEmail(), body('password').isString()],
@@ -132,11 +132,11 @@ export const validators = {
         if (value === undefined) return value;
         const v = String(value || '').trim();
         if (!v) return '';
-        const lower = v.toLowerCase();
-        return lower.charAt(0).toUpperCase() + lower.slice(1);
+        const lower = v.toLocaleLowerCase('fr');
+        return lower.charAt(0).toLocaleUpperCase('fr') + lower.slice(1);
       })
-      .matches(/^[A-Z][a-z]*$/)
-      .withMessage('Le prénom doit respecter le format: ^[A-Z][a-z]*$'),
+      .matches(/^\p{Lu}[\p{L}\p{M}' -]*$/u)
+      .withMessage('Le prénom doit commencer par une majuscule et peut contenir des lettres (accents autorisés), espaces, apostrophes ou tirets.'),
     body('lastName')
       .optional()
       .isString()
@@ -146,11 +146,11 @@ export const validators = {
         if (value === undefined) return value;
         const v = String(value || '').trim();
         if (!v) return '';
-        const lower = v.toLowerCase();
-        return lower.charAt(0).toUpperCase() + lower.slice(1);
+        const lower = v.toLocaleLowerCase('fr');
+        return lower.charAt(0).toLocaleUpperCase('fr') + lower.slice(1);
       })
-      .matches(/^[A-Z][a-z]*$/)
-      .withMessage('Le nom doit respecter le format: ^[A-Z][a-z]*$'),
+      .matches(/^\p{Lu}[\p{L}\p{M}' -]*$/u)
+      .withMessage('Le nom doit commencer par une majuscule et peut contenir des lettres (accents autorisés), espaces, apostrophes ou tirets.'),
     body('customName').optional().isString().isLength({ max: 80 }),
     body('bio').optional().isString().isLength({ max: 500 }),
   ],

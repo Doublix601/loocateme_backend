@@ -59,7 +59,8 @@ export async function signup({ email, password, username, firstName = '', lastNa
     lastName: String(lastName || '').trim(),
     customName: String(customName || '').trim(),
     lastUsernameChangeAt: now,
-    lastNameFieldsChangeAt: now,
+    lastFirstNameChangeAt: now,
+    lastLastNameChangeAt: now,
   });
   await user.save();
   const accessToken = signAccessToken(user._id);
