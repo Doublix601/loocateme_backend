@@ -7,6 +7,7 @@ Résumé
 - Redis GEO pour cache temps réel des positions et recherche ultra rapide.
 - Authentification sécurisée (bcrypt, JWT access + refresh cookie httpOnly).
 - Architecture et déploiement scalables (Docker, recommandations Kubernetes).
+ - Envoi d’emails (SMTP OVH) pour vérification d’email et réinitialisation de mot de passe par lien sécurisé.
 
 1) Veille technologique et choix d’architecture
 
@@ -92,11 +93,15 @@ scripts/
 Base URL: http://localhost:4000/api
 
 Auth
-- POST /auth/signup { email, password, name? } -> { user, accessToken }
+- POST /auth/signup { email, password, username, firstName?, lastName?, customName? } -> { user, accessToken }
 - POST /auth/login { email, password } -> { user, accessToken }
 - POST /auth/refresh -> { accessToken } (utilise cookie refreshToken)
 - POST /auth/logout (auth)
-- POST /auth/forgot-password { email } -> { success }
+- POST /auth/forgot-password { email } -> { success } (envoie un email avec un lien de réinitialisation)
+- GET  /auth/verify-email?token=... -> redirige vers APP_PUBLIC_URL avec emailVerified=1 si succès
+- POST /auth/verify-email { token } -> { success, user }
+- GET  /auth/reset-password?token=... -> affiche une page HTML pour définir le nouveau mot de passe (password + confirm)
+- POST /auth/reset-password { token, password, confirm } (formulaire HTML) -> met à jour le mot de passe
 
 Notes:
 - L'email est conservé strictement tel que saisi (pas de suppression des points ni des sous-adresses pour Gmail/Outlook/Yahoo/iCloud).
@@ -154,6 +159,35 @@ Persistance des données (Docker)
 
 Notes
  - Photo de profil: si aucune image fournie, le front peut afficher une image par défaut. Vous pouvez aussi définir BASE_URL/uploads/default.png si vous déposez une image par défaut dans uploads/.
+
+Configuration SMTP (emails transactionnels)
+- Variables d’environnement supportées (ex: via docker-compose ou .env):
+  - SMTP_HOST=ssl0.ovh.net
+  - SMTP_PORT=465
+  - SMTP_SECURE=true
+  - SMTP_USER=no-reply@loocate.me
+  - SMTP_PASS=<mot_de_passe>
+  - MAIL_FROM="LoocateMe <no-reply@loocate.me>"
+  - BASE_URL (ex: http://localhost:4000) -> utilisé pour construire les liens dans les emails
+  - APP_PUBLIC_URL (ex: http://localhost:19006) -> redirection après vérification email
+  - EMAIL_VERIF_TOKEN_TTL=24h (durée de validité du lien de vérification)
+  - PWD_RESET_TOKEN_TTL=1h (durée de validité du lien de réinitialisation)
+
+Flux vérification email
+1) Lors du signup, un token opaque est généré, hashé (SHA-256) et stocké avec une expiration.
+2) Un email est envoyé à l’utilisateur avec un lien: {BASE_URL}/api/auth/verify-email?token=...
+3) Au clic (GET), le token est validé; si succès, l’utilisateur est marqué emailVerified=true, le token est invalidé, puis redirection vers APP_PUBLIC_URL avec emailVerified=1.
+4) Alternative API: POST /api/auth/verify-email { token } renvoie JSON.
+
+Flux réinitialisation de mot de passe
+1) POST /api/auth/forgot-password { email }: si un compte existe, un token de reset hashé/expirant est stocké et un email est envoyé avec le lien {BASE_URL}/api/auth/reset-password?token=...
+2) GET /api/auth/reset-password affiche un formulaire HTML minimal (password + confirm).
+3) POST /api/auth/reset-password applique le nouveau mot de passe, invalide le token et confirme l’opération.
+
+Sécurité
+- Les tokens envoyés par email sont opaques côté client et stockés hashés côté serveur (SHA-256) avec TTL strict.
+- Les réponses à forgot-password ne divulguent pas l’existence d’un email.
+- Les mots de passe sont hashés par bcrypt via un hook Mongoose pre-save.
 
 Sécurité (IMPORTANT)
 - Les logs fournis montrent des connexions à MongoDB depuis des IP externes et l’exécution de dropDatabase, ainsi que des tentatives d’attaque sur Redis. Cela arrive lorsque Mongo/Redis sont exposés à Internet sans authentification.

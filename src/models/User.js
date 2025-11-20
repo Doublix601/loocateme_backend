@@ -50,6 +50,12 @@ const UserSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: Date.now },
     },
     socialNetworks: [SocialSchema],
+    // Email verification and password reset
+    emailVerified: { type: Boolean, default: false, index: true },
+    emailVerifyTokenHash: { type: String, index: true },
+    emailVerifyExpiresAt: { type: Date },
+    pwdResetTokenHash: { type: String, index: true },
+    pwdResetExpiresAt: { type: Date },
   },
   { timestamps: true }
 );

@@ -3,6 +3,8 @@ import { User } from '../models/User.js';
 import { RefreshToken } from '../models/RefreshToken.js';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { sendMail } from './email.service.js';
 
 function signAccessToken(userId) {
   // Issue a non-expiring access token. It will remain valid until the user logs out or changes password.
@@ -59,6 +61,8 @@ export async function signup({ email, password, username, firstName = '', lastNa
     lastLastNameChangeAt: now,
   });
   await user.save();
+  // Create and send email verification token
+  await createAndSendEmailVerification(user);
   const accessToken = signAccessToken(user._id);
   const refreshToken = await createRefreshToken(user._id);
   return { user: sanitize(user), accessToken, refreshToken };
@@ -82,19 +86,101 @@ export async function logout(userId, token) {
 }
 
 export async function requestPasswordReset(email) {
-  // In real system, send email. Here, generate a temporary code hash field on user (simplified)
   const user = await User.findOne({ email });
-  if (!user) return { success: true }; // do not reveal
-  const code = String(Math.floor(100000 + Math.random() * 900000));
-  const salt = await bcrypt.genSalt(10);
-  const hash = await bcrypt.hash(code, salt);
-  user.resetCodeHash = hash; // not defined in schema, but mongoose will allow unless strict; default strict true, so we avoid saving extra path
-  // To keep strict schema, store on bio temporarily is bad; instead skip persistence and return code (only for demo)
-  return { success: true, demoCode: code };
+  if (user) {
+    const { token, hash, expiresAt } = generateOpaqueToken(process.env.PWD_RESET_TOKEN_TTL || '1h');
+    user.pwdResetTokenHash = hash;
+    user.pwdResetExpiresAt = expiresAt;
+    await user.save();
+    const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
+    const resetUrl = `${baseUrl}/api/auth/reset-password?token=${encodeURIComponent(token)}`;
+    try {
+      await sendMail({
+        to: user.email,
+        subject: 'Réinitialisation de votre mot de passe',
+        text: `Bonjour,
+Vous avez demandé à réinitialiser votre mot de passe.
+Cliquez sur ce lien pour définir un nouveau mot de passe (valide 1h): ${resetUrl}`,
+        html: `<p>Bonjour,</p><p>Vous avez demandé à réinitialiser votre mot de passe.</p><p><a href="${resetUrl}">Cliquez ici pour définir un nouveau mot de passe</a> (valide 1h).</p><p>Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.</p>`,
+      });
+    } catch (e) {
+      // Log but do not reveal; continue to avoid user enumeration
+      console.error('Failed to send reset email:', e?.message || e);
+    }
+  }
+  // Always return success to avoid leaking whether the email exists
+  return { success: true };
 }
 
 export function sanitize(userDoc) {
   const user = userDoc.toObject ? userDoc.toObject() : userDoc;
   delete user.password;
   return user;
+}
+
+// Helpers
+function generateOpaqueToken(ttl = '1h') {
+  const token = crypto.randomBytes(32).toString('hex');
+  const hash = sha256(token);
+  const now = Date.now();
+  const expiresAt = new Date(now + parseExpiry(ttl));
+  return { token, hash, expiresAt };
+}
+
+function sha256(value) {
+  return crypto.createHash('sha256').update(String(value)).digest('hex');
+}
+
+async function createAndSendEmailVerification(user) {
+  const { token, hash, expiresAt } = generateOpaqueToken(process.env.EMAIL_VERIF_TOKEN_TTL || '24h');
+  user.emailVerifyTokenHash = hash;
+  user.emailVerifyExpiresAt = expiresAt;
+  await user.save();
+  const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
+  const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
+  try {
+    await sendMail({
+      to: user.email,
+      subject: 'Vérifiez votre adresse email',
+      text: `Bienvenue sur LoocateMe !
+Merci de confirmer votre adresse en cliquant sur ce lien: ${verifyUrl}`,
+      html: `<p>Bienvenue sur <strong>LoocateMe</strong> !</p><p>Merci de confirmer votre adresse email en cliquant ici: <a href="${verifyUrl}">Vérifier mon email</a></p>`,
+    });
+  } catch (e) {
+    console.error('Failed to send verification email:', e?.message || e);
+  }
+}
+
+export async function verifyEmailByToken(token) {
+  const hash = sha256(token);
+  const now = new Date();
+  const user = await User.findOne({ emailVerifyTokenHash: hash, emailVerifyExpiresAt: { $gt: now } });
+  if (!user) {
+    const err = new Error('Token invalide ou expiré');
+    err.status = 400;
+    err.code = 'VERIFY_TOKEN_INVALID';
+    throw err;
+  }
+  user.emailVerified = true;
+  user.emailVerifyTokenHash = undefined;
+  user.emailVerifyExpiresAt = undefined;
+  await user.save();
+  return sanitize(user);
+}
+
+export async function resetPasswordByToken(token, newPassword) {
+  const hash = sha256(token);
+  const now = new Date();
+  const user = await User.findOne({ pwdResetTokenHash: hash, pwdResetExpiresAt: { $gt: now } }).select('+password');
+  if (!user) {
+    const err = new Error('Token invalide ou expiré');
+    err.status = 400;
+    err.code = 'RESET_TOKEN_INVALID';
+    throw err;
+  }
+  user.password = newPassword; // will be hashed by pre-save hook
+  user.pwdResetTokenHash = undefined;
+  user.pwdResetExpiresAt = undefined;
+  await user.save();
+  return sanitize(user);
 }
