@@ -42,12 +42,8 @@ export async function signup({ email, password, username, firstName = '', lastNa
     err.code = 'EMAIL_TAKEN';
     throw err;
   }
-  // Normalize and validate username defensively (validators already sanitize)
-  let normalizedUsername = String(username || '').trim();
-  if (normalizedUsername) {
-    const lower = normalizedUsername.toLowerCase();
-    normalizedUsername = lower.charAt(0).toUpperCase() + lower.slice(1);
-  }
+  // Normaliser le username (aligné sur les règles Instagram): tout en minuscules
+  let normalizedUsername = String(username || '').trim().toLowerCase();
   const now = new Date();
   const user = new User({
     email,

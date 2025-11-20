@@ -25,16 +25,11 @@ export const validators = {
       .exists()
       .bail()
       .isString()
-      .isLength({ min: 2, max: 80 })
+      .isLength({ min: 1, max: 30 })
       .bail()
-      .customSanitizer((value) => {
-        const v = String(value || '').trim();
-        if (!v) return v;
-        const lower = v.toLowerCase();
-        return lower.charAt(0).toUpperCase() + lower.slice(1);
-      })
-      .matches(/^[A-Z][a-z]+$/)
-      .withMessage("Le nom d'utilisateur doit respecter le format: première lettre majuscule, lettres minuscules ensuite (^[A-Z][a-z]+$)"),
+      // Instagram-like username rules: 1–30 chars, letters/numbers/._, no consecutive dots, cannot end with dot
+      .matches(/^(?!.*\.\.)(?!.*\.$)[A-Za-z0-9](?:[A-Za-z0-9._]{0,28}[A-Za-z0-9])?$/)
+      .withMessage("Nom d'utilisateur invalide (1–30 caractères, lettres/chiffres/._, sans '..' ni point final)."),
     body('firstName')
       .optional()
       .isString()
@@ -112,17 +107,10 @@ export const validators = {
     body('username')
       .optional()
       .isString()
-      .isLength({ min: 2, max: 80 })
+      .isLength({ min: 1, max: 30 })
       .bail()
-      .customSanitizer((value) => {
-        if (value === undefined) return value;
-        const v = String(value || '').trim();
-        if (!v) return v;
-        const lower = v.toLowerCase();
-        return lower.charAt(0).toUpperCase() + lower.slice(1);
-      })
-      .matches(/^[A-Z][a-z]+$/)
-      .withMessage("Le nom d'utilisateur doit respecter le format: ^[A-Z][a-z]+$"),
+      .matches(/^(?!.*\.\.)(?!.*\.$)[A-Za-z0-9](?:[A-Za-z0-9._]{0,28}[A-Za-z0-9])?$/)
+      .withMessage("Nom d'utilisateur invalide (1–30 caractères, lettres/chiffres/._, sans '..' ni point final)."),
     body('firstName')
       .optional()
       .isString()
