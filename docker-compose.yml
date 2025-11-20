@@ -20,7 +20,7 @@ services:
       - APP_PUBLIC_URL=http://localhost:19006
       - SMTP_HOST=pro3.mail.ovh.net
       - SMTP_PORT=587
-      - SMTP_SECURE=true
+      - SMTP_SECURE=false
       - SMTP_USER=no-reply@loocate.me
       # IMPORTANT: quote passwords with special characters (like '!') to avoid YAML parsing issues
       - SMTP_PASS="Anouk601!"
