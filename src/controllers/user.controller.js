@@ -1,4 +1,4 @@
-import { getNearbyUsers, updateLocation, getUsersByEmails, getPopularUsers } from '../services/user.service.js';
+import { getNearbyUsers, updateLocation, getUsersByEmails, getPopularUsers, searchUsers } from '../services/user.service.js';
 
 export const UserController = {
   me: async (req, res, next) => {
@@ -55,6 +55,15 @@ export const UserController = {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit, 10) : 10;
       const users = await getPopularUsers({ userId: req.user?.id, limit });
+      return res.json({ users });
+    } catch (err) {
+      next(err);
+    }
+  },
+  search: async (req, res, next) => {
+    try {
+      const { q, limit } = req.query;
+      const users = await searchUsers({ q, limit, excludeUserId: req.user?.id });
       return res.json({ users });
     } catch (err) {
       next(err);

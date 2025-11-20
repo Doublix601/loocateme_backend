@@ -80,3 +80,32 @@ export async function getPopularUsers({ userId = null, limit = 10 } = {}) {
     .select('-password');
   return users;
 }
+
+export async function searchUsers({ q = '', limit = 20, excludeUserId = null } = {}) {
+  const safeLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 20));
+  const query = { isVisible: true };
+  if (excludeUserId) Object.assign(query, { _id: { $ne: excludeUserId } });
+
+  const s = String(q || '').trim();
+  if (!s) {
+    return [];
+  }
+  // Case-insensitive partial match on multiple fields
+  const safe = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(safe, 'i');
+  Object.assign(query, {
+    $or: [
+      { firstName: re },
+      { lastName: re },
+      { customName: re },
+      { name: re },
+      { email: { $regex: re } },
+    ],
+  });
+
+  const users = await User.find(query)
+    .limit(safeLimit)
+    .select('-password')
+    .lean();
+  return users;
+}

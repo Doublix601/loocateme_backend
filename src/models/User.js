@@ -17,7 +17,12 @@ const UserSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, index: true },
     password: { type: String, required: true, select: false },
+    // Legacy single-name field kept for backward compatibility
     name: { type: String, default: '' },
+    // New display-related fields
+    firstName: { type: String, default: '', index: true },
+    lastName: { type: String, default: '', index: true },
+    customName: { type: String, default: '', index: true },
     bio: { type: String, default: '' },
     profileImageUrl: { type: String, default: '' },
     isVisible: { type: Boolean, default: true },
@@ -43,6 +48,8 @@ const UserSchema = new mongoose.Schema(
 );
 
 UserSchema.index({ location: '2dsphere' });
+// Useful compound index for text-like searches on names
+UserSchema.index({ firstName: 1, lastName: 1, customName: 1, name: 1 });
 
 UserSchema.methods.comparePassword = async function (candidate) {
   const hash = this.password;
