@@ -52,8 +52,8 @@ export const validators = {
       .exists()
       .bail()
       .isString()
-      .isLength({ min: 1, max: 100 }),
-    query('limit').optional().isInt({ min: 1, max: 50 }),
+      .isLength({ min: 2, max: 100 }),
+    query('limit').optional().isInt({ min: 1, max: 10 }),
   ],
   getUsersByEmail: [
     // Accept: ?email=a@x.com or ?email=a@x.com,b@y.com or repeated ?email=a@x.com&email=b@y.com

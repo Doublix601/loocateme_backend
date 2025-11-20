@@ -81,13 +81,15 @@ export async function getPopularUsers({ userId = null, limit = 10 } = {}) {
   return users;
 }
 
-export async function searchUsers({ q = '', limit = 20, excludeUserId = null } = {}) {
-  const safeLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 20));
+export async function searchUsers({ q = '', limit = 10, excludeUserId = null } = {}) {
+  // Enforce max 10 results regardless of client request
+  const safeLimit = Math.max(1, Math.min(10, parseInt(limit, 10) || 10));
   const query = { isVisible: true };
   if (excludeUserId) Object.assign(query, { _id: { $ne: excludeUserId } });
 
   const s = String(q || '').trim();
-  if (!s) {
+  // Require at least 2 characters to avoid overloading API
+  if (!s || s.length < 2) {
     return [];
   }
   // Case-insensitive partial match on multiple fields
