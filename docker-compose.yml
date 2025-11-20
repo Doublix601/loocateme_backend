@@ -18,7 +18,7 @@ services:
       - UPLOAD_DIR=uploads
       - BASE_URL=http://localhost:4000
       - APP_PUBLIC_URL=http://localhost:19006
-      - SMTP_HOST=ssl0.ovh.net
+      - SMTP_HOST=pro1.mail.ovh.net
       - SMTP_PORT=465
       - SMTP_SECURE=true
       - SMTP_USER=no-reply@loocate.me
