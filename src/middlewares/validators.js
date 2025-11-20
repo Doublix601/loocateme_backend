@@ -31,7 +31,7 @@ export const validators = {
       .matches(/^(?!.*\.\.)(?!.*\.$)[A-Za-z0-9](?:[A-Za-z0-9._]{0,28}[A-Za-z0-9])?$/)
       .withMessage("Nom d'utilisateur invalide (1–30 caractères, lettres/chiffres/._, sans '..' ni point final)."),
     body('firstName')
-      .optional()
+      .optional({ checkFalsy: true })
       .isString()
       .isLength({ min: 0, max: 80 })
       .bail()
@@ -44,7 +44,7 @@ export const validators = {
       .matches(/^\p{Lu}[\p{L}\p{M}' -]*$/u)
       .withMessage('Le prénom doit commencer par une majuscule et peut contenir des lettres (accents autorisés), espaces, apostrophes ou tirets.'),
     body('lastName')
-      .optional()
+      .optional({ checkFalsy: true })
       .isString()
       .isLength({ min: 0, max: 80 })
       .bail()
@@ -56,7 +56,7 @@ export const validators = {
       })
       .matches(/^\p{Lu}[\p{L}\p{M}' -]*$/u)
       .withMessage('Le nom doit commencer par une majuscule et peut contenir des lettres (accents autorisés), espaces, apostrophes ou tirets.'),
-    body('customName').optional().isString().isLength({ max: 80 }),
+    body('customName').optional({ checkFalsy: true }).isString().isLength({ max: 80 }),
   ],
   login: [body('email').isEmail(), body('password').isString()],
   forgot: [body('email').isEmail()],
@@ -112,7 +112,7 @@ export const validators = {
       .matches(/^(?!.*\.\.)(?!.*\.$)[A-Za-z0-9](?:[A-Za-z0-9._]{0,28}[A-Za-z0-9])?$/)
       .withMessage("Nom d'utilisateur invalide (1–30 caractères, lettres/chiffres/._, sans '..' ni point final)."),
     body('firstName')
-      .optional()
+      .optional({ checkFalsy: true })
       .isString()
       .isLength({ min: 0, max: 80 })
       .bail()
@@ -126,7 +126,7 @@ export const validators = {
       .matches(/^\p{Lu}[\p{L}\p{M}' -]*$/u)
       .withMessage('Le prénom doit commencer par une majuscule et peut contenir des lettres (accents autorisés), espaces, apostrophes ou tirets.'),
     body('lastName')
-      .optional()
+      .optional({ checkFalsy: true })
       .isString()
       .isLength({ min: 0, max: 80 })
       .bail()
@@ -139,7 +139,7 @@ export const validators = {
       })
       .matches(/^\p{Lu}[\p{L}\p{M}' -]*$/u)
       .withMessage('Le nom doit commencer par une majuscule et peut contenir des lettres (accents autorisés), espaces, apostrophes ou tirets.'),
-    body('customName').optional().isString().isLength({ max: 80 }),
+    body('customName').optional({ checkFalsy: true }).isString().isLength({ max: 80 }),
     body('bio').optional().isString().isLength({ max: 500 }),
   ],
   socialUpsert: [
