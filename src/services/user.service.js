@@ -97,6 +97,7 @@ export async function searchUsers({ q = '', limit = 10, excludeUserId = null } =
   const re = new RegExp(safe, 'i');
   Object.assign(query, {
     $or: [
+      { username: re },
       { firstName: re },
       { lastName: re },
       { customName: re },

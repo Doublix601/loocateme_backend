@@ -25,19 +25,59 @@ function localPathFromUrl(url) {
   }
 }
 
-export async function updateProfile(userId, { name, bio }) {
-  const update = {};
-  if (typeof name === 'string') {
-    let v = name.trim();
-    if (v) {
-      const lower = v.toLowerCase();
-      v = lower.charAt(0).toUpperCase() + lower.slice(1);
-    }
-    update.name = v;
-  }
-  if (typeof bio === 'string') update.bio = bio;
-  const user = await User.findByIdAndUpdate(userId, update, { new: true });
+export async function updateProfile(userId, { username, firstName, lastName, customName, bio }) {
+  const user = await User.findById(userId);
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+
+  const now = new Date();
+  const FIFTEEN_DAYS_MS = 15 * 24 * 60 * 60 * 1000;
+
+  // Username change with 15-day cooldown
+  if (typeof username === 'string') {
+    const v = String(username).trim();
+    if (v !== user.username) {
+      const last = user.lastUsernameChangeAt ? new Date(user.lastUsernameChangeAt).getTime() : 0;
+      if (last && (now.getTime() - last) < FIFTEEN_DAYS_MS && user.username) {
+        const err = new Error("Le nom d'utilisateur ne peut être modifié qu'une fois tous les 15 jours.");
+        err.status = 429;
+        err.code = 'USERNAME_CHANGE_RATE_LIMIT';
+        throw err;
+      }
+      user.username = v;
+      user.lastUsernameChangeAt = now;
+      // Keep legacy name in sync for backward compatibility
+      user.name = v;
+    }
+  }
+
+  // First/Last name change with 15-day cooldown (on either change)
+  const wantFirst = (typeof firstName === 'string');
+  const wantLast = (typeof lastName === 'string');
+  if (wantFirst || wantLast) {
+    const nextFirst = wantFirst ? String(firstName).trim() : user.firstName;
+    const nextLast = wantLast ? String(lastName).trim() : user.lastName;
+    if (nextFirst !== user.firstName || nextLast !== user.lastName) {
+      const last = user.lastNameFieldsChangeAt ? new Date(user.lastNameFieldsChangeAt).getTime() : 0;
+      if (last && (now.getTime() - last) < FIFTEEN_DAYS_MS && (user.firstName || user.lastName)) {
+        const err = new Error('Le prénom/nom ne peuvent être modifiés qu’une fois tous les 15 jours.');
+        err.status = 429;
+        err.code = 'NAME_FIELDS_CHANGE_RATE_LIMIT';
+        throw err;
+      }
+      user.firstName = nextFirst;
+      user.lastName = nextLast;
+      user.lastNameFieldsChangeAt = now;
+    }
+  }
+
+  if (typeof customName === 'string') {
+    user.customName = String(customName).trim();
+  }
+  if (typeof bio === 'string') {
+    user.bio = bio;
+  }
+
+  await user.save();
   return user;
 }
 

@@ -19,6 +19,8 @@ const UserSchema = new mongoose.Schema(
     password: { type: String, required: true, select: false },
     // Legacy single-name field kept for backward compatibility
     name: { type: String, default: '' },
+    // New username field replacing legacy name for unique handle/display
+    username: { type: String, default: '', index: true },
     // New display-related fields
     firstName: { type: String, default: '', index: true },
     lastName: { type: String, default: '', index: true },
@@ -27,6 +29,9 @@ const UserSchema = new mongoose.Schema(
     profileImageUrl: { type: String, default: '' },
     isVisible: { type: Boolean, default: true },
     profileViews: { type: Number, default: 0, index: true },
+    // Rate-limit name changes
+    lastUsernameChangeAt: { type: Date },
+    lastNameFieldsChangeAt: { type: Date },
     // GDPR consent and privacy preferences
     consent: {
       accepted: { type: Boolean, default: false },
@@ -48,8 +53,8 @@ const UserSchema = new mongoose.Schema(
 );
 
 UserSchema.index({ location: '2dsphere' });
-// Useful compound index for text-like searches on names
-UserSchema.index({ firstName: 1, lastName: 1, customName: 1, name: 1 });
+// Useful compound index for text-like searches on names/username
+UserSchema.index({ username: 1, firstName: 1, lastName: 1, customName: 1, name: 1 });
 
 UserSchema.methods.comparePassword = async function (candidate) {
   const hash = this.password;

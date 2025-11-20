@@ -21,7 +21,7 @@ export const validators = {
         icloud_remove_subaddress: false,
       }),
     body('password').isLength({ min: 6 }),
-    body('name')
+    body('username')
       .exists()
       .bail()
       .isString()
@@ -34,7 +34,34 @@ export const validators = {
         return lower.charAt(0).toUpperCase() + lower.slice(1);
       })
       .matches(/^[A-Z][a-z]+$/)
-      .withMessage('Le nom doit respecter le format: première lettre majuscule, lettres minuscules ensuite (^[A-Z][a-z]+$)'),
+      .withMessage("Le nom d'utilisateur doit respecter le format: première lettre majuscule, lettres minuscules ensuite (^[A-Z][a-z]+$)"),
+    body('firstName')
+      .optional()
+      .isString()
+      .isLength({ min: 0, max: 80 })
+      .bail()
+      .customSanitizer((value) => {
+        const v = String(value || '').trim();
+        if (!v) return '';
+        const lower = v.toLowerCase();
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .matches(/^[A-Z][a-z]*$/)
+      .withMessage('Le prénom doit respecter le format: ^[A-Z][a-z]*$'),
+    body('lastName')
+      .optional()
+      .isString()
+      .isLength({ min: 0, max: 80 })
+      .bail()
+      .customSanitizer((value) => {
+        const v = String(value || '').trim();
+        if (!v) return '';
+        const lower = v.toLowerCase();
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .matches(/^[A-Z][a-z]*$/)
+      .withMessage('Le nom doit respecter le format: ^[A-Z][a-z]*$'),
+    body('customName').optional().isString().isLength({ max: 80 }),
   ],
   login: [body('email').isEmail(), body('password').isString()],
   forgot: [body('email').isEmail()],
@@ -82,7 +109,7 @@ export const validators = {
       }),
   ],
   profileUpdate: [
-    body('name')
+    body('username')
       .optional()
       .isString()
       .isLength({ min: 2, max: 80 })
@@ -95,7 +122,36 @@ export const validators = {
         return lower.charAt(0).toUpperCase() + lower.slice(1);
       })
       .matches(/^[A-Z][a-z]+$/)
-      .withMessage('Le nom doit respecter le format: première lettre majuscule, lettres minuscules ensuite (^[A-Z][a-z]+$)'),
+      .withMessage("Le nom d'utilisateur doit respecter le format: ^[A-Z][a-z]+$"),
+    body('firstName')
+      .optional()
+      .isString()
+      .isLength({ min: 0, max: 80 })
+      .bail()
+      .customSanitizer((value) => {
+        if (value === undefined) return value;
+        const v = String(value || '').trim();
+        if (!v) return '';
+        const lower = v.toLowerCase();
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .matches(/^[A-Z][a-z]*$/)
+      .withMessage('Le prénom doit respecter le format: ^[A-Z][a-z]*$'),
+    body('lastName')
+      .optional()
+      .isString()
+      .isLength({ min: 0, max: 80 })
+      .bail()
+      .customSanitizer((value) => {
+        if (value === undefined) return value;
+        const v = String(value || '').trim();
+        if (!v) return '';
+        const lower = v.toLowerCase();
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .matches(/^[A-Z][a-z]*$/)
+      .withMessage('Le nom doit respecter le format: ^[A-Z][a-z]*$'),
+    body('customName').optional().isString().isLength({ max: 80 }),
     body('bio').optional().isString().isLength({ max: 500 }),
   ],
   socialUpsert: [

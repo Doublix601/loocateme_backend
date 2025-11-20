@@ -7,6 +7,19 @@ export const UserController = {
       const { User } = await import('../models/User.js');
       const user = await User.findById(req.user.id).select('-password');
       if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
+      // Ensure new fields exist with sane defaults for legacy users
+      let changed = false;
+      if (typeof user.username !== 'string' || user.username.trim() === '') {
+        const fallback = (user.name && user.name.trim()) || (user.email ? String(user.email).split('@')[0] : '');
+        user.username = fallback;
+        // keep legacy name in sync if empty
+        if (!user.name) user.name = fallback;
+        changed = true;
+      }
+      if (typeof user.firstName !== 'string') { user.firstName = ''; changed = true; }
+      if (typeof user.lastName !== 'string') { user.lastName = ''; changed = true; }
+      if (typeof user.customName !== 'string') { user.customName = ''; changed = true; }
+      if (changed) await user.save();
       return res.json({ user });
     } catch (err) {
       next(err);

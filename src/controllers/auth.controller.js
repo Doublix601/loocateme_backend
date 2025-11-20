@@ -16,8 +16,8 @@ function setRefreshCookie(res, token) {
 export const AuthController = {
   signup: async (req, res, next) => {
     try {
-      const { email, password, name } = req.body;
-      const data = await signup({ email, password, name });
+      const { email, password, username, firstName, lastName, customName } = req.body;
+      const data = await signup({ email, password, username, firstName, lastName, customName });
       setRefreshCookie(res, data.refreshToken);
       return res.status(201).json({ user: data.user, accessToken: data.accessToken });
     } catch (err) {

@@ -33,7 +33,7 @@ function parseExpiry(str) {
   return 30 * 24 * 60 * 60 * 1000;
 }
 
-export async function signup({ email, password, name }) {
+export async function signup({ email, password, username, firstName = '', lastName = '', customName = '' }) {
   // Refuse signup if an account already exists for this email (do NOT delete existing accounts)
   const existing = await User.findOne({ email }).select('_id');
   if (existing) {
@@ -42,13 +42,25 @@ export async function signup({ email, password, name }) {
     err.code = 'EMAIL_TAKEN';
     throw err;
   }
-  // Normalize and validate name defensively (validators already sanitize)
-  let normalizedName = String(name || '').trim();
-  if (normalizedName) {
-    const lower = normalizedName.toLowerCase();
-    normalizedName = lower.charAt(0).toUpperCase() + lower.slice(1);
+  // Normalize and validate username defensively (validators already sanitize)
+  let normalizedUsername = String(username || '').trim();
+  if (normalizedUsername) {
+    const lower = normalizedUsername.toLowerCase();
+    normalizedUsername = lower.charAt(0).toUpperCase() + lower.slice(1);
   }
-  const user = new User({ email, password, name: normalizedName });
+  const now = new Date();
+  const user = new User({
+    email,
+    password,
+    // Keep legacy name in sync on creation for backward compatibility
+    name: normalizedUsername,
+    username: normalizedUsername,
+    firstName: String(firstName || '').trim(),
+    lastName: String(lastName || '').trim(),
+    customName: String(customName || '').trim(),
+    lastUsernameChangeAt: now,
+    lastNameFieldsChangeAt: now,
+  });
   await user.save();
   const accessToken = signAccessToken(user._id);
   const refreshToken = await createRefreshToken(user._id);

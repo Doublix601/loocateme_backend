@@ -3,8 +3,8 @@ import { updateProfile, updateProfileImage, removeProfileImage } from '../servic
 export const ProfileController = {
   update: async (req, res, next) => {
     try {
-      const { name, bio } = req.body;
-      const user = await updateProfile(req.user.id, { name, bio });
+      const { username, firstName, lastName, customName, bio } = req.body;
+      const user = await updateProfile(req.user.id, { username, firstName, lastName, customName, bio });
       return res.json({ user });
     } catch (err) {
       next(err);
