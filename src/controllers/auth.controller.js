@@ -18,7 +18,8 @@ export const AuthController = {
     try {
       const { email, password, username, firstName, lastName, customName } = req.body;
       const data = await signup({ email, password, username, firstName, lastName, customName });
-      setRefreshCookie(res, data.refreshToken);
+      // Only set cookie if a refresh token was issued (i.e., for verified accounts)
+      if (data.refreshToken) setRefreshCookie(res, data.refreshToken);
       return res.status(201).json({ user: data.user, accessToken: data.accessToken });
     } catch (err) {
       next(err);

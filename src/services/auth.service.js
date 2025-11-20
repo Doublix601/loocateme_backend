@@ -63,9 +63,8 @@ export async function signup({ email, password, username, firstName = '', lastNa
   await user.save();
   // Create and send email verification token
   await createAndSendEmailVerification(user);
-  const accessToken = signAccessToken(user._id);
-  const refreshToken = await createRefreshToken(user._id);
-  return { user: sanitize(user), accessToken, refreshToken };
+  // Do NOT issue tokens until email is verified
+  return { user: sanitize(user), accessToken: null, refreshToken: null };
 }
 
 export async function login({ email, password }) {
@@ -73,6 +72,20 @@ export async function login({ email, password }) {
   if (!user) throw Object.assign(new Error('Authentification échouée'), { status: 401, code: 'INVALID_CREDENTIALS' });
   const ok = await user.comparePassword(password);
   if (!ok) throw Object.assign(new Error('Authentification échouée'), { status: 401, code: 'INVALID_CREDENTIALS' });
+  // Block login if email is not verified
+  if (!user.emailVerified) {
+    // Try to (re)send a verification email to help the user complete verification
+    try {
+      await createAndSendEmailVerification(user);
+    } catch (e) {
+      // log and continue to return the error below
+      console.warn('Could not send verification email on login:', e?.message || e);
+    }
+    const err = new Error("Votre email n'est pas encore vérifié. Vérifiez votre boîte de réception pour le lien de confirmation.");
+    err.status = 403;
+    err.code = 'EMAIL_NOT_VERIFIED';
+    throw err;
+  }
   const accessToken = signAccessToken(user._id);
   const refreshToken = await createRefreshToken(user._id);
   return { user: sanitize(user), accessToken, refreshToken };
