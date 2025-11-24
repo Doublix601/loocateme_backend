@@ -16,6 +16,9 @@ services:
       - JWT_REFRESH_EXPIRES=30d
       - REDIS_URL=redis://default:${REDIS_PASSWORD:-change-me-redis}@redis:6379
       - UPLOAD_DIR=uploads
+      # Public URL de l'API utilisée dans les liens envoyés par email
+      - API_PUBLIC_URL=http://localhost:4000
+      # Valeur héritée pour compatibilité; sera ignorée si API_PUBLIC_URL est défini
       - BASE_URL=http://localhost:4000
       - APP_PUBLIC_URL=http://localhost:19006
       - SMTP_HOST=pro3.mail.ovh.net

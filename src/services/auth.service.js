@@ -105,7 +105,11 @@ export async function requestPasswordReset(email) {
     user.pwdResetTokenHash = hash;
     user.pwdResetExpiresAt = expiresAt;
     await user.save();
-    const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
+    // Build the public API base URL used in emails. Priority:
+    // 1) API_PUBLIC_URL (explicit public URL of the API)
+    // 2) BASE_URL (backward compatibility)
+    // 3) http://localhost:4000 (default for dev)
+    const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'http://localhost:4000';
     const resetUrl = `${baseUrl}/api/auth/reset-password?token=${encodeURIComponent(token)}`;
     try {
       await sendMail({
@@ -149,7 +153,8 @@ async function createAndSendEmailVerification(user) {
   user.emailVerifyTokenHash = hash;
   user.emailVerifyExpiresAt = expiresAt;
   await user.save();
-  const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
+  // See priority comment above
+  const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'http://localhost:4000';
   const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
   try {
     await sendMail({
