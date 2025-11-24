@@ -143,7 +143,7 @@ export const validators = {
     body('bio').optional().isString().isLength({ max: 500 }),
   ],
   socialUpsert: [
-    body('type').isIn(['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin']),
+    body('type').isIn(['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin', 'youtube']),
     body('handle')
       .isString()
       .bail()
@@ -171,6 +171,19 @@ export const validators = {
             }
           } catch (_e) { /* ignore */ }
           if (v.startsWith('@')) v = v.slice(1);
+        } else if (type === 'youtube') {
+          // Accept @handle or full URLs like /@handle, /user/<name>, /c/<name>, /channel/<ID>
+          try {
+            if (/^https?:\/\//i.test(v)) {
+              const u = new URL(v);
+              const path = (u.pathname || '').replace(/^\/+|\/+$/g, '');
+              const [seg1, seg2] = path.split('/');
+              if (seg1?.startsWith('@')) v = seg1.slice(1);
+              else if (seg1 === 'user' || seg1 === 'c' || seg1 === 'channel') v = (seg2 || '').trim();
+              else if (seg1) v = seg1.trim();
+            }
+          } catch (_e) { /* ignore */ }
+          if (v.startsWith('@')) v = v.slice(1);
         }
         return v;
       })
@@ -193,7 +206,7 @@ export const validators = {
         return true;
       }),
   ],
-  socialRemove: [param('type').isIn(['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin'])],
+  socialRemove: [param('type').isIn(['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin', 'youtube'])],
   visibility: [body('isVisible').isBoolean()],
   gdprConsent: [
     body('accepted').isBoolean(),
