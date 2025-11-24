@@ -71,15 +71,30 @@ export const AuthController = {
   },
   verifyEmailGet: async (req, res) => {
     const token = String(req.query.token || '');
-    const appUrl = process.env.APP_PUBLIC_URL || process.env.CORS_ORIGIN || '/';
-    if (!token) return res.status(400).send('Lien invalide (token manquant).');
+    const appUrl = process.env.APP_PUBLIC_URL || process.env.CORS_ORIGIN || '';
+    if (!token) return res.status(400).send(renderHtmlPage({
+      title: 'Vérification email',
+      heading: 'Lien invalide',
+      content: '<p>Le lien de vérification est invalide (token manquant).</p>',
+      primaryCta: appUrl ? { href: appUrl, label: 'Ouvrir l’application' } : null,
+    }));
     try {
       await verifyEmailByToken(token);
-      // Redirect to app/site with success flag
-      const redirectUrl = `${appUrl}${appUrl.includes('?') ? '&' : (appUrl.includes('#') ? '' : '?')}emailVerified=1`;
-      return res.redirect(302, redirectUrl);
+      const extra = appUrl ? `<p>Vous pouvez maintenant retourner sur l’application.</p>` : '';
+      return res.send(renderHtmlPage({
+        title: 'Email vérifié',
+        heading: 'Votre adresse email a été vérifiée ✅',
+        content: `<p>Merci d’avoir confirmé votre adresse email.</p>${extra}`,
+        primaryCta: appUrl ? { href: appendQuery(appUrl, 'emailVerified=1'), label: 'Retourner à l’application' } : null,
+      }));
     } catch (e) {
-      return res.status(400).send('Lien invalide ou expiré.');
+      return res.status(400).send(renderHtmlPage({
+        title: 'Vérification email',
+        heading: 'Lien invalide ou expiré',
+        content: `<p>Le lien de vérification a expiré ou n’est pas valide.</p>`,
+        secondary: '<p>Vous pouvez demander un nouveau lien depuis l’application.</p>',
+        primaryCta: appUrl ? { href: appUrl, label: 'Ouvrir l’application' } : null,
+      }));
     }
   },
   verifyEmailPost: async (req, res, next) => {
@@ -94,37 +109,120 @@ export const AuthController = {
   },
   resetPasswordGet: async (req, res) => {
     const token = String(req.query.token || '');
-    if (!token) return res.status(400).send('Lien invalide (token manquant).');
-    // Simple HTML form
-    return res.send(`<!DOCTYPE html>
-<html lang="fr"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Définir un nouveau mot de passe</title>
-<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;background:#f6f7f9;margin:0;padding:0} .card{max-width:420px;margin:5vh auto;background:white;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.08);padding:24px} h1{font-size:20px;margin:0 0 16px;color:#111} label{display:block;margin:12px 0 6px;color:#333;font-weight:600} input{width:100%;padding:12px;border:1px solid #cfd8dc;border-radius:8px;font-size:16px;box-sizing:border-box} button{margin-top:16px;width:100%;padding:12px 16px;border:none;border-radius:999px;background:#00c2cb;color:white;font-weight:700;font-size:16px;cursor:pointer} .hint{font-size:12px;color:#666;margin-top:8px;text-align:center}</style>
-</head><body><div class="card">
-<h1>Définir un nouveau mot de passe</h1>
-<form method="POST" action="/api/auth/reset-password">
-  <input type="hidden" name="token" value="${token}"/>
-  <label>Nouveau mot de passe</label>
-  <input type="password" name="password" required minlength="6" autocomplete="new-password"/>
-  <label>Confirmer le mot de passe</label>
-  <input type="password" name="confirm" required minlength="6" autocomplete="new-password"/>
-  <button type="submit">Enregistrer</button>
-  <p class="hint">Votre mot de passe doit comporter au moins 6 caractères.</p>
-</form>
-</div></body></html>`);
+    if (!token) return res.status(400).send(renderHtmlPage({
+      title: 'Réinitialisation du mot de passe',
+      heading: 'Lien invalide',
+      content: '<p>Le lien est invalide (token manquant).</p>'
+    }));
+    // Page HTML avec support du dark mode
+    return res.send(renderHtmlPage({
+      title: 'Définir un nouveau mot de passe',
+      heading: 'Définir un nouveau mot de passe',
+      content: `
+        <form method="POST" action="/api/auth/reset-password">
+          <input type="hidden" name="token" value="${token}"/>
+          <label>Nouveau mot de passe</label>
+          <input type="password" name="password" required minlength="6" autocomplete="new-password"/>
+          <label>Confirmer le mot de passe</label>
+          <input type="password" name="confirm" required minlength="6" autocomplete="new-password"/>
+          <button type="submit">Enregistrer</button>
+          <p class="hint">Votre mot de passe doit comporter au moins 6 caractères.</p>
+        </form>
+      `,
+    }));
   },
   resetPasswordPost: async (req, res) => {
     const token = String(req.body.token || req.query.token || '');
     const password = String(req.body.password || '');
     const confirm = String(req.body.confirm || '');
-    if (!token) return res.status(400).send('Token manquant.');
-    if (!password || password.length < 6) return res.status(400).send('Le mot de passe doit contenir au moins 6 caractères.');
-    if (password !== confirm) return res.status(400).send('Les mots de passe ne correspondent pas.');
+    if (!token) return res.status(400).send(renderHtmlPage({
+      title: 'Réinitialisation du mot de passe',
+      heading: 'Token manquant',
+      content: '<p>Veuillez réessayer à partir de l’email de réinitialisation.</p>'
+    }));
+    if (!password || password.length < 6) return res.status(400).send(renderHtmlPage({
+      title: 'Réinitialisation du mot de passe',
+      heading: 'Mot de passe trop court',
+      content: '<p>Le mot de passe doit contenir au moins 6 caractères.</p>'
+    }));
+    if (password !== confirm) return res.status(400).send(renderHtmlPage({
+      title: 'Réinitialisation du mot de passe',
+      heading: 'Les mots de passe ne correspondent pas',
+      content: '<p>Veuillez vérifier et réessayer.</p>'
+    }));
     try {
       await resetPasswordByToken(token, password);
-      return res.send('<p>Votre mot de passe a été mis à jour. Vous pouvez fermer cette page et vous reconnecter.</p>');
+      return res.send(renderHtmlPage({
+        title: 'Mot de passe mis à jour',
+        heading: 'Votre mot de passe a été mis à jour ✅',
+        content: '<p>Vous pouvez maintenant ouvrir l’application et vous reconnecter.</p>',
+      }));
     } catch (e) {
-      return res.status(400).send('Lien invalide ou expiré.');
+      return res.status(400).send(renderHtmlPage({
+        title: 'Réinitialisation du mot de passe',
+        heading: 'Lien invalide ou expiré',
+        content: '<p>Le lien de réinitialisation n’est plus valide. Veuillez refaire une demande depuis l’application.</p>'
+      }));
     }
   },
 };
+
+// --- Helpers for simple HTML pages with light/dark mode ---
+function renderHtmlPage({ title, heading, content, secondary = '', primaryCta = null }) {
+  const cta = primaryCta ? `<a class="btn" href="${escapeHtml(primaryCta.href)}">${escapeHtml(primaryCta.label)}</a>` : '';
+  return `<!DOCTYPE html>
+  <html lang="fr">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>${escapeHtml(title || 'LoocateMe')}</title>
+    <style>
+      :root {
+        --bg: #f6f7f9; --fg: #111; --muted: #666; --card: #fff; --border: #cfd8dc; --primary: #00c2cb; --btn-fg: #fff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #0f1115; --fg: #e6e6e6; --muted: #a3a3a3; --card: #161a22; --border: #2a2f3a; --primary: #00c2cb; --btn-fg: #0b0d10; }
+      }
+      *{box-sizing:border-box}
+      body{font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif; background:var(--bg); color:var(--fg); margin:0;}
+      .wrap{padding:24px}
+      .card{max-width: 520px; margin: 8vh auto; background: var(--card); border:1px solid var(--border); border-radius: 14px; padding: 24px 22px; box-shadow: 0 10px 30px rgba(0,0,0,.06)}
+      h1{font-size: 22px; margin: 0 0 12px}
+      p{line-height:1.5; margin: 8px 0}
+      form label{display:block;margin:12px 0 6px; font-weight:600}
+      input{width:100%; padding:12px; border:1px solid var(--border); border-radius: 10px; background: transparent; color: var(--fg); font-size:16px}
+      input:focus{outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent)}
+      .btn, button{display:inline-block; margin-top: 14px; width: 100%; text-align:center; padding:12px 16px; border:none; border-radius: 999px; background: var(--primary); color: var(--btn-fg); font-weight:700; font-size:16px; text-decoration:none}
+      .hint{font-size:12px;color:var(--muted);margin-top:8px;text-align:center}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>${escapeHtml(heading || '')}</h1>
+        <div class="content">${content || ''}</div>
+        ${secondary || ''}
+        ${cta}
+      </div>
+    </div>
+  </body>
+  </html>`;
+}
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function appendQuery(url, query) {
+  if (!url) return '';
+  if (url.includes('#')) {
+    const [base, hash] = url.split('#');
+    return `${base}${base.includes('?') ? '&' : '?'}${query}#${hash}`;
+  }
+  return `${url}${url.includes('?') ? '&' : '?'}${query}`;
+}
