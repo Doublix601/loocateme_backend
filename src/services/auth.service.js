@@ -101,7 +101,7 @@ export async function logout(userId, token) {
 export async function requestPasswordReset(email) {
   const user = await User.findOne({ email });
   if (user) {
-    const { token, hash, expiresAt } = generateOpaqueToken(process.env.PWD_RESET_TOKEN_TTL || '1h');
+    const { token, hash, expiresAt } = generateOpaqueToken(process.env.PWD_RESET_TOKEN_TTL || '15m');
     user.pwdResetTokenHash = hash;
     user.pwdResetExpiresAt = expiresAt;
     await user.save();
@@ -117,8 +117,8 @@ export async function requestPasswordReset(email) {
         subject: 'Réinitialisation de votre mot de passe',
         text: `Bonjour,
 Vous avez demandé à réinitialiser votre mot de passe.
-Cliquez sur ce lien pour définir un nouveau mot de passe (valide 1h): ${resetUrl}`,
-        html: `<p>Bonjour,</p><p>Vous avez demandé à réinitialiser votre mot de passe.</p><p><a href="${resetUrl}">Cliquez ici pour définir un nouveau mot de passe</a> (valide 1h).</p><p>Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.</p>`,
+Cliquez sur ce lien pour définir un nouveau mot de passe (valide 15 minutes): ${resetUrl}`,
+        html: `<p>Bonjour,</p><p>Vous avez demandé à réinitialiser votre mot de passe.</p><p><a href="${resetUrl}">Cliquez ici pour définir un nouveau mot de passe</a> (valide 15 minutes).</p><p>Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.</p>`,
       });
     } catch (e) {
       // Log but do not reveal; continue to avoid user enumeration

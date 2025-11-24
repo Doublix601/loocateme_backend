@@ -33,7 +33,7 @@ services:
       - SMTP_DEBUG=false
       - EMAIL_TEST_SECRET=change-me-test
       - EMAIL_VERIF_TOKEN_TTL=24h
-      - PWD_RESET_TOKEN_TTL=1h
+      - PWD_RESET_TOKEN_TTL=15m
       - MONGO_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-change-me-root}
       - MONGO_APP_PASSWORD=${MONGO_APP_PASSWORD:-change-me-app}
     volumes:

@@ -173,7 +173,7 @@ Configuration SMTP (emails transactionnels)
   - BASE_URL (ex: http://localhost:4000) -> rétrocompatibilité; utilisé uniquement si API_PUBLIC_URL n'est pas défini
   - APP_PUBLIC_URL (ex: http://localhost:19006) -> redirection après vérification email
   - EMAIL_VERIF_TOKEN_TTL=24h (durée de validité du lien de vérification)
-  - PWD_RESET_TOKEN_TTL=1h (durée de validité du lien de réinitialisation)
+  - PWD_RESET_TOKEN_TTL=15m (durée de validité du lien de réinitialisation)
 
 Flux vérification email
 1) Lors du signup, un token opaque est généré, hashé (SHA-256) et stocké avec une expiration.
@@ -182,7 +182,7 @@ Flux vérification email
 4) Alternative API: POST /api/auth/verify-email { token } renvoie JSON.
 
 Flux réinitialisation de mot de passe
-1) POST /api/auth/forgot-password { email }: si un compte existe, un token de reset hashé/expirant est stocké et un email est envoyé avec le lien {API_PUBLIC_URL}/api/auth/reset-password?token=... (ou {BASE_URL} si API_PUBLIC_URL n'est pas défini)
+1) POST /api/auth/forgot-password { email }: si un compte existe, un token de reset hashé/expirant (valable 15 minutes par défaut) est stocké et un email est envoyé avec le lien {API_PUBLIC_URL}/api/auth/reset-password?token=... (ou {BASE_URL} si API_PUBLIC_URL n'est pas défini)
 2) GET /api/auth/reset-password affiche un formulaire HTML minimal (password + confirm).
 3) POST /api/auth/reset-password applique le nouveau mot de passe, invalide le token et confirme l’opération.
 
