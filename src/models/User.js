@@ -5,7 +5,7 @@ const SocialSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin'],
+      enum: ['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin', 'youtube'],
       required: true,
     },
     handle: { type: String, required: true },
