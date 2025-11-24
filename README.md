@@ -218,3 +218,27 @@ Sécurité (IMPORTANT)
   1) Si vous utilisiez des données existantes sur un volume non authentifié, sauvegardez d’abord (si encore disponible).
   2) Définissez les variables ci-dessus, puis relancez: docker compose down && docker compose up -d --build.
   3) Vérifiez que Mongo/Redis ne sont pas exposés (aucun mapping de port 27017/6379). Utilisez un pare-feu/Security Group pour n’autoriser que le port 4000 (API).
+
+
+Reverse proxy Nginx (api.loocate.me -> API)
+-------------------------------------------------
+Un service Nginx est fourni dans docker-compose pour placer un proxy devant l'API.
+
+Objectif: accéder à l’API via http://api.loocate.me au lieu de http://54.38.34.4:4000.
+
+Pré‑requis:
+- Créez un enregistrement DNS A pour api.loocate.me pointant vers votre IP (ex: 54.38.34.4).  ✓
+- Ouvrez le port 80 sur le firewall/SG de votre serveur.  ✓
+
+Comment démarrer:
+1) Vérifiez docker-compose: un service `nginx` expose le port 80 et monte la conf `./nginx/conf.d/api.loocate.me.conf`.
+2) Démarrez/relancez: `docker compose up -d --build`.
+3) Testez: `curl -i http://api.loocate.me/api/health` (ou tout endpoint existant). Vous devez obtenir la réponse de l’API.
+
+Important:
+- L’API reste exposée en direct sur 54.38.34.4:4000 (mapping 4000:4000) pour compatibilité. En production, vous pouvez supprimer ce mapping et garder seulement Nginx (modifiez la section `ports` du service api), puis fermer le port 4000 au firewall.
+- Les emails utiliseront désormais API_PUBLIC_URL=http://api.loocate.me (défini dans docker-compose) pour générer les liens.
+
+HTTPS (optionnel mais recommandé):
+- Pour activer TLS rapidement, utilisez certbot sur l’hôte, ou un service Nginx + Certbot en container, ou remplacez Nginx par Caddy/Traefik.
+- Une config HTTPS type (non incluse ici) écouterait 443 et ferait `return 301 https://$host$request_uri` depuis 80.
