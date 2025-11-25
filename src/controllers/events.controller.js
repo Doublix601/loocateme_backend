@@ -16,6 +16,13 @@ export const EventsController = {
       // Record event
       const ev = await Event.create({ type: 'profile_view', actor: actorId, targetUser: targetUserId });
 
+      // Retention: keep only last 30 days of profile_view events
+      try {
+        const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        // Global cleanup for all profile_view events older than 30 days
+        Event.deleteMany({ type: 'profile_view', createdAt: { $lt: cutoff } }).catch(() => {});
+      } catch (_) { /* ignore cleanup errors */ }
+
       // Increment simple counter for quick reads (optional)
       try { await User.updateOne({ _id: targetUserId }, { $inc: { profileViews: 1 } }); } catch {}
 

@@ -58,12 +58,14 @@ export const StatsController = {
       const userId = req.user?.id;
       const me = await User.findById(userId).lean();
       const now = new Date();
-      const trialActive = me?.premiumTrialEnd && me.premiumTrialEnd > now;
-      if (!me?.isPremium && !trialActive) {
+      // Premium-only: only isPremium flag is considered
+      if (!me?.isPremium) {
         return res.status(403).json({ code: 'PREMIUM_REQUIRED', message: 'Fonctionnalité réservée aux comptes Premium' });
       }
       const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 200);
-      const events = await Event.find({ type: 'profile_view', targetUser: userId })
+      // Only last 30 days
+      const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const events = await Event.find({ type: 'profile_view', targetUser: userId, createdAt: { $gte: cutoff } })
         .sort({ createdAt: -1 })
         .limit(limit)
         .populate('actor', 'username firstName lastName customName profileImageUrl')
