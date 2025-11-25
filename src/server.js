@@ -15,6 +15,10 @@ import socialRoutes from './routes/social.routes.js';
 import settingsRoutes from './routes/settings.routes.js';
 import gdprRoutes from './routes/gdpr.routes.js';
 import adminRoutes from './routes/admin.routes.js';
+import eventsRoutes from './routes/events.routes.js';
+import statsRoutes from './routes/stats.routes.js';
+import pushRoutes from './routes/push.routes.js';
+import premiumRoutes from './routes/premium.routes.js';
 import { errorHandler, notFound } from './middlewares/error.js';
 import { verifyMailTransport } from './services/email.service.js';
 
@@ -50,6 +54,10 @@ app.use('/api/social', socialRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/gdpr', gdprRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/events', eventsRoutes);
+app.use('/api/stats', statsRoutes);
+app.use('/api/push', pushRoutes);
+app.use('/api/premium', premiumRoutes);
 
 // 404 and error
 app.use(notFound);
