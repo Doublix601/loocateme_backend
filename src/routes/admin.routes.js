@@ -58,3 +58,34 @@ router.get('/smtp-status', async (req, res) => {
   const status = await verifyMailTransport();
   return res.json(status);
 });
+
+// PUT /api/admin/users/:id/role
+// Body: { role: 'Premium'|'Free' } OR { isPremium: boolean }
+router.put('/users/:id/role', requireAuth, async (req, res, next) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ code: 'ID_REQUIRED', message: 'ID utilisateur requis' });
+    const role = typeof req.body?.role === 'string' ? req.body.role : null;
+    let isPremium;
+    if (role) {
+      if (role !== 'Premium' && role !== 'Free') {
+        return res.status(400).json({ code: 'ROLE_INVALID', message: 'Role invalide' });
+      }
+      isPremium = role === 'Premium';
+    } else if (typeof req.body?.isPremium === 'boolean') {
+      isPremium = !!req.body.isPremium;
+    } else {
+      return res.status(400).json({ code: 'BODY_INVALID', message: 'Spécifiez role ou isPremium' });
+    }
+
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'Utilisateur introuvable' });
+    user.isPremium = isPremium;
+    await user.save();
+    const safe = user.toObject();
+    delete safe.password;
+    return res.json({ success: true, user: safe });
+  } catch (err) {
+    next(err);
+  }
+});
