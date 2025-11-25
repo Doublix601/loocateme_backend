@@ -68,7 +68,7 @@ export const StatsController = {
       const events = await Event.find({ type: 'profile_view', targetUser: userId, createdAt: { $gte: cutoff } })
         .sort({ createdAt: -1 })
         .limit(limit)
-        .populate('actor', 'username firstName lastName customName profileImageUrl')
+        .populate('actor', 'username firstName lastName customName profileImageUrl bio socialNetworks location')
         .lean();
       const items = events.map((e) => ({
         id: e._id,
@@ -78,6 +78,9 @@ export const StatsController = {
           username: e.actor.username,
           name: e.actor.customName || e.actor.firstName || e.actor.username || 'Inconnu',
           profileImageUrl: e.actor.profileImageUrl || '',
+          bio: e.actor.bio || '',
+          socialNetworks: Array.isArray(e.actor.socialNetworks) ? e.actor.socialNetworks : [],
+          location: e.actor.location || null,
         } : null,
       }));
       return res.json({ items });
