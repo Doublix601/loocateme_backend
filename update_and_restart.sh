@@ -101,29 +101,13 @@ log "Resetting working tree to origin/$BRANCH..."
 git reset --hard "origin/$BRANCH"
 
 # --- Dependencies (install/update) ---
-# Prefer yarn if available; otherwise fall back to npm. This keeps node_modules up-to-date
-# before building images, which can improve build caching and ensure latest lockfile changes.
-if command -v yarn >/dev/null 2>&1 && [[ -f yarn.lock ]]; then
-  log "Installing/updating Node dependencies with yarn..."
-  # Install as per lockfile; if installation fails, try a standard install
-  if ! yarn install --silent; then
-    yarn install
-  fi
-  # Optional: upgrade to latest versions per semver ranges when YARN_UPGRADE=1
-  if [[ "${YARN_UPGRADE:-0}" -eq 1 ]]; then
-    log "Upgrading dependencies with yarn upgrade..."
-    yarn upgrade || true
-  fi
-elif command -v npm >/dev/null 2>&1; then
-  if [[ -f package-lock.json ]]; then
-    log "Installing Node dependencies with npm ci..."
-    npm ci || npm install
-  else
-    log "Installing Node dependencies with npm install..."
-    npm install
-  fi
+# IMPORTANT: We always run `npm install` here to refresh the lockfile before building Docker images.
+# This avoids the container failing with "npm ci EUSAGE ... package.json and package-lock.json are not in sync".
+if command -v npm >/dev/null 2>&1; then
+  log "Syncing dependencies and lockfile with npm install..."
+  npm install
 else
-  err "Neither yarn nor npm found; skipping dependency installation."
+  err "npm not found; skipping dependency installation."
 fi
 
 # --- Ensure data directories exist and fix permissions ---
