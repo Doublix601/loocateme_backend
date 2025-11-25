@@ -16,9 +16,11 @@ function getDateRange(range) {
     from = d;
   } else if (range === 'month') {
     from = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (range === '30d') {
+    from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   } else {
-    from = new Date(now);
-    from.setHours(0, 0, 0, 0);
+    // Par défaut: 30 derniers jours
+    from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   }
   return { from, to: now };
 }
@@ -27,13 +29,14 @@ export const StatsController = {
   overview: async (req, res, next) => {
     try {
       const userId = req.user?.id;
-      const range = String(req.query.range || 'day');
+      // Par défaut on retourne les 30 derniers jours
+      const range = String(req.query.range || '30d');
       const { from, to } = getDateRange(range);
 
       const [viewsCount, clicksAgg] = await Promise.all([
         Event.countDocuments({ type: 'profile_view', targetUser: userId, createdAt: { $gte: from, $lte: to } }),
         Event.aggregate([
-          { $match: { type: 'social_click', targetUser: userId, createdAt: { $gte: from, $lte: to } } },
+          { $match: { type: 'social_click', targetUser: userId, createdAt: { $gte: from, $lte: to }, socialNetwork: { $exists: true, $ne: null } } },
           { $group: { _id: '$socialNetwork', count: { $sum: 1 } } },
         ]),
       ]);
