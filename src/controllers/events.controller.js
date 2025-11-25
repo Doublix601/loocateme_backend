@@ -23,17 +23,21 @@ export const EventsController = {
       try {
         const tokens = await FcmToken.find({ user: targetUserId }).distinct('token');
         if (tokens.length > 0) {
-          let title = 'Nouvelle visite';
-          let body = 'Votre profil a reçu une nouvelle visite';
+          // Compose message per plan:
+          // - Free: "Quelqu'un regarde ton profil...👀"
+          // - Premium: "{Prénom ou Nom personnalisé} regarde ton profil 👀"
+          let title = 'Visite de profil';
+          let body = "Quelqu'un regarde ton profil...👀";
           if (target.isPremium) {
-            // If premium, include actor details when available
             if (actorId) {
               const actor = await User.findById(actorId).lean();
-              const name = actor?.username || actor?.customName || actor?.firstName || 'Quelqu\'un';
-              const ts = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-              body = `${name} a visité votre profil à ${ts}`;
+              const name = (actor?.customName && String(actor.customName).trim())
+                || (actor?.firstName && String(actor.firstName).trim())
+                || (actor?.username && String(actor.username).trim())
+                || "Quelqu'un";
+              body = `${name} regarde ton profil 👀`;
             } else {
-              body = `Une visite a été enregistrée`;
+              body = "Quelqu'un regarde ton profil 👀";
             }
           }
           await sendPushToTokens(tokens, { title, body }, { kind: 'profile_view', targetUserId: String(targetUserId) });
