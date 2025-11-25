@@ -1,6 +1,29 @@
 import { User } from '../models/User.js';
 import { redisClient } from '../config/redis.js';
 
+// Build a diacritic-insensitive regex by expanding common French accented letters
+function buildDiacriticRegex(input) {
+  const map = {
+    a: '[aàáâäåæAÀÁÂÄÅÆ]',
+    c: '[cçCÇ]',
+    e: '[eèéêëEÈÉÊË]',
+    i: '[iìíîïIÌÍÎÏ]',
+    o: '[oòóôöøœOÒÓÔÖØŒ]',
+    u: '[uùúûüUÙÚÛÜ]',
+    y: '[yÿYŸ]',
+    n: '[nñNÑ]',
+  };
+  const escaped = String(input || '')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let pattern = '';
+  for (const ch of escaped) {
+    const lower = ch.toLowerCase();
+    if (map[lower]) pattern += map[lower];
+    else pattern += ch;
+  }
+  return new RegExp(pattern, 'i');
+}
+
 const GEO_CACHE_TTL = 5; // seconds
 
 export async function getUserByEmail(email) {
@@ -92,9 +115,8 @@ export async function searchUsers({ q = '', limit = 10, excludeUserId = null } =
   if (!s || s.length < 2) {
     return [];
   }
-  // Case-insensitive partial match on multiple fields
-  const safe = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(safe, 'i');
+  // Case-insensitive and accent-insensitive partial match on multiple fields
+  const re = buildDiacriticRegex(s);
   Object.assign(query, {
     $or: [
       { username: re },
