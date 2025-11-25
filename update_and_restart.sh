@@ -104,10 +104,22 @@ git reset --hard "origin/$BRANCH"
 # IMPORTANT: We always run `npm install` here to refresh the lockfile before building Docker images.
 # This avoids the container failing with "npm ci EUSAGE ... package.json and package-lock.json are not in sync".
 if command -v npm >/dev/null 2>&1; then
-  log "Syncing dependencies and lockfile with npm install..."
+  log "Syncing dependencies and lockfile with local npm install..."
   npm install
 else
-  err "npm not found; skipping dependency installation."
+  # Fallback: use a temporary Node Docker container to run npm install in this folder
+  if command -v docker >/dev/null 2>&1; then
+    log "npm not found; using Dockerized Node to install dependencies (node:18)..."
+    # Ensure current directory is writable by our user inside the container
+    UID_GID="$(id -u):$(id -g)"
+    if ! docker run --rm -u "$UID_GID" -v "$PWD":/app -w /app node:18 npm install; then
+      err "Dockerized npm install failed. Check Docker status and permissions."
+    else
+      log "Dependencies installed with Dockerized npm."
+    fi
+  else
+    err "npm not found and Docker is not available; skipping dependency installation."
+  fi
 fi
 
 # --- Ensure data directories exist and fix permissions ---
