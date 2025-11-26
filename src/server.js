@@ -19,6 +19,7 @@ import eventsRoutes from './routes/events.routes.js';
 import statsRoutes from './routes/stats.routes.js';
 import pushRoutes from './routes/push.routes.js';
 import premiumRoutes from './routes/premium.routes.js';
+import proxyRoutes from './routes/proxy.routes.js';
 import { errorHandler, notFound } from './middlewares/error.js';
 import { verifyMailTransport } from './services/email.service.js';
 
@@ -58,6 +59,7 @@ app.use('/api/events', eventsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/premium', premiumRoutes);
+app.use('/api/proxy', proxyRoutes);
 
 // 404 and error
 app.use(notFound);
