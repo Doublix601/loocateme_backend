@@ -65,12 +65,35 @@ export const EventsController = {
       if (!targetUserId || !socialNetwork) return res.status(400).json({ code: 'PARAMS_REQUIRED', message: 'targetUserId et socialNetwork requis' });
       // Normaliser le nom du réseau social côté backend pour cohérence des stats
       let net = String(socialNetwork || '').trim().toLowerCase();
-      // Mapper d'anciens alias → nouvelle clé canonique
-      if (net === 'twitter') net = 'x';
-      if (net === 'yt' || net === 'youtube.com') net = 'youtube';
-      if (net === 'fb' || net === 'facebook.com') net = 'facebook';
-      if (net === 'ig' || net === 'instagram.com') net = 'instagram';
-      if (net === 'tt') net = 'tiktok';
+      // Si un URL complet a été transmis par erreur, extraire le host pour déduire la plateforme
+      try {
+        if (/^https?:\/\//.test(net)) {
+          const u = new URL(net);
+          const host = (u.hostname || '').toLowerCase();
+          if (host.includes('instagram')) net = 'instagram';
+          else if (host.includes('tiktok')) net = 'tiktok';
+          else if (host.includes('snap')) net = 'snapchat';
+          else if (host.includes('facebook')) net = 'facebook';
+          else if (host.includes('linkedin')) net = 'linkedin';
+          else if (host.includes('youtu')) net = 'youtube';
+          else if (host.includes('x.com') || host.includes('twitter')) net = 'x';
+        }
+      } catch (_) {}
+      // Mapper d'alias → clé canonique
+      if (net === 'twitter' || net === 'twitter.com' || net === 'x' || net === 'x.com') net = 'x';
+      if (net === 'yt' || net === 'youtu.be' || net === 'youtube.com' || net === 'youtube') net = 'youtube';
+      if (net === 'fb' || net === 'facebook.com' || net === 'facebook') net = 'facebook';
+      if (net === 'ig' || net === 'insta' || net === 'instagram.com' || net === 'instagram') net = 'instagram';
+      if (net === 'tt' || net === 'tiktok.com' || net === 'tiktok') net = 'tiktok';
+      if (net === 'snap' || net === 'snapchat.com' || net === 'snapchat') net = 'snapchat';
+      if (net === 'linkedin.com' || net === 'linkedIn' || net === 'linkedin') net = 'linkedin';
+
+      // Au final, ne conserver que les clés supportées
+      const allowed = new Set(['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin', 'youtube']);
+      if (!allowed.has(net)) {
+        // éviter une erreur de validation mongoose
+        return res.status(400).json({ code: 'PLATFORM_UNSUPPORTED', message: 'Réseau social non supporté' });
+      }
       const ev = await Event.create({ type: 'social_click', actor: actorId, targetUser: targetUserId, socialNetwork: net });
       return res.status(201).json({ success: true, eventId: ev._id });
     } catch (err) {

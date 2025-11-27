@@ -44,14 +44,35 @@ export const StatsController = {
                 $toLower: {
                   $switch: {
                     branches: [
+                      // X / Twitter
                       { case: { $eq: ['$socialNetwork', 'twitter'] }, then: 'x' },
+                      { case: { $eq: ['$socialNetwork', 'twitter.com'] }, then: 'x' },
+                      { case: { $eq: ['$socialNetwork', 'x.com'] }, then: 'x' },
+                      // YouTube aliases
                       { case: { $eq: ['$socialNetwork', 'yt'] }, then: 'youtube' },
+                      { case: { $eq: ['$socialNetwork', 'youtu.be'] }, then: 'youtube' },
                       { case: { $eq: ['$socialNetwork', 'youtube.com'] }, then: 'youtube' },
+                      { case: { $eq: ['$socialNetwork', 'youtube'] }, then: 'youtube' },
+                      // Facebook aliases
                       { case: { $eq: ['$socialNetwork', 'fb'] }, then: 'facebook' },
                       { case: { $eq: ['$socialNetwork', 'facebook.com'] }, then: 'facebook' },
+                      { case: { $eq: ['$socialNetwork', 'facebook'] }, then: 'facebook' },
+                      // Instagram aliases
                       { case: { $eq: ['$socialNetwork', 'ig'] }, then: 'instagram' },
+                      { case: { $eq: ['$socialNetwork', 'insta'] }, then: 'instagram' },
                       { case: { $eq: ['$socialNetwork', 'instagram.com'] }, then: 'instagram' },
+                      { case: { $eq: ['$socialNetwork', 'instagram'] }, then: 'instagram' },
+                      // TikTok aliases
                       { case: { $eq: ['$socialNetwork', 'tt'] }, then: 'tiktok' },
+                      { case: { $eq: ['$socialNetwork', 'tiktok.com'] }, then: 'tiktok' },
+                      { case: { $eq: ['$socialNetwork', 'tiktok'] }, then: 'tiktok' },
+                      // Snapchat aliases
+                      { case: { $eq: ['$socialNetwork', 'snap'] }, then: 'snapchat' },
+                      { case: { $eq: ['$socialNetwork', 'snapchat.com'] }, then: 'snapchat' },
+                      { case: { $eq: ['$socialNetwork', 'snapchat'] }, then: 'snapchat' },
+                      // LinkedIn aliases
+                      { case: { $eq: ['$socialNetwork', 'linkedin.com'] }, then: 'linkedin' },
+                      { case: { $eq: ['$socialNetwork', 'linkedin'] }, then: 'linkedin' },
                     ],
                     default: '$socialNetwork',
                   },
