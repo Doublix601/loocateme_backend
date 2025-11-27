@@ -37,12 +37,40 @@ export const StatsController = {
         Event.countDocuments({ type: 'profile_view', targetUser: userId, createdAt: { $gte: from, $lte: to } }),
         Event.aggregate([
           { $match: { type: 'social_click', targetUser: userId, createdAt: { $gte: from, $lte: to }, socialNetwork: { $exists: true, $ne: null } } },
-          { $group: { _id: '$socialNetwork', count: { $sum: 1 } } },
+          {
+            // Normaliser côté agrégation également (twitter -> x, alias courts, domaines)
+            $addFields: {
+              socialKey: {
+                $toLower: {
+                  $switch: {
+                    branches: [
+                      { case: { $eq: ['$socialNetwork', 'twitter'] }, then: 'x' },
+                      { case: { $eq: ['$socialNetwork', 'yt'] }, then: 'youtube' },
+                      { case: { $eq: ['$socialNetwork', 'youtube.com'] }, then: 'youtube' },
+                      { case: { $eq: ['$socialNetwork', 'fb'] }, then: 'facebook' },
+                      { case: { $eq: ['$socialNetwork', 'facebook.com'] }, then: 'facebook' },
+                      { case: { $eq: ['$socialNetwork', 'ig'] }, then: 'instagram' },
+                      { case: { $eq: ['$socialNetwork', 'instagram.com'] }, then: 'instagram' },
+                      { case: { $eq: ['$socialNetwork', 'tt'] }, then: 'tiktok' },
+                    ],
+                    default: '$socialNetwork',
+                  },
+                },
+              },
+            },
+          },
+          { $group: { _id: '$socialKey', count: { $sum: 1 } } },
         ]),
       ]);
 
       const clicksByNetwork = {};
       for (const row of clicksAgg) clicksByNetwork[row._id || 'unknown'] = row.count;
+
+      // Compléter avec les réseaux supportés par le front pour éviter les clés manquantes
+      const supported = ['instagram', 'tiktok', 'snapchat', 'facebook', 'x', 'linkedin', 'youtube'];
+      for (const k of supported) {
+        if (typeof clicksByNetwork[k] !== 'number') clicksByNetwork[k] = 0;
+      }
 
       return res.json({
         range,

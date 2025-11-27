@@ -63,7 +63,15 @@ export const EventsController = {
       const actorId = req.user?.id || null;
       const { targetUserId, socialNetwork } = req.body;
       if (!targetUserId || !socialNetwork) return res.status(400).json({ code: 'PARAMS_REQUIRED', message: 'targetUserId et socialNetwork requis' });
-      const ev = await Event.create({ type: 'social_click', actor: actorId, targetUser: targetUserId, socialNetwork });
+      // Normaliser le nom du réseau social côté backend pour cohérence des stats
+      let net = String(socialNetwork || '').trim().toLowerCase();
+      // Mapper d'anciens alias → nouvelle clé canonique
+      if (net === 'twitter') net = 'x';
+      if (net === 'yt' || net === 'youtube.com') net = 'youtube';
+      if (net === 'fb' || net === 'facebook.com') net = 'facebook';
+      if (net === 'ig' || net === 'instagram.com') net = 'instagram';
+      if (net === 'tt') net = 'tiktok';
+      const ev = await Event.create({ type: 'social_click', actor: actorId, targetUser: targetUserId, socialNetwork: net });
       return res.status(201).json({ success: true, eventId: ev._id });
     } catch (err) {
       next(err);
