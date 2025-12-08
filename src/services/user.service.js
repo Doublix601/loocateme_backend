@@ -70,7 +70,12 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
         .map((m) => m.member)
         .filter((id) => id && id !== requesterId);
       if (ids.length === 0) return [];
-      const users = await User.find({ _id: { $in: ids }, isVisible: true, 'location.updatedAt': { $gte: threshold } }).select('-password');
+      const users = await User.find({
+        _id: { $in: ids },
+        isVisible: true,
+        emailVerified: true,
+        'location.updatedAt': { $gte: threshold },
+      }).select('-password');
       return users;
     }
   } catch {}
@@ -79,6 +84,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
   const users = await User.find({
     _id: { $ne: userId },
     isVisible: true,
+    emailVerified: true,
     'location.updatedAt': { $gte: threshold },
     location: {
       $near: {
@@ -95,7 +101,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
 
 export async function getPopularUsers({ userId = null, limit = 10 } = {}) {
   const safeLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 10));
-  const query = { isVisible: true };
+  const query = { isVisible: true, emailVerified: true };
   if (userId) Object.assign(query, { _id: { $ne: userId } });
   const users = await User.find(query)
     .sort({ profileViews: -1, createdAt: -1 })
