@@ -19,7 +19,7 @@ services:
       # Public URL de l'API utilisée dans les liens envoyés par email
       - API_PUBLIC_URL=http://api.loocate.me
       # Valeur héritée pour compatibilité; sera ignorée si API_PUBLIC_URL est défini
-      - BASE_URL=http://localhost:4000
+      - BASE_URL=http://api.loocate.me
       - APP_PUBLIC_URL=http://54.38.34.4:4000
       - SMTP_HOST=pro3.mail.ovh.net
       - SMTP_PORT=587

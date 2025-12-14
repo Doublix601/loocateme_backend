@@ -14,6 +14,12 @@ export const PremiumController = {
       const end = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       me.premiumTrialStart = now;
       me.premiumTrialEnd = end;
+      // Grant premium during trial and mark plan change for UI reload
+      const before = !!me.isPremium;
+      me.isPremium = true;
+      if (before !== true) {
+        me.planChangedAt = now;
+      }
       await me.save();
       return res.json({ success: true, trialActive: true, premium: !!me.isPremium, premiumTrialEnd: end });
     } catch (err) {
