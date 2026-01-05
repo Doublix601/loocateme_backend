@@ -48,6 +48,36 @@ iOS setup (summary):
 - Upload your APNs key/certificate to Firebase (Project settings → Cloud Messaging). Use token-based APNs auth if possible.
 - Update AppDelegate/App setup per @react-native-firebase/messaging docs to request permission and receive notifications.
 
+2bis) Unified server-side push util (one-call iOS+Android)
+
+You can send a configurable notification to both platforms with one function:
+
+  import { sendUnifiedNotification } from './src/services/fcm.service.js';
+
+  // Example: send to a list of userIds (their registered tokens will be resolved)
+  await sendUnifiedNotification({
+    userIds: ['<USER_ID_1>', '<USER_ID_2>'],
+    title: 'Hello from LoocateMe',
+    body: 'This is a cross-platform push 👋',
+    data: { kind: 'demo', deepLink: 'loocate://home' },
+    imageUrl: 'https://example.com/image.png',
+    sound: 'default',
+    badge: 1,
+    androidChannelId: 'default',
+    priority: 'high',
+    collapseKey: 'demo',
+    mutableContent: false,
+    contentAvailable: false,
+  });
+
+Or pass tokens directly:
+
+  await sendUnifiedNotification({
+    tokens: ['<FCM_TOKEN_1>', '<FCM_TOKEN_2>'],
+    title: 'Direct push',
+    body: 'Sent using raw tokens',
+  });
+
 3) Local testing of push
 
 Step A — Register a token:

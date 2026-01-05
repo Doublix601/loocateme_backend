@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middlewares/auth.js';
 import { User } from '../models/User.js';
 import { sendMail, verifyMailTransport } from '../services/email.service.js';
+import { sendUnifiedNotification } from '../services/fcm.service.js';
 
 const router = Router();
 
@@ -57,6 +58,47 @@ router.get('/smtp-status', async (req, res) => {
   if (secret !== expected) return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Secret invalide' });
   const status = await verifyMailTransport();
   return res.json(status);
+});
+
+// POST /api/admin/push/send
+// Envoie une notification configurable via FCM aux userIds ou tokens fournis
+// Body: { userIds?: string[]|string(csv), tokens?: string[]|string(csv), title?, body?, data?, imageUrl?, sound?, badge?, androidChannelId?, priority?, collapseKey?, mutableContent?, contentAvailable? }
+router.post('/push/send', requireAuth, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const toArray = (v) => {
+      if (!v) return [];
+      if (Array.isArray(v)) return v.filter(Boolean).map(String);
+      if (typeof v === 'string') return v.split(',').map((s) => s.trim()).filter(Boolean);
+      return [];
+    };
+
+    const userIds = toArray(b.userIds);
+    const tokens = toArray(b.tokens);
+    const title = b.title ? String(b.title) : undefined;
+    const body = b.body ? String(b.body) : undefined;
+    const imageUrl = b.imageUrl ? String(b.imageUrl) : undefined;
+    const sound = b.sound ? String(b.sound) : 'default';
+    const badge = typeof b.badge === 'number' ? b.badge : (b.badge ? Number(b.badge) : undefined);
+    const androidChannelId = b.androidChannelId ? String(b.androidChannelId) : undefined;
+    const priority = b.priority === 'normal' ? 'normal' : 'high';
+    const collapseKey = b.collapseKey ? String(b.collapseKey) : undefined;
+    const mutableContent = !!b.mutableContent;
+    const contentAvailable = !!b.contentAvailable;
+
+    // data peut être un objet ou un JSON string
+    let data = {};
+    if (b.data && typeof b.data === 'object') data = b.data;
+    else if (typeof b.data === 'string') {
+      try { data = JSON.parse(b.data); } catch (_) { data = {}; }
+    }
+
+    const options = { userIds, tokens, title, body, data, imageUrl, sound, badge, androidChannelId, priority, collapseKey, mutableContent, contentAvailable };
+    const result = await sendUnifiedNotification(options);
+    return res.json(result);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // PUT /api/admin/users/:id/role
