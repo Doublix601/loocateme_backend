@@ -1,7 +1,7 @@
 import { Event } from '../models/Event.js';
 import { User } from '../models/User.js';
-import { FcmToken } from '../models/FcmToken.js';
-import { sendPushToTokens } from '../services/fcm.service.js';
+import { NotificationDedup } from '../models/NotificationDedup.js';
+import { sendPushUnified } from '../services/push.service.js';
 
 export const EventsController = {
   profileView: async (req, res, next) => {
@@ -26,29 +26,23 @@ export const EventsController = {
       // Increment simple counter for quick reads (optional)
       try { await User.updateOne({ _id: targetUserId }, { $inc: { profileViews: 1 } }); } catch {}
 
-      // Send push notification to target user (if tokens exist)
+      // Send push notification to target user (premium-aware copy)
       try {
-        const tokens = await FcmToken.find({ user: targetUserId }).distinct('token');
-        if (tokens.length > 0) {
-          // Compose message per plan:
-          // - Free: "Quelqu'un regarde ton profil...👀"
-          // - Premium: "{Prénom ou Nom personnalisé} regarde ton profil 👀"
-          let title = 'Visite de profil';
-          let body = "Quelqu'un regarde ton profil...👀";
-          if (target.isPremium) {
-            if (actorId) {
-              const actor = await User.findById(actorId).lean();
-              const name = (actor?.customName && String(actor.customName).trim())
-                || (actor?.firstName && String(actor.firstName).trim())
-                || (actor?.username && String(actor.username).trim())
-                || "Quelqu'un";
-              body = `${name} regarde ton profil 👀`;
-            } else {
-              body = "Quelqu'un regarde ton profil 👀";
-            }
+        // - Free: « Quelqu'un a visité ton profil 👀 »
+        // - Premium: « {Prénom} a visité ton profil 👀 »
+        let title = 'Visite de profil';
+        let body = "Quelqu'un a visité ton profil 👀";
+        if (target.isPremium) {
+          if (actorId) {
+            const actor = await User.findById(actorId).lean();
+            const name = (actor?.customName && String(actor.customName).trim())
+              || (actor?.firstName && String(actor.firstName).trim())
+              || (actor?.username && String(actor.username).trim())
+              || "Quelqu'un";
+            body = `${name} a visité ton profil 👀`;
           }
-          await sendPushToTokens(tokens, { title, body }, { kind: 'profile_view', targetUserId: String(targetUserId) });
         }
+        await sendPushUnified({ userIds: [targetUserId], title, body, data: { kind: 'profile_view', targetUserId: String(targetUserId) } });
       } catch (e) {
         console.warn('[events] push send failed', e?.message || e);
       }
@@ -95,7 +89,45 @@ export const EventsController = {
         return res.status(400).json({ code: 'PLATFORM_UNSUPPORTED', message: 'Réseau social non supporté' });
       }
       const ev = await Event.create({ type: 'social_click', actor: actorId, targetUser: targetUserId, socialNetwork: net });
-      return res.status(201).json({ success: true, eventId: ev._id });
+
+      // Dedup for 24h per (target, viewer, eventType)
+      let dedupKeyCreated = false;
+      try {
+        if (actorId) {
+          await NotificationDedup.create({ targetUser: targetUserId, viewerUser: actorId, eventType: 'social_click' });
+          dedupKeyCreated = true;
+        }
+      } catch (e) {
+        // Duplicate key -> already notified in last 24h
+        if (String(e?.code) === '11000') dedupKeyCreated = false; else dedupKeyCreated = true; // default to send on other errors
+      }
+
+      // Send push only if not already sent in last 24h for this viewer
+      if (dedupKeyCreated) {
+        try {
+          const target = await User.findById(targetUserId).lean();
+          const isPremium = !!target?.isPremium;
+          let title = 'Activité sur tes réseaux';
+          let body = 'Quelqu’un consulte tes réseaux — découvre qui te stalke 🔍';
+          if (isPremium) {
+            // Premium: {Prénom} consulte tes réseaux 🔗
+            let name = 'Quelqu’un';
+            if (actorId) {
+              const actor = await User.findById(actorId).lean();
+              name = (actor?.customName && String(actor.customName).trim())
+                || (actor?.firstName && String(actor.firstName).trim())
+                || (actor?.username && String(actor.username).trim())
+                || 'Quelqu’un';
+            }
+            body = `${name} consulte tes réseaux 🔗`;
+          }
+          await sendPushUnified({ userIds: [targetUserId], title, body, data: { kind: 'social_click', net, targetUserId: String(targetUserId) } });
+        } catch (e) {
+          console.warn('[events] social_click push failed', e?.message || e);
+        }
+      }
+
+      return res.status(201).json({ success: true, eventId: ev._id, notified: !!dedupKeyCreated });
     } catch (err) {
       next(err);
     }
