@@ -28,10 +28,24 @@ export const EventsController = {
 
       // Send push notification to target user (premium-aware copy)
       try {
-        // - Free: « Quelqu'un a visité ton profil 👀 »
-        // - Premium: « {Prénom} a visité ton profil 👀 »
+        // - Free: « Quelqu'un regarde ton profil ! Découvre qui c'est. »
+        // - Premium: « {Prénom} regarde ton profil ! »
         let title = 'Visite de profil';
         let body = "Quelqu'un regarde ton profil ! Découvre qui c'est.";
+        
+        // Logique de visiteur récurrent (détection si l'acteur a visité la cible > 2 fois en 24h)
+        let isRecurring = false;
+        if (actorId) {
+          const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const recentViews = await Event.countDocuments({
+            type: 'profile_view',
+            actor: actorId,
+            targetUser: targetUserId,
+            createdAt: { $gt: yesterday }
+          });
+          if (recentViews >= 2) isRecurring = true;
+        }
+
         if (target.isPremium === true) {
           if (actorId) {
             const actor = await User.findById(actorId).lean();
@@ -39,10 +53,27 @@ export const EventsController = {
               || (actor?.firstName && String(actor.firstName).trim())
               || (actor?.username && String(actor.username).trim())
               || "Quelqu'un";
-            body = `${name} regarde ton profil !`;
+            
+            if (isRecurring) {
+              body = `${name} est un admirateur secret... Il/Elle a encore regardé ton profil ! 😉`;
+            } else {
+              body = `${name} regarde ton profil !`;
+            }
           }
+        } else if (isRecurring) {
+          body = "Tu as un admirateur secret... Quelqu'un a regardé ton profil plusieurs fois aujourd'hui ! 👀";
         }
-        await sendPushUnified({ userIds: [targetUserId], title, body, data: { kind: 'profile_view', targetUserId: String(targetUserId) } });
+
+        await sendPushUnified({ 
+          userIds: [targetUserId], 
+          title, 
+          body, 
+          data: { 
+            kind: 'profile_view', 
+            targetUserId: String(targetUserId),
+            isRecurring 
+          } 
+        });
       } catch (e) {
         console.warn('[events] push send failed', e?.message || e);
       }
@@ -106,7 +137,6 @@ export const EventsController = {
       if (dedupKeyCreated) {
         try {
           const target = await User.findById(targetUserId).lean();
-          const isPremium = !!target?.isPremium;
           let title = 'Activité sur tes réseaux';
           let body = 'Quelqu’un consulte tes réseaux — découvre qui te stalke 🔍';
           if (target.isPremium === true) {
@@ -119,7 +149,10 @@ export const EventsController = {
                 || (actor?.username && String(actor.username).trim())
                 || 'Quelqu’un';
             }
-            body = `${name} consulte tes réseaux 🔗`;
+            body = `${name} consulte ton ${net} 🔗`;
+          } else {
+            // Pousse vers le premium pour le gratuit en étant plus spécifique sur le réseau
+            body = `Quelqu’un consulte ton ${net} — découvre qui te stalke 🔍`;
           }
           await sendPushUnified({ userIds: [targetUserId], title, body, data: { kind: 'social_click', net, targetUserId: String(targetUserId) } });
         } catch (e) {

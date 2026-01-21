@@ -22,6 +22,7 @@ import premiumRoutes from './routes/premium.routes.js';
 import proxyRoutes from './routes/proxy.routes.js';
 import { errorHandler, notFound } from './middlewares/error.js';
 import { verifyMailTransport } from './services/email.service.js';
+import { CronService } from './services/cron.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

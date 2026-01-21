@@ -1,5 +1,7 @@
 import { User } from '../models/User.js';
 import { redisClient } from '../config/redis.js';
+import { sendPushUnified } from './push.service.js';
+import { NotificationDedup } from '../models/NotificationDedup.js';
 
 // Build a diacritic-insensitive regex by expanding common French accented letters
 function buildDiacriticRegex(input) {
@@ -44,6 +46,44 @@ export async function updateLocation(userId, { lat, lon }) {
   };
   const user = await User.findByIdAndUpdate(userId, update, { new: true });
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+  
+  // Logic: Notify if a new active neighbor is detected (within 500m)
+  try {
+    const nearby = await User.find({
+      _id: { $ne: userId },
+      isVisible: true,
+      emailVerified: true,
+      'location.updatedAt': { $gte: new Date(Date.now() - 30 * 60 * 1000) }, // Active in last 30 mins
+      location: {
+        $near: {
+          $geometry: { type: 'Point', coordinates: [lon, lat] },
+          $maxDistance: 500,
+        },
+      },
+    }).limit(3);
+
+    for (const neighbor of nearby) {
+      // Dedup per neighbor-pair to avoid spam (once per 12h)
+      const dedupKey = `neighbor:${userId}:${neighbor._id}`;
+      try {
+        const alreadyNotified = await NotificationDedup.findOne({ targetUser: userId, viewerUser: neighbor._id, eventType: 'new_neighbor' });
+        if (!alreadyNotified) {
+          await NotificationDedup.create({ targetUser: userId, viewerUser: neighbor._id, eventType: 'new_neighbor' });
+          
+          const name = (neighbor.customName || neighbor.firstName || neighbor.username || 'Quelqu’un').trim();
+          await sendPushUnified({
+            userIds: [userId],
+            title: 'Nouveau voisin !',
+            body: `${name} est juste à côté de toi. Fais-lui signe ! 👋`,
+            data: { kind: 'new_neighbor', neighborId: String(neighbor._id) }
+          });
+        }
+      } catch (_) {}
+    }
+  } catch (e) {
+    console.warn('[user.service] neighbor notification failed', e.message);
+  }
+
   // Optional: cache in Redis GEOSET
   try {
     await redisClient.geoAdd('geo:users', [{ longitude: lon, latitude: lat, member: userId.toString() }]);
