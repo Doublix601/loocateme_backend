@@ -10,7 +10,7 @@ function splitTokens(tokens = []) {
   const expoTokens = [];
   const fcmTokens = [];
   for (const tok of t) {
-    if (typeof tok === 'string' && tok.startsWith('ExponentPushToken[')) expoTokens.push(tok);
+    if (typeof tok === 'string' && (tok.startsWith('ExponentPushToken[') || tok.startsWith('ExpoPushToken['))) expoTokens.push(tok);
     else if (tok) fcmTokens.push(tok);
   }
   return { expoTokens, fcmTokens };

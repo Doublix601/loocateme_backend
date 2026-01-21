@@ -16,7 +16,7 @@ export const PushController = {
       );
 
       // Also save to User model for quick access/reference if it's an Expo token
-      if (userId && typeof token === 'string' && token.startsWith('ExponentPushToken')) {
+      if (userId && typeof token === 'string' && (token.startsWith('ExponentPushToken') || token.startsWith('ExpoPushToken'))) {
         await User.findByIdAndUpdate(userId, { expoPushToken: token });
       }
 
