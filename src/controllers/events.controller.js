@@ -71,6 +71,7 @@ export const EventsController = {
           data: { 
             kind: 'profile_view', 
             targetUserId: String(targetUserId),
+            actorId: actorId ? String(actorId) : undefined,
             isRecurring 
           } 
         });
