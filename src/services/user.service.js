@@ -52,7 +52,7 @@ export async function updateLocation(userId, { lat, lon }) {
 }
 
 export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) {
-  const freshnessMs = 60 * 60 * 1000; // 1 hour
+  const freshnessMs = 6 * 60 * 60 * 1000; // 6 hours
   const threshold = new Date(Date.now() - freshnessMs);
   // Try Redis first
   try {
