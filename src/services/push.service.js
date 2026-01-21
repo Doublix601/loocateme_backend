@@ -3,7 +3,16 @@ import { FcmToken } from '../models/FcmToken.js';
 import { sendUnifiedNotification as sendFcmUnified } from './fcm.service.js';
 
 const EXPO_PROJECT_ID = 'da2f75d4-ab23-4073-8db9-1ab186cc22d6';
-const expo = new Expo({ useFcmV1: false });
+
+let expoOptions = { useFcmV1: true };
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  try {
+    expoOptions.googleServiceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+  } catch (e) {
+    console.warn('[push] Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON for Expo:', e.message);
+  }
+}
+const expo = new Expo(expoOptions);
 
 function splitTokens(tokens = []) {
   const t = Array.isArray(tokens) ? tokens : [];
