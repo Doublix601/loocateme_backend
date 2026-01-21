@@ -31,7 +31,7 @@ export const EventsController = {
         // - Free: « Quelqu'un a visité ton profil 👀 »
         // - Premium: « {Prénom} a visité ton profil 👀 »
         let title = 'Visite de profil';
-        let body = "Quelqu'un a visité ton profil 👀";
+        let body = "Quelqu'un regarde ton profil ! Découvre qui c'est.";
         if (target.isPremium) {
           if (actorId) {
             const actor = await User.findById(actorId).lean();
@@ -39,7 +39,7 @@ export const EventsController = {
               || (actor?.firstName && String(actor.firstName).trim())
               || (actor?.username && String(actor.username).trim())
               || "Quelqu'un";
-            body = `${name} a visité ton profil 👀`;
+            body = `${name} regarde ton profil !`;
           }
         }
         await sendPushUnified({ userIds: [targetUserId], title, body, data: { kind: 'profile_view', targetUserId: String(targetUserId) } });

@@ -48,6 +48,7 @@ const UserSchema = new mongoose.Schema(
     isPremium: { type: Boolean, default: false, index: true },
     premiumTrialStart: { type: Date },
     premiumTrialEnd: { type: Date },
+    expoPushToken: { type: String, index: true },
     location: {
       type: { type: String, enum: ['Point'], default: 'Point' },
       coordinates: { type: [Number], default: [0, 0] }, // [lon, lat]
