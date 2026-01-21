@@ -32,7 +32,7 @@ export const EventsController = {
         // - Premium: « {Prénom} a visité ton profil 👀 »
         let title = 'Visite de profil';
         let body = "Quelqu'un regarde ton profil ! Découvre qui c'est.";
-        if (target.isPremium) {
+        if (target.isPremium === true) {
           if (actorId) {
             const actor = await User.findById(actorId).lean();
             const name = (actor?.customName && String(actor.customName).trim())
@@ -109,7 +109,7 @@ export const EventsController = {
           const isPremium = !!target?.isPremium;
           let title = 'Activité sur tes réseaux';
           let body = 'Quelqu’un consulte tes réseaux — découvre qui te stalke 🔍';
-          if (isPremium) {
+          if (target.isPremium === true) {
             // Premium: {Prénom} consulte tes réseaux 🔗
             let name = 'Quelqu’un';
             if (actorId) {

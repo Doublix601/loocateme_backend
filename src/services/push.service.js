@@ -2,6 +2,7 @@ import { Expo } from 'expo-server-sdk';
 import { FcmToken } from '../models/FcmToken.js';
 import { sendUnifiedNotification as sendFcmUnified } from './fcm.service.js';
 
+const EXPO_PROJECT_ID = 'da2f75d4-ab23-4073-8db9-1ab186cc22d6';
 const expo = new Expo({ useFcmV1: false });
 
 function splitTokens(tokens = []) {
@@ -46,10 +47,20 @@ export async function sendPushUnified({ userIds = [], tokens = [], title, body, 
       ...(androidChannelId ? { channelId: androidChannelId } : {}),
       ...(typeof badge === 'number' ? { badge: Number(badge) } : {}),
       ...(collapseKey ? { collapseId: String(collapseKey) } : {}),
+      // Required for EAS/Production builds
+      ...(EXPO_PROJECT_ID ? { projectId: EXPO_PROJECT_ID } : {}),
     })));
     const receipts = [];
     for (const chunk of chunks) {
-      try { receipts.push(await expo.sendPushNotificationsAsync(chunk)); } catch (e) { receipts.push({ error: e?.message || String(e) }); }
+      try {
+        const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+        receipts.push(ticketChunk);
+        // Log details about tickets (success or errors)
+        console.log('[push] Expo tickets result:', JSON.stringify(ticketChunk));
+      } catch (e) {
+        console.error('[push] Expo send error:', e);
+        receipts.push({ error: e?.message || String(e) });
+      }
     }
     results.expo = receipts;
   }
