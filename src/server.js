@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { connectMongo } from './config/mongo.js';
+import { ensureDefaultFlags } from './models/FeatureFlag.js';
 import { redisClient } from './config/redis.js';
 import authRoutes from './routes/auth.routes.js';
 import userRoutes from './routes/user.routes.js';
@@ -69,6 +70,13 @@ app.use(errorHandler);
 // Start server after DB connections
 (async () => {
   await connectMongo();
+  // Ensure default feature flags exist
+  try {
+    await ensureDefaultFlags();
+    console.log('Feature flags ensured');
+  } catch (e) {
+    console.warn('Failed to ensure feature flags:', e?.message || e);
+  }
   // Ensure indexes are created (notably 2dsphere on location)
   try {
     const { User } = await import('./models/User.js');

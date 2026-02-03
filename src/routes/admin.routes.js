@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middlewares/auth.js';
 import { User } from '../models/User.js';
+import { FeatureFlag } from '../models/FeatureFlag.js';
 import { sendMail, verifyMailTransport } from '../services/email.service.js';
 import { sendUnifiedNotification } from '../services/fcm.service.js';
 
@@ -24,8 +25,6 @@ router.get('/users', requireAuth, async (req, res, next) => {
     next(err);
   }
 });
-
-export default router;
 
 // Lightweight diagnostics endpoint to test email delivery
 // Usage: GET /api/admin/test-email?to=you@example.com&secret=... (requires EMAIL_TEST_SECRET to be set)
@@ -131,3 +130,80 @@ router.put('/users/:id/role', requireAuth, async (req, res, next) => {
     next(err);
   }
 });
+
+// Middleware to check if user is admin
+const requireAdmin = async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Authentification requise' });
+    }
+    const user = await User.findById(req.user.id).lean();
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ code: 'FORBIDDEN', message: 'Accès réservé aux administrateurs' });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/admin/flags - Get all feature flags (admin only)
+router.get('/flags', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const flags = await FeatureFlag.find({}).lean();
+    return res.json({ flags });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/flags/:key - Update a feature flag (admin only)
+// Body: { enabled: boolean }
+router.put('/flags/:key', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const key = String(req.params.key || '').trim();
+    if (!key) {
+      return res.status(400).json({ code: 'KEY_REQUIRED', message: 'Clé du flag requise' });
+    }
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ code: 'ENABLED_REQUIRED', message: 'Le champ enabled (boolean) est requis' });
+    }
+    const flag = await FeatureFlag.findOneAndUpdate(
+      { key },
+      { enabled },
+      { new: true, upsert: true }
+    );
+    return res.json({ success: true, flag });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/admin/users/:id/user-role - Update user role (admin only)
+// Body: { role: 'user' | 'moderator' | 'admin' }
+router.put('/users/:id/user-role', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) {
+      return res.status(400).json({ code: 'ID_REQUIRED', message: 'ID utilisateur requis' });
+    }
+    const { role } = req.body;
+    if (!role || !['user', 'moderator', 'admin'].includes(role)) {
+      return res.status(400).json({ code: 'ROLE_INVALID', message: 'Role invalide. Valeurs acceptées: user, moderator, admin' });
+    }
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ code: 'NOT_FOUND', message: 'Utilisateur introuvable' });
+    }
+    user.role = role;
+    await user.save();
+    const safe = user.toObject();
+    delete safe.password;
+    return res.json({ success: true, user: safe });
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;

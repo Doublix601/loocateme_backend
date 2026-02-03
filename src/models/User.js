@@ -44,6 +44,8 @@ const UserSchema = new mongoose.Schema(
       analytics: { type: Boolean, default: false },
       marketing: { type: Boolean, default: false },
     },
+    // User role: 'user' (default), 'moderator', 'admin'
+    role: { type: String, enum: ['user', 'moderator', 'admin'], default: 'user', index: true },
     // Premium flags
     isPremium: { type: Boolean, default: false, index: true },
     premiumTrialStart: { type: Date },
