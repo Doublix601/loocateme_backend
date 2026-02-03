@@ -17,7 +17,6 @@
  *   MONGO_URI - MongoDB connection string (defaults to mongodb://localhost:27017/loocateme)
  */
 
-import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
@@ -31,7 +30,15 @@ const __dirname = path.dirname(__filename);
 const MIGRATION_PATTERN = /^(\d{3})_.+\.js$/;
 
 async function runMigrations() {
-  dotenv.config();
+  try {
+    const dotenv = await import('dotenv');
+    const cfg = dotenv?.default || dotenv;
+    if (typeof cfg?.config === 'function') {
+      cfg.config();
+    }
+  } catch (e) {
+    console.warn('[migrations] dotenv not available, skipping .env load');
+  }
   const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/loocateme';
 
   console.log('[migrations] Connecting to MongoDB...');
