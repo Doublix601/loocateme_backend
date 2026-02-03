@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 /**
  * Migration Runner
- * 
+ *
  * Scans the migrations folder for numbered migration files (e.g., 001_name.js, 002_name.js)
  * and executes any that haven't been run yet, in order.
- * 
+ *
  * Migration files must:
  * - Start with a 3-digit number followed by underscore (e.g., 001_)
  * - Export a default async function `migrate()` or named export `migrate`
  * - NOT be this file (run-migrations.js)
- * 
+ *
  * Usage:
  *   node src/migrations/run-migrations.js
- * 
+ *
  * Environment:
  *   MONGO_URI - MongoDB connection string (defaults to mongodb://localhost:27017/loocateme)
  */
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
@@ -31,8 +31,9 @@ const __dirname = path.dirname(__filename);
 const MIGRATION_PATTERN = /^(\d{3})_.+\.js$/;
 
 async function runMigrations() {
+  dotenv.config();
   const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/loocateme';
-  
+
   console.log('[migrations] Connecting to MongoDB...');
   await mongoose.connect(mongoUri);
   console.log('[migrations] Connected.');
@@ -67,14 +68,14 @@ async function runMigrations() {
     // Execute each pending migration in order
     for (const migrationFile of pending) {
       console.log(`\n[migrations] Running: ${migrationFile}`);
-      
+
       try {
         const migrationPath = path.join(__dirname, migrationFile);
         const migrationModule = await import(migrationPath);
-        
+
         // Support both default export and named export
         const migrateFn = migrationModule.default || migrationModule.migrate;
-        
+
         if (typeof migrateFn !== 'function') {
           throw new Error(`Migration ${migrationFile} does not export a migrate function`);
         }
@@ -85,7 +86,7 @@ async function runMigrations() {
         // Record successful execution
         await MigrationState.create({ name: migrationFile });
         console.log(`[migrations] ✅ ${migrationFile} completed successfully.`);
-        
+
       } catch (err) {
         console.error(`[migrations] ❌ ${migrationFile} FAILED:`, err.message || err);
         // Stop on first failure to prevent running dependent migrations
