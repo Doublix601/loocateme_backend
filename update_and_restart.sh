@@ -154,7 +154,17 @@ $DC up -d
 log "Running database migrations..."
 # Wait a few seconds for MongoDB to be ready
 sleep 5
-if $DC exec -T api node src/migrations/run-migrations.js; then
+log "Waiting for API dependencies to be ready (mongoose)..."
+tries=0
+until $DC exec -T api node -e "require('mongoose')" >/dev/null 2>&1; do
+  tries=$((tries+1))
+  if [[ "$tries" -ge 30 ]]; then
+    err "Dependencies not ready after 30 attempts. Skipping migrations."
+    break
+  fi
+  sleep 2
+done
+if [[ "$tries" -lt 30 ]] && $DC exec -T api node src/migrations/run-migrations.js; then
   log "Migrations completed successfully."
 else
   err "Migrations failed! Check logs above for details."

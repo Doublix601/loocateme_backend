@@ -39,7 +39,7 @@ async function runMigrations() {
   } catch (e) {
     console.warn('[migrations] dotenv not available, skipping .env load');
   }
-  const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/loocateme';
+  const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/loocateme';
 
   console.log('[migrations] Connecting to MongoDB...');
   await mongoose.connect(mongoUri);
