@@ -150,6 +150,17 @@ fi
 log "Starting services in the background..."
 $DC up -d
 
+# --- Run database migrations ---
+log "Running database migrations..."
+# Wait a few seconds for MongoDB to be ready
+sleep 5
+if $DC exec -T api node src/migrations/run-migrations.js; then
+  log "Migrations completed successfully."
+else
+  err "Migrations failed! Check logs above for details."
+  # Don't exit - services are running, admin can fix manually
+fi
+
 log "Pruning dangling images (safe cleanup)..."
 docker image prune -f >/dev/null 2>&1 || true
 
