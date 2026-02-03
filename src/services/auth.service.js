@@ -72,6 +72,20 @@ export async function login({ email, password }) {
   if (!user) throw Object.assign(new Error('Authentification échouée'), { status: 401, code: 'INVALID_CREDENTIALS' });
   const ok = await user.comparePassword(password);
   if (!ok) throw Object.assign(new Error('Authentification échouée'), { status: 401, code: 'INVALID_CREDENTIALS' });
+  const mod = user.moderation || {};
+  const now = new Date();
+  if (mod.bannedPermanent) {
+    const err = new Error('Compte banni');
+    err.status = 403;
+    err.code = 'BANNED';
+    throw err;
+  }
+  if (mod.bannedUntil && new Date(mod.bannedUntil).getTime() > now.getTime()) {
+    const err = new Error('Compte temporairement banni');
+    err.status = 403;
+    err.code = 'BANNED_TEMP';
+    throw err;
+  }
   // Block login if email is not verified
   if (!user.emailVerified) {
     // Try to (re)send a verification email to help the user complete verification

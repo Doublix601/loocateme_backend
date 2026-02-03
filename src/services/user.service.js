@@ -28,6 +28,21 @@ function buildDiacriticRegex(input) {
 
 const GEO_CACHE_TTL = 5; // seconds
 
+async function getBlockedIds(userId) {
+  if (!userId) return [];
+  try {
+    const [me, blockedBy] = await Promise.all([
+      User.findById(userId).select('blockedUsers').lean(),
+      User.find({ blockedUsers: userId }).select('_id').lean(),
+    ]);
+    const blocked = Array.isArray(me?.blockedUsers) ? me.blockedUsers.map((id) => id.toString()) : [];
+    const blockedByIds = Array.isArray(blockedBy) ? blockedBy.map((u) => String(u._id)) : [];
+    return Array.from(new Set([...blocked, ...blockedByIds]));
+  } catch {
+    return [];
+  }
+}
+
 export async function getUserByEmail(email) {
   const user = await User.findOne({ email }).select('-password');
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
@@ -46,7 +61,7 @@ export async function updateLocation(userId, { lat, lon }) {
   };
   const user = await User.findByIdAndUpdate(userId, update, { new: true });
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
-  
+
   // Logic: Notify if a new active neighbor is detected (within 500m)
   try {
     const nearby = await User.find({
@@ -69,7 +84,7 @@ export async function updateLocation(userId, { lat, lon }) {
         const alreadyNotified = await NotificationDedup.findOne({ targetUser: userId, viewerUser: neighbor._id, eventType: 'new_neighbor' });
         if (!alreadyNotified) {
           await NotificationDedup.create({ targetUser: userId, viewerUser: neighbor._id, eventType: 'new_neighbor' });
-          
+
           const name = (neighbor.customName || neighbor.firstName || neighbor.username || 'Quelqu’un').trim();
           await sendPushUnified({
             userIds: [userId],
@@ -94,6 +109,8 @@ export async function updateLocation(userId, { lat, lon }) {
 export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) {
   const freshnessMs = 6 * 60 * 60 * 1000; // 6 hours
   const threshold = new Date(Date.now() - freshnessMs);
+  const blockedIds = await getBlockedIds(userId);
+  const excludeIds = Array.from(new Set([String(userId), ...blockedIds]));
   // Try Redis first
   try {
     const members = await redisClient.geoSearch('geo:users', {
@@ -108,7 +125,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
       const requesterId = String(userId);
       const ids = members
         .map((m) => m.member)
-        .filter((id) => id && id !== requesterId);
+        .filter((id) => id && !excludeIds.includes(String(id)));
       if (ids.length === 0) return [];
       const users = await User.find({
         _id: { $in: ids },
@@ -122,7 +139,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
 
   // Fallback to MongoDB geospatial query
   const users = await User.find({
-    _id: { $ne: userId },
+    _id: { $nin: excludeIds },
     isVisible: true,
     emailVerified: true,
     'location.updatedAt': { $gte: threshold },
@@ -142,7 +159,11 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
 export async function getPopularUsers({ userId = null, limit = 10 } = {}) {
   const safeLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 10));
   const query = { isVisible: true, emailVerified: true };
-  if (userId) Object.assign(query, { _id: { $ne: userId } });
+  if (userId) {
+    const blockedIds = await getBlockedIds(userId);
+    const excludeIds = Array.from(new Set([String(userId), ...blockedIds]));
+    Object.assign(query, { _id: { $nin: excludeIds } });
+  }
   const users = await User.find(query)
     .sort({ profileViews: -1, createdAt: -1 })
     .limit(safeLimit)
@@ -154,7 +175,11 @@ export async function searchUsers({ q = '', limit = 10, excludeUserId = null } =
   // Enforce max 10 results regardless of client request
   const safeLimit = Math.max(1, Math.min(10, parseInt(limit, 10) || 10));
   const query = { isVisible: true };
-  if (excludeUserId) Object.assign(query, { _id: { $ne: excludeUserId } });
+  if (excludeUserId) {
+    const blockedIds = await getBlockedIds(excludeUserId);
+    const excludeIds = Array.from(new Set([String(excludeUserId), ...blockedIds]));
+    Object.assign(query, { _id: { $nin: excludeIds } });
+  }
 
   const s = String(q || '').trim();
   // Require at least 2 characters to avoid overloading API

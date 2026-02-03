@@ -214,6 +214,25 @@ export const validators = {
     body('analytics').optional().isBoolean(),
     body('marketing').optional().isBoolean(),
   ],
+  reportCreate: [
+    body('reportedUserId').isMongoId(),
+    body('category').isIn(['harassment', 'spam', 'inappropriate', 'impersonation', 'scam', 'other']),
+    body('reason').isString().isLength({ min: 3, max: 200 }),
+    body('description').optional().isString().isLength({ max: 1000 }),
+  ],
+  reportAction: [
+    param('id').isMongoId(),
+    body('action').isIn(['warn', 'ban_temp', 'ban_permanent', 'dismiss']),
+    body('target').optional().isIn(['reported', 'reporter']),
+    body('durationHours').optional().isInt({ min: 1, max: 720 }),
+    body('note').optional().isString().isLength({ max: 500 }),
+  ],
+  blockUser: [
+    body('targetUserId').isMongoId(),
+  ],
+  blockRemove: [
+    param('id').isMongoId(),
+  ],
   gdprDelete: [
     body('password').isString().isLength({ min: 6 }),
   ],

@@ -46,6 +46,16 @@ const UserSchema = new mongoose.Schema(
     },
     // User role: 'user' (default), 'moderator', 'admin'
     role: { type: String, enum: ['user', 'moderator', 'admin'], default: 'user', index: true },
+    // Moderation & safety
+    moderation: {
+      warningsCount: { type: Number, default: 0 },
+      lastWarningAt: { type: Date },
+      bannedUntil: { type: Date },
+      bannedAt: { type: Date },
+      bannedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      bannedPermanent: { type: Boolean, default: false },
+      banReason: { type: String, default: '' },
+    },
     // Premium flags
     isPremium: { type: Boolean, default: false, index: true },
     premiumTrialStart: { type: Date },
@@ -57,6 +67,7 @@ const UserSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: Date.now },
     },
     socialNetworks: [SocialSchema],
+    blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     // Email verification and password reset
     emailVerified: { type: Boolean, default: false, index: true },
     emailVerifyTokenHash: { type: String, index: true },
