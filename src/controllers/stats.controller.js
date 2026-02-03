@@ -1,5 +1,6 @@
 import { Event } from '../models/Event.js';
 import { User } from '../models/User.js';
+import { FeatureFlag } from '../models/FeatureFlag.js';
 
 function getDateRange(range) {
   const now = new Date();
@@ -25,10 +26,26 @@ function getDateRange(range) {
   return { from, to: now };
 }
 
+async function getFlagsMap() {
+  const flags = await FeatureFlag.find({ key: { $in: ['premiumEnabled', 'statisticsEnabled'] } }).lean();
+  const map = {};
+  for (const f of flags) {
+    map[f.key] = !!f.enabled;
+  }
+  return map;
+}
+
 export const StatsController = {
   overview: async (req, res, next) => {
     try {
       const userId = req.user?.id;
+      const flags = await getFlagsMap();
+      const premiumEnabled = flags.premiumEnabled ?? false;
+      const statisticsEnabled = flags.statisticsEnabled ?? false;
+      const effectiveStatisticsEnabled = statisticsEnabled || premiumEnabled;
+      if (!effectiveStatisticsEnabled) {
+        return res.status(403).json({ code: 'STATS_DISABLED', message: 'Statistiques désactivées' });
+      }
       // Par défaut on retourne les 30 derniers jours
       const range = String(req.query.range || '30d');
       const { from, to } = getDateRange(range);
@@ -109,9 +126,17 @@ export const StatsController = {
     try {
       const userId = req.user?.id;
       const me = await User.findById(userId).lean();
+      const flags = await getFlagsMap();
+      const premiumEnabled = flags.premiumEnabled ?? false;
+      const statisticsEnabled = flags.statisticsEnabled ?? false;
+      const effectiveStatisticsEnabled = statisticsEnabled || premiumEnabled;
       const now = new Date();
-      // Premium-only: only isPremium flag is considered
-      if (!me?.isPremium) {
+      if (!effectiveStatisticsEnabled) {
+        return res.status(403).json({ code: 'STATS_DISABLED', message: 'Statistiques désactivées' });
+      }
+      // Premium-only when premium is enabled
+      const hasPremiumAccess = me?.isPremium || me?.role === 'admin' || me?.role === 'moderator';
+      if (premiumEnabled && !hasPremiumAccess) {
         return res.status(403).json({ code: 'PREMIUM_REQUIRED', message: 'Fonctionnalité réservée aux comptes Premium' });
       }
       const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 200);
