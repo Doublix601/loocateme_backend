@@ -3,6 +3,31 @@ import { Report } from '../models/Report.js';
 import { User } from '../models/User.js';
 
 const MAX_PAGE_LIMIT = 100;
+const WARNING_EXPIRY_MONTHS = 3;
+
+const normalizeWarnings = (moderation = {}) => {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - WARNING_EXPIRY_MONTHS);
+
+  const rawHistory = Array.isArray(moderation.warningsHistory) ? moderation.warningsHistory : [];
+  const history = rawHistory
+    .map((entry) => ({
+      at: entry?.at ? new Date(entry.at) : null,
+      reason: entry?.reason ? String(entry.reason) : '',
+    }))
+    .filter((entry) => entry.at && !isNaN(entry.at.getTime()) && entry.at.getTime() >= cutoff.getTime());
+
+  if (history.length > 0) {
+    return { warningsCount: history.length, expired: false, history };
+  }
+
+  const lastWarningAt = moderation.lastWarningAt ? new Date(moderation.lastWarningAt) : null;
+  if (!lastWarningAt || isNaN(lastWarningAt.getTime())) {
+    return { warningsCount: moderation.warningsCount || 0, expired: false, history: [] };
+  }
+  const expired = lastWarningAt.getTime() < cutoff.getTime();
+  return { warningsCount: expired ? 0 : (moderation.warningsCount || 0), expired, history: [] };
+};
 
 export const ReportController = {
   create: async (req, res, next) => {
@@ -86,14 +111,14 @@ export const ReportController = {
             username: r.reporterUser.username,
             name: r.reporterUser.customName || r.reporterUser.firstName || r.reporterUser.username || 'Inconnu',
             profileImageUrl: r.reporterUser.profileImageUrl || '',
-            warnings: r.reporterUser.moderation?.warningsCount || 0,
+            warnings: normalizeWarnings(r.reporterUser.moderation).warningsCount,
           } : null,
           reported: r.reportedUser ? {
             id: r.reportedUser._id,
             username: r.reportedUser.username,
             name: r.reportedUser.customName || r.reportedUser.firstName || r.reportedUser.username || 'Inconnu',
             profileImageUrl: r.reportedUser.profileImageUrl || '',
-            warnings: r.reportedUser.moderation?.warningsCount || 0,
+            warnings: normalizeWarnings(r.reportedUser.moderation).warningsCount,
             bannedUntil: r.reportedUser.moderation?.bannedUntil || null,
             bannedPermanent: !!r.reportedUser.moderation?.bannedPermanent,
           } : null,
@@ -149,8 +174,19 @@ export const ReportController = {
 
       if (action === 'warn') {
         user.moderation = user.moderation || {};
-        user.moderation.warningsCount = (user.moderation.warningsCount || 0) + 1;
+        const warningState = normalizeWarnings(user.moderation);
+        const baseCount = warningState.warningsCount || 0;
+        const reason = (note && String(note).trim())
+          || (report.reason && String(report.reason).trim())
+          || 'Avertissement';
+        const history = warningState.history && warningState.history.length > 0
+          ? warningState.history
+          : [];
+        history.push({ at: now, reason });
+        user.moderation.warningsHistory = history;
+        user.moderation.warningsCount = Math.max(baseCount + 1, history.length);
         user.moderation.lastWarningAt = now;
+        user.moderation.lastWarningReason = reason;
       } else if (action === 'ban_temp') {
         const hours = Math.max(1, Math.min(24 * 30, parseInt(durationHours, 10) || 24));
         user.moderation = user.moderation || {};

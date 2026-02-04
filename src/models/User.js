@@ -50,6 +50,16 @@ const UserSchema = new mongoose.Schema(
     moderation: {
       warningsCount: { type: Number, default: 0 },
       lastWarningAt: { type: Date },
+      lastWarningReason: { type: String, default: '' },
+      warningsHistory: {
+        type: [
+          {
+            at: { type: Date, required: true },
+            reason: { type: String, default: '' },
+          },
+        ],
+        default: [],
+      },
       bannedUntil: { type: Date },
       bannedAt: { type: Date },
       bannedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

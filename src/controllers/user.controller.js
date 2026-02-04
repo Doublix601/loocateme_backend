@@ -19,6 +19,43 @@ export const UserController = {
       if (typeof user.firstName !== 'string') { user.firstName = ''; changed = true; }
       if (typeof user.lastName !== 'string') { user.lastName = ''; changed = true; }
       if (typeof user.customName !== 'string') { user.customName = ''; changed = true; }
+      const mod = user.moderation || {};
+      const now = new Date();
+      const cutoff = new Date(now);
+      cutoff.setMonth(cutoff.getMonth() - 3);
+      const rawHistory = Array.isArray(mod.warningsHistory) ? mod.warningsHistory : [];
+      const cleanedHistory = rawHistory
+        .map((entry) => ({
+          at: entry?.at ? new Date(entry.at) : null,
+          reason: entry?.reason ? String(entry.reason) : '',
+        }))
+        .filter((entry) => entry.at && !isNaN(entry.at.getTime()) && entry.at.getTime() >= cutoff.getTime());
+
+      if (cleanedHistory.length > 0) {
+        const last = cleanedHistory[cleanedHistory.length - 1];
+        user.moderation = user.moderation || {};
+        user.moderation.warningsHistory = cleanedHistory;
+        user.moderation.warningsCount = cleanedHistory.length;
+        user.moderation.lastWarningAt = last.at;
+        user.moderation.lastWarningReason = last.reason || user.moderation.lastWarningReason || '';
+        changed = true;
+      } else if (mod.lastWarningAt) {
+        const last = new Date(mod.lastWarningAt);
+        if (!isNaN(last.getTime()) && last.getTime() < cutoff.getTime()) {
+          user.moderation = user.moderation || {};
+          user.moderation.warningsCount = 0;
+          user.moderation.lastWarningAt = null;
+          user.moderation.lastWarningReason = '';
+          user.moderation.warningsHistory = [];
+          changed = true;
+        } else if (mod.warningsCount > 0) {
+          user.moderation = user.moderation || {};
+          user.moderation.warningsHistory = [
+            { at: last, reason: mod.lastWarningReason || 'Avertissement' },
+          ];
+          changed = true;
+        }
+      }
       if (changed) await user.save();
       return res.json({ user });
     } catch (err) {

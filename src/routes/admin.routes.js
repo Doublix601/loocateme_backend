@@ -206,4 +206,26 @@ router.put('/users/:id/user-role', requireAuth, requireAdmin, async (req, res, n
   }
 });
 
+// PUT /api/admin/users/:id/unban - Remove any active bans (admin only)
+router.put('/users/:id/unban', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ code: 'ID_REQUIRED', message: 'ID utilisateur requis' });
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'Utilisateur introuvable' });
+    user.moderation = user.moderation || {};
+    user.moderation.bannedUntil = null;
+    user.moderation.bannedPermanent = false;
+    user.moderation.bannedAt = null;
+    user.moderation.bannedBy = null;
+    user.moderation.banReason = '';
+    await user.save();
+    const safe = user.toObject();
+    delete safe.password;
+    return res.json({ success: true, user: safe });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
