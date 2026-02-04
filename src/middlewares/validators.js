@@ -238,8 +238,9 @@ export const validators = {
   ],
   moderationUserAction: [
     param('id').isMongoId(),
-    body('action').isIn(['unban', 'remove_warnings', 'clear_warnings']),
-    body('count').optional().isInt({ min: 1, max: 100 }),
+    body('action').isIn(['unban', 'clear_warnings', 'ban_temp', 'ban_permanent']),
+    body('durationHours').optional().isInt({ min: 1, max: 720 }),
+    body('note').optional().isString().isLength({ max: 500 }),
   ],
   blockUser: [
     body('targetUserId').isMongoId(),

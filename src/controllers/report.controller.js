@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Report } from '../models/Report.js';
 import { User } from '../models/User.js';
+import { sendPushUnified } from '../services/push.service.js';
 
 const MAX_PAGE_LIMIT = 100;
 const WARNING_EXPIRY_MONTHS = 3;
@@ -80,6 +81,21 @@ export const ReportController = {
         reason,
         description,
       });
+
+      try {
+        await sendPushUnified({
+          userIds: [reportedUserId],
+          title: 'Signalement reçu',
+          body: 'Votre compte a reçu un signalement. Notre équipe va examiner la situation.',
+          data: {
+            kind: 'report_created',
+            reportId: String(report._id),
+            category: category ? String(category) : undefined,
+          },
+        });
+      } catch (e) {
+        console.warn('[reports] report notification failed', e?.message || e);
+      }
 
       return res.status(201).json({ success: true, reportId: report._id });
     } catch (err) {
@@ -236,6 +252,28 @@ export const ReportController = {
 
       await user.save();
 
+      if (action === 'ban_temp' || action === 'ban_permanent') {
+        try {
+          const isTemp = action === 'ban_temp';
+          const until = isTemp ? user.moderation?.bannedUntil : null;
+          await sendPushUnified({
+            userIds: [String(targetUserId)],
+            title: isTemp ? 'Ban temporaire' : 'Ban définitif',
+            body: isTemp
+              ? `Votre compte est banni temporairement${until ? ` jusqu’au ${new Date(until).toLocaleString('fr-FR')}` : ''}.`
+              : 'Votre compte a été banni définitivement.',
+            data: {
+              kind: 'ban',
+              banType: isTemp ? 'temporary' : 'permanent',
+              until: until ? new Date(until).toISOString() : undefined,
+              reportId: String(report._id),
+            },
+          });
+        } catch (e) {
+          console.warn('[reports] ban notification failed', e?.message || e);
+        }
+      }
+
       report.status = 'resolved';
       report.resolvedBy = moderatorId;
       report.resolvedAt = now;
@@ -290,7 +328,8 @@ export const ReportController = {
       const id = String(req.params.id || '').trim();
       if (!id) return res.status(400).json({ code: 'ID_REQUIRED', message: 'ID utilisateur requis' });
       const action = String(req.body?.action || '').trim();
-      const count = Math.max(1, parseInt(req.body?.count, 10) || 1);
+      const durationHours = req.body?.durationHours;
+      const note = req.body?.note;
 
       const user = await User.findById(id);
       if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'Utilisateur introuvable' });
@@ -302,7 +341,20 @@ export const ReportController = {
         user.moderation.bannedAt = null;
         user.moderation.bannedBy = null;
         user.moderation.banReason = '';
-      } else if (action === 'remove_warnings' || action === 'clear_warnings') {
+      } else if (action === 'ban_temp') {
+        const hours = Math.max(1, Math.min(24 * 30, parseInt(durationHours, 10) || 24));
+        user.moderation.bannedUntil = new Date(Date.now() + hours * 60 * 60 * 1000);
+        user.moderation.bannedAt = new Date();
+        user.moderation.bannedBy = req.user?.id || null;
+        user.moderation.bannedPermanent = false;
+        user.moderation.banReason = note ? String(note) : 'Ban temporaire';
+      } else if (action === 'ban_permanent') {
+        user.moderation.bannedPermanent = true;
+        user.moderation.bannedUntil = null;
+        user.moderation.bannedAt = new Date();
+        user.moderation.bannedBy = req.user?.id || null;
+        user.moderation.banReason = note ? String(note) : 'Ban définitif';
+      } else if (action === 'clear_warnings') {
         const warningState = normalizeWarnings(user.moderation);
         let history = warningState.history || [];
         if (history.length === 0 && !warningState.expired && user.moderation.warningsCount > 0) {
@@ -315,12 +367,7 @@ export const ReportController = {
             }];
           }
         }
-        if (action === 'clear_warnings' || count >= history.length) {
-          history = [];
-        } else {
-          const sorted = [...history].sort((a, b) => a.at.getTime() - b.at.getTime());
-          history = sorted.slice(0, Math.max(0, sorted.length - count));
-        }
+        history = [];
         user.moderation.warningsHistory = history;
         user.moderation.warningsCount = history.length;
         const last = history.length > 0 ? history[history.length - 1] : null;
@@ -332,6 +379,27 @@ export const ReportController = {
       }
 
       await user.save();
+
+      if (action === 'ban_temp' || action === 'ban_permanent') {
+        try {
+          const isTemp = action === 'ban_temp';
+          const until = isTemp ? user.moderation?.bannedUntil : null;
+          await sendPushUnified({
+            userIds: [String(user._id)],
+            title: isTemp ? 'Ban temporaire' : 'Ban définitif',
+            body: isTemp
+              ? `Votre compte est banni temporairement${until ? ` jusqu’au ${new Date(until).toLocaleString('fr-FR')}` : ''}.`
+              : 'Votre compte a été banni définitivement.',
+            data: {
+              kind: 'ban',
+              banType: isTemp ? 'temporary' : 'permanent',
+              until: until ? new Date(until).toISOString() : undefined,
+            },
+          });
+        } catch (e) {
+          console.warn('[reports] moderation ban notification failed', e?.message || e);
+        }
+      }
       const safe = user.toObject();
       delete safe.password;
       return res.json({ success: true, user: safe });
