@@ -5,6 +5,28 @@ import { User } from '../models/User.js';
 const MAX_PAGE_LIMIT = 100;
 const WARNING_EXPIRY_MONTHS = 3;
 
+function buildDiacriticRegex(input) {
+  const map = {
+    a: '[aàáâäåæAÀÁÂÄÅÆ]',
+    c: '[cçCÇ]',
+    e: '[eèéêëEÈÉÊË]',
+    i: '[iìíîïIÌÍÎÏ]',
+    o: '[oòóôöøœOÒÓÔÖØŒ]',
+    u: '[uùúûüUÙÚÛÜ]',
+    y: '[yÿYŸ]',
+    n: '[nñNÑ]',
+  };
+  const escaped = String(input || '')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let pattern = '';
+  for (const ch of escaped) {
+    const lower = ch.toLowerCase();
+    if (map[lower]) pattern += map[lower];
+    else pattern += ch;
+  }
+  return new RegExp(pattern, 'i');
+}
+
 const normalizeWarnings = (moderation = {}) => {
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - WARNING_EXPIRY_MONTHS);
@@ -13,6 +35,7 @@ const normalizeWarnings = (moderation = {}) => {
   const history = rawHistory
     .map((entry) => ({
       at: entry?.at ? new Date(entry.at) : null,
+      type: entry?.type ? String(entry.type) : '',
       reason: entry?.reason ? String(entry.reason) : '',
     }))
     .filter((entry) => entry.at && !isNaN(entry.at.getTime()) && entry.at.getTime() >= cutoff.getTime());
@@ -142,7 +165,7 @@ export const ReportController = {
     try {
       const id = String(req.params.id || '').trim();
       if (!id) return res.status(400).json({ code: 'ID_REQUIRED', message: 'ID signalement requis' });
-      const { action, target, durationHours, note } = req.body || {};
+      const { action, target, durationHours, note, warningType } = req.body || {};
 
       const report = await Report.findById(id);
       if (!report) return res.status(404).json({ code: 'REPORT_NOT_FOUND', message: 'Signalement introuvable' });
@@ -179,14 +202,18 @@ export const ReportController = {
         const reason = (note && String(note).trim())
           || (report.reason && String(report.reason).trim())
           || 'Avertissement';
+        const type = (warningType && String(warningType).trim())
+          || (report.category && String(report.category).trim())
+          || 'Avertissement';
         const history = warningState.history && warningState.history.length > 0
           ? warningState.history
           : [];
-        history.push({ at: now, reason });
+        history.push({ at: now, type, reason });
         user.moderation.warningsHistory = history;
         user.moderation.warningsCount = Math.max(baseCount + 1, history.length);
         user.moderation.lastWarningAt = now;
         user.moderation.lastWarningReason = reason;
+        user.moderation.lastWarningType = type;
       } else if (action === 'ban_temp') {
         const hours = Math.max(1, Math.min(24 * 30, parseInt(durationHours, 10) || 24));
         user.moderation = user.moderation || {};
@@ -218,6 +245,96 @@ export const ReportController = {
       await report.save();
 
       return res.json({ success: true, reportId: report._id, status: report.status });
+    } catch (err) {
+      next(err);
+    }
+  },
+  searchUsers: async (req, res, next) => {
+    try {
+      const q = String(req.query.q || '').trim();
+      if (!q || q.length < 2) return res.json({ users: [] });
+      const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 10));
+      const re = buildDiacriticRegex(q);
+      const users = await User.find({
+        $or: [
+          { username: re },
+          { firstName: re },
+          { lastName: re },
+          { customName: re },
+          { name: re },
+          { email: { $regex: re } },
+        ],
+      })
+        .limit(limit)
+        .select('username firstName lastName customName email profileImageUrl moderation role isVisible')
+        .lean();
+      const mapped = users.map((u) => ({
+        id: u._id,
+        username: u.username || '',
+        firstName: u.firstName || '',
+        lastName: u.lastName || '',
+        customName: u.customName || '',
+        email: u.email || '',
+        profileImageUrl: u.profileImageUrl || '',
+        role: u.role || 'user',
+        isVisible: u.isVisible !== false,
+        moderation: u.moderation || {},
+      }));
+      return res.json({ users: mapped });
+    } catch (err) {
+      next(err);
+    }
+  },
+  moderateUser: async (req, res, next) => {
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ code: 'ID_REQUIRED', message: 'ID utilisateur requis' });
+      const action = String(req.body?.action || '').trim();
+      const count = Math.max(1, parseInt(req.body?.count, 10) || 1);
+
+      const user = await User.findById(id);
+      if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'Utilisateur introuvable' });
+      user.moderation = user.moderation || {};
+
+      if (action === 'unban') {
+        user.moderation.bannedUntil = null;
+        user.moderation.bannedPermanent = false;
+        user.moderation.bannedAt = null;
+        user.moderation.bannedBy = null;
+        user.moderation.banReason = '';
+      } else if (action === 'remove_warnings' || action === 'clear_warnings') {
+        const warningState = normalizeWarnings(user.moderation);
+        let history = warningState.history || [];
+        if (history.length === 0 && !warningState.expired && user.moderation.warningsCount > 0) {
+          const lastAt = user.moderation.lastWarningAt ? new Date(user.moderation.lastWarningAt) : null;
+          if (lastAt && !isNaN(lastAt.getTime())) {
+            history = [{
+              at: lastAt,
+              type: user.moderation.lastWarningType || 'Avertissement',
+              reason: user.moderation.lastWarningReason || 'Avertissement',
+            }];
+          }
+        }
+        if (action === 'clear_warnings' || count >= history.length) {
+          history = [];
+        } else {
+          const sorted = [...history].sort((a, b) => a.at.getTime() - b.at.getTime());
+          history = sorted.slice(0, Math.max(0, sorted.length - count));
+        }
+        user.moderation.warningsHistory = history;
+        user.moderation.warningsCount = history.length;
+        const last = history.length > 0 ? history[history.length - 1] : null;
+        user.moderation.lastWarningAt = last ? last.at : null;
+        user.moderation.lastWarningReason = last ? last.reason || '' : '';
+        user.moderation.lastWarningType = last ? last.type || '' : '';
+      } else {
+        return res.status(400).json({ code: 'ACTION_INVALID', message: 'Action invalide' });
+      }
+
+      await user.save();
+      const safe = user.toObject();
+      delete safe.password;
+      return res.json({ success: true, user: safe });
     } catch (err) {
       next(err);
     }

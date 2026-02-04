@@ -27,6 +27,7 @@ export const UserController = {
       const cleanedHistory = rawHistory
         .map((entry) => ({
           at: entry?.at ? new Date(entry.at) : null,
+          type: entry?.type ? String(entry.type) : '',
           reason: entry?.reason ? String(entry.reason) : '',
         }))
         .filter((entry) => entry.at && !isNaN(entry.at.getTime()) && entry.at.getTime() >= cutoff.getTime());
@@ -38,6 +39,7 @@ export const UserController = {
         user.moderation.warningsCount = cleanedHistory.length;
         user.moderation.lastWarningAt = last.at;
         user.moderation.lastWarningReason = last.reason || user.moderation.lastWarningReason || '';
+        user.moderation.lastWarningType = last.type || user.moderation.lastWarningType || '';
         changed = true;
       } else if (mod.lastWarningAt) {
         const last = new Date(mod.lastWarningAt);
@@ -46,12 +48,13 @@ export const UserController = {
           user.moderation.warningsCount = 0;
           user.moderation.lastWarningAt = null;
           user.moderation.lastWarningReason = '';
+          user.moderation.lastWarningType = '';
           user.moderation.warningsHistory = [];
           changed = true;
         } else if (mod.warningsCount > 0) {
           user.moderation = user.moderation || {};
           user.moderation.warningsHistory = [
-            { at: last, reason: mod.lastWarningReason || 'Avertissement' },
+            { at: last, type: mod.lastWarningType || 'Avertissement', reason: mod.lastWarningReason || 'Avertissement' },
           ];
           changed = true;
         }

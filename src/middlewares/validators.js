@@ -226,6 +226,20 @@ export const validators = {
     body('target').optional().isIn(['reported', 'reporter']),
     body('durationHours').optional().isInt({ min: 1, max: 720 }),
     body('note').optional().isString().isLength({ max: 500 }),
+    body('warningType').optional().isString().isLength({ max: 200 }),
+  ],
+  moderationUserSearch: [
+    query('q')
+      .exists()
+      .bail()
+      .isString()
+      .isLength({ min: 2, max: 100 }),
+    query('limit').optional().isInt({ min: 1, max: 20 }),
+  ],
+  moderationUserAction: [
+    param('id').isMongoId(),
+    body('action').isIn(['unban', 'remove_warnings', 'clear_warnings']),
+    body('count').optional().isInt({ min: 1, max: 100 }),
   ],
   blockUser: [
     body('targetUserId').isMongoId(),

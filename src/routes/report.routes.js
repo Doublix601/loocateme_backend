@@ -16,5 +16,7 @@ const requireModerator = (req, res, next) => {
 router.post('/', requireAuth, validate(validators.reportCreate), ReportController.create);
 router.get('/', requireAuth, requireModerator, ReportController.list);
 router.post('/:id/action', requireAuth, requireModerator, validate(validators.reportAction), ReportController.action);
+router.get('/users/search', requireAuth, requireModerator, validate(validators.moderationUserSearch), ReportController.searchUsers);
+router.post('/users/:id/moderate', requireAuth, requireModerator, validate(validators.moderationUserAction), ReportController.moderateUser);
 
 export default router;

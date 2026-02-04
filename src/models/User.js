@@ -51,10 +51,12 @@ const UserSchema = new mongoose.Schema(
       warningsCount: { type: Number, default: 0 },
       lastWarningAt: { type: Date },
       lastWarningReason: { type: String, default: '' },
+      lastWarningType: { type: String, default: '' },
       warningsHistory: {
         type: [
           {
             at: { type: Date, required: true },
+            type: { type: String, default: '' },
             reason: { type: String, default: '' },
           },
         ],
