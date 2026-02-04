@@ -28,7 +28,7 @@ function buildDiacriticRegex(input) {
 
 const GEO_CACHE_TTL = 5; // seconds
 
-async function getBlockedIds(userId) {
+export async function getBlockedIds(userId) {
   if (!userId) return [];
   try {
     const [me, blockedBy] = await Promise.all([
@@ -41,6 +41,18 @@ async function getBlockedIds(userId) {
   } catch {
     return [];
   }
+}
+
+export async function getUserByIdForViewer({ userId, targetId }) {
+  if (!targetId) return null;
+  const target = await User.findById(targetId).select('-password').lean();
+  if (!target) return null;
+  if (String(userId) !== String(targetId)) {
+    if (target.isVisible === false || target.emailVerified === false) return null;
+    const blockedIds = await getBlockedIds(userId);
+    if (blockedIds.includes(String(targetId))) return null;
+  }
+  return target;
 }
 
 export async function getUserByEmail(email) {

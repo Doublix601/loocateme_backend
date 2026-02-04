@@ -11,5 +11,6 @@ router.get('/nearby', requireAuth, validate(validators.nearby), UserController.n
 router.get('/popular', requireAuth, validate(validators.popular), UserController.popular);
 router.get('/by-email', requireAuth, validate(validators.getUsersByEmail), UserController.getByEmail);
 router.get('/search', requireAuth, validate(validators.searchUsers), UserController.search);
+router.get('/:id', requireAuth, validate(validators.userById), UserController.getById);
 
 export default router;

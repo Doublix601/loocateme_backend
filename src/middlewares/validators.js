@@ -103,6 +103,9 @@ export const validators = {
         icloud_remove_subaddress: false,
       }),
   ],
+  userById: [
+    param('id').isMongoId(),
+  ],
   profileUpdate: [
     body('username')
       .optional()

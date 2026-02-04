@@ -1,4 +1,4 @@
-import { getNearbyUsers, updateLocation, getUsersByEmails, getPopularUsers, searchUsers } from '../services/user.service.js';
+import { getNearbyUsers, updateLocation, getUsersByEmails, getPopularUsers, searchUsers, getUserByIdForViewer } from '../services/user.service.js';
 
 export const UserController = {
   me: async (req, res, next) => {
@@ -118,6 +118,16 @@ export const UserController = {
       const { q, limit } = req.query;
       const users = await searchUsers({ q, limit, excludeUserId: req.user?.id });
       return res.json({ users });
+    } catch (err) {
+      next(err);
+    }
+  },
+  getById: async (req, res, next) => {
+    try {
+      const id = String(req.params.id || '').trim();
+      const user = await getUserByIdForViewer({ userId: req.user?.id, targetId: id });
+      if (!user) return res.status(404).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
+      return res.json({ user });
     } catch (err) {
       next(err);
     }
