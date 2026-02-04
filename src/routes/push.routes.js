@@ -10,4 +10,10 @@ router.post('/register-token', requireAuth, (req, res, next) => {
   next();
 }, PushController.registerToken);
 
+router.post('/unregister-token', requireAuth, (req, res, next) => {
+  const { token } = req.body || {};
+  if (!token) return res.status(400).json({ code: 'TOKEN_REQUIRED', message: 'token requis' });
+  next();
+}, PushController.unregisterToken);
+
 export default router;

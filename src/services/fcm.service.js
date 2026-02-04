@@ -106,12 +106,14 @@ export async function sendUnifiedNotification(options = {}) {
       }
     : undefined;
 
+  const effectiveChannelId = androidChannelId || 'default';
+
   // Android options
   const android = {
     priority,
     ...(collapseKey ? { collapseKey } : {}),
     notification: {
-      ...(androidChannelId ? { channelId: androidChannelId } : {}),
+      ...(effectiveChannelId ? { channelId: effectiveChannelId } : {}),
       ...(sound ? { sound } : {}),
       ...(imageUrl ? { imageUrl } : {}),
     },

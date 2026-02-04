@@ -42,6 +42,7 @@ export async function sendPushUnified({ userIds = [], tokens = [], title, body, 
   const resolved = await resolveUserTokens(userIds, tokens);
   if (!resolved.length) return { ok: false, skipped: true, reason: 'NO_TOKENS' };
   const { expoTokens, fcmTokens } = splitTokens(resolved);
+  const channelId = androidChannelId || 'default';
 
   const results = { expo: null, fcm: null };
 
@@ -53,7 +54,7 @@ export async function sendPushUnified({ userIds = [], tokens = [], title, body, 
       title,
       body,
       data,
-      ...(androidChannelId ? { channelId: androidChannelId } : {}),
+      ...(channelId ? { channelId } : {}),
       ...(typeof badge === 'number' ? { badge: Number(badge) } : {}),
       ...(collapseKey ? { collapseId: String(collapseKey) } : {}),
       // Required for EAS/Production builds
@@ -76,7 +77,7 @@ export async function sendPushUnified({ userIds = [], tokens = [], title, body, 
 
   // Send via FCM for any remaining tokens
   if (fcmTokens.length) {
-    results.fcm = await sendFcmUnified({ tokens: fcmTokens, title, body, data, androidChannelId, badge, collapseKey });
+    results.fcm = await sendFcmUnified({ tokens: fcmTokens, title, body, data, androidChannelId: channelId, badge, collapseKey });
   }
 
   return { ok: true, results, counts: { expo: expoTokens.length, fcm: fcmTokens.length } };
