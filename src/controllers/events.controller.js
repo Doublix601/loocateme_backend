@@ -1,7 +1,24 @@
 import { Event } from '../models/Event.js';
 import { User } from '../models/User.js';
 import { NotificationDedup } from '../models/NotificationDedup.js';
+import { FeatureFlag } from '../models/FeatureFlag.js';
 import { sendPushUnified } from '../services/push.service.js';
+
+async function isPremiumEnabled() {
+  try {
+    const flag = await FeatureFlag.findOne({ key: 'premiumEnabled' }).lean();
+    return !!flag?.enabled;
+  } catch (_) {
+    return false;
+  }
+}
+
+function hasPremiumAccess(user) {
+  if (!user) return false;
+  const now = new Date();
+  const trialActive = user.premiumTrialEnd && user.premiumTrialEnd > now;
+  return !!user.isPremium || !!trialActive || user.role === 'admin' || user.role === 'moderator';
+}
 
 export const EventsController = {
   profileView: async (req, res, next) => {
@@ -32,7 +49,7 @@ export const EventsController = {
         // - Premium: « {Prénom} regarde ton profil ! »
         let title = 'Visite de profil';
         let body = "Quelqu'un regarde ton profil ! Découvre qui c'est.";
-        
+
         // Logique de visiteur récurrent (détection si l'acteur a visité la cible > 2 fois en 24h)
         let isRecurring = false;
         if (actorId) {
@@ -46,14 +63,16 @@ export const EventsController = {
           if (recentViews >= 2) isRecurring = true;
         }
 
-        if (target.isPremium === true) {
+        const premiumEnabled = await isPremiumEnabled();
+        const allowPremiumCopy = !premiumEnabled || hasPremiumAccess(target);
+        if (allowPremiumCopy) {
           if (actorId) {
             const actor = await User.findById(actorId).lean();
             const name = (actor?.customName && String(actor.customName).trim())
               || (actor?.firstName && String(actor.firstName).trim())
               || (actor?.username && String(actor.username).trim())
               || "Quelqu'un";
-            
+
             if (isRecurring) {
               body = `${name} est un admirateur secret... Il/Elle a encore regardé ton profil ! 😉`;
             } else {
@@ -64,16 +83,16 @@ export const EventsController = {
           body = "Tu as un admirateur secret... Quelqu'un a regardé ton profil plusieurs fois aujourd'hui ! 👀";
         }
 
-        await sendPushUnified({ 
-          userIds: [targetUserId], 
-          title, 
-          body, 
-          data: { 
-            kind: 'profile_view', 
+        await sendPushUnified({
+          userIds: [targetUserId],
+          title,
+          body,
+          data: {
+            kind: 'profile_view',
             targetUserId: String(targetUserId),
             actorId: actorId ? String(actorId) : undefined,
-            isRecurring 
-          } 
+            isRecurring
+          }
         });
       } catch (e) {
         console.warn('[events] push send failed', e?.message || e);
@@ -140,7 +159,9 @@ export const EventsController = {
           const target = await User.findById(targetUserId).lean();
           let title = 'Activité sur tes réseaux';
           let body = 'Quelqu’un consulte tes réseaux — découvre qui te stalke 🔍';
-          if (target.isPremium === true) {
+          const premiumEnabled = await isPremiumEnabled();
+          const allowPremiumCopy = !premiumEnabled || hasPremiumAccess(target);
+          if (allowPremiumCopy) {
             // Premium: {Prénom} consulte tes réseaux 🔗
             let name = 'Quelqu’un';
             if (actorId) {
