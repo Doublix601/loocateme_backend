@@ -53,7 +53,9 @@ async function ensureAppUserViaRoot(uri) {
 }
 
 export async function connectMongo() {
-  const uri = process.env.MONGODB_URI || process.env.MONGODB_URI_LOCAL || 'mongodb://127.0.0.1:27017/loocateme';
+  const uri = (process.env.DOCKER_CONTAINER === 'true' || process.env.NODE_ENV === 'production')
+    ? (process.env.MONGODB_URI || 'mongodb://mongo:27017/loocateme')
+    : (process.env.MONGODB_URI_LOCAL || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/loocateme');
   mongoose.set('strictQuery', true);
 
   const maxDelay = 30000; // 30s cap

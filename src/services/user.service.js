@@ -1,4 +1,5 @@
 import { User } from '../models/User.js';
+import { Location } from '../models/Location.js';
 import { redisClient } from '../config/redis.js';
 import { sendPushUnified } from './push.service.js';
 import { NotificationDedup } from '../models/NotificationDedup.js';
@@ -68,47 +69,56 @@ export async function getUsersByEmails(emails) {
 }
 
 export async function updateLocation(userId, { lat, lon }) {
+  const oldUser = await User.findById(userId).select('currentLocation');
+  const oldLocationId = oldUser?.currentLocation;
+
+  // Utilisation de l'agrégation pour obtenir les distances exactes et gérer le rayon par lieu
+  const geoNearResult = await Location.aggregate([
+    {
+      $geoNear: {
+        near: { type: 'Point', coordinates: [lon, lat] },
+        distanceField: 'dist',
+        maxDistance: 200, // On cherche un peu plus large pour l'hystérésis
+        spherical: true,
+      },
+    },
+    { $limit: 5 }
+  ]);
+
+  let currentLocationId = null;
+  if (geoNearResult.length > 0) {
+    // 1. Logique d'hystérésis : si l'utilisateur était déjà dans un lieu, on vérifie s'il y est encore
+    const oldLocationInList = oldLocationId ? geoNearResult.find(p => String(p._id) === String(oldLocationId)) : null;
+
+    if (oldLocationInList && oldLocationInList.dist <= (oldLocationInList.radius || 100) * 1.1) {
+      // On reste dans le lieu actuel (avec 10% de marge de sortie pour éviter les sauts)
+      currentLocationId = oldLocationId;
+    } else {
+      // 2. Sinon, on prend le plus proche, s'il est dans son rayon de détection
+      const nearest = geoNearResult[0];
+      if (nearest.dist <= (nearest.radius || 100)) {
+        currentLocationId = nearest._id;
+      }
+    }
+  }
+
   const update = {
     location: { type: 'Point', coordinates: [lon, lat], updatedAt: new Date() },
+    currentLocation: currentLocationId,
   };
+
   const user = await User.findByIdAndUpdate(userId, update, { new: true });
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
 
-  // Logic: Notify if a new active neighbor is detected (within 500m)
-  try {
-    const nearby = await User.find({
-      _id: { $ne: userId },
-      isVisible: true,
-      emailVerified: true,
-      'location.updatedAt': { $gte: new Date(Date.now() - 30 * 60 * 1000) }, // Active in last 30 mins
-      location: {
-        $near: {
-          $geometry: { type: 'Point', coordinates: [lon, lat] },
-          $maxDistance: 500,
-        },
-      },
-    }).limit(3);
+  // Update popularity of affected locations
+  if (currentLocationId) {
+    const count = await User.countDocuments({ currentLocation: currentLocationId });
+    await Location.findByIdAndUpdate(currentLocationId, { popularity: count });
+  }
 
-    for (const neighbor of nearby) {
-      // Dedup per neighbor-pair to avoid spam (once per 12h)
-      const dedupKey = `neighbor:${userId}:${neighbor._id}`;
-      try {
-        const alreadyNotified = await NotificationDedup.findOne({ targetUser: userId, viewerUser: neighbor._id, eventType: 'new_neighbor' });
-        if (!alreadyNotified) {
-          await NotificationDedup.create({ targetUser: userId, viewerUser: neighbor._id, eventType: 'new_neighbor' });
-
-          const name = (neighbor.customName || neighbor.firstName || neighbor.username || 'Quelqu’un').trim();
-          await sendPushUnified({
-            userIds: [userId],
-            title: 'Nouveau voisin !',
-            body: `${name} est juste à côté de toi. Fais-lui signe ! 👋`,
-            data: { kind: 'new_neighbor', neighborId: String(neighbor._id) }
-          });
-        }
-      } catch (_) {}
-    }
-  } catch (e) {
-    console.warn('[user.service] neighbor notification failed', e.message);
+  if (oldLocationId && String(oldLocationId) !== String(currentLocationId)) {
+    const count = await User.countDocuments({ currentLocation: oldLocationId });
+    await Location.findByIdAndUpdate(oldLocationId, { popularity: count });
   }
 
   // Optional: cache in Redis GEOSET

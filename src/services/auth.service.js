@@ -115,7 +115,7 @@ export async function logout(userId, token) {
 export async function requestPasswordReset(email) {
   const user = await User.findOne({ email });
   if (user) {
-    const { token, hash, expiresAt } = generateOpaqueToken(process.env.PWD_RESET_TOKEN_TTL || '15m');
+    const { token, hash, expiresAt } = generateOpaqueToken(process.env.PWD_RESET_TOKEN_TTL || '1h');
     user.pwdResetTokenHash = hash;
     user.pwdResetExpiresAt = expiresAt;
     await user.save();
@@ -131,8 +131,8 @@ export async function requestPasswordReset(email) {
         subject: 'Réinitialisation de votre mot de passe',
         text: `Bonjour,
 Vous avez demandé à réinitialiser votre mot de passe.
-Cliquez sur ce lien pour définir un nouveau mot de passe (valide 15 minutes): ${resetUrl}`,
-        html: `<p>Bonjour,</p><p>Vous avez demandé à réinitialiser votre mot de passe.</p><p><a href="${resetUrl}">Cliquez ici pour définir un nouveau mot de passe</a> (valide 15 minutes).</p><p>Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.</p>`,
+Cliquez sur ce lien pour définir un nouveau mot de passe (valide 1 heure): ${resetUrl}`,
+        html: `<p>Bonjour,</p><p>Vous avez demandé à réinitialiser votre mot de passe.</p><p><a href="${resetUrl}">Cliquez ici pour définir un nouveau mot de passe</a> (valide 1 heure).</p><p>Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.</p>`,
       });
     } catch (e) {
       // Log but do not reveal; continue to avoid user enumeration
@@ -186,11 +186,19 @@ Merci de confirmer votre adresse en cliquant sur ce lien: ${verifyUrl}`,
 export async function verifyEmailByToken(token) {
   const hash = sha256(token);
   const now = new Date();
-  const user = await User.findOne({ emailVerifyTokenHash: hash, emailVerifyExpiresAt: { $gt: now } });
+  const user = await User.findOne({ emailVerifyTokenHash: hash });
   if (!user) {
-    const err = new Error('Token invalide ou expiré');
+    const err = new Error('Token de vérification invalide');
     err.status = 400;
     err.code = 'VERIFY_TOKEN_INVALID';
+    throw err;
+  }
+  // Check expiration
+  if (user.emailVerifyExpiresAt && user.emailVerifyExpiresAt < now) {
+    console.warn(`[auth] Email verification token expired for ${user.email}. Expired at: ${user.emailVerifyExpiresAt}, Now: ${now}`);
+    const err = new Error('Le lien de vérification a expiré');
+    err.status = 400;
+    err.code = 'VERIFY_TOKEN_EXPIRED';
     throw err;
   }
   user.emailVerified = true;
@@ -203,11 +211,19 @@ export async function verifyEmailByToken(token) {
 export async function resetPasswordByToken(token, newPassword) {
   const hash = sha256(token);
   const now = new Date();
-  const user = await User.findOne({ pwdResetTokenHash: hash, pwdResetExpiresAt: { $gt: now } }).select('+password');
+  const user = await User.findOne({ pwdResetTokenHash: hash }).select('+password');
   if (!user) {
-    const err = new Error('Token invalide ou expiré');
+    const err = new Error('Token de réinitialisation invalide');
     err.status = 400;
     err.code = 'RESET_TOKEN_INVALID';
+    throw err;
+  }
+  // Check expiration
+  if (user.pwdResetExpiresAt && user.pwdResetExpiresAt < now) {
+    console.warn(`[auth] Password reset token expired for ${user.email}. Expired at: ${user.pwdResetExpiresAt}, Now: ${now}`);
+    const err = new Error('Le lien de réinitialisation a expiré');
+    err.status = 400;
+    err.code = 'RESET_TOKEN_EXPIRED';
     throw err;
   }
   user.password = newPassword; // will be hashed by pre-save hook

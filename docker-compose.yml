@@ -6,6 +6,7 @@ services:
     ports:
       - "4000:4000"
     environment:
+      - DOCKER_CONTAINER=true
       - PORT=4000
       - NODE_ENV=development
       - CORS_ORIGIN=http://localhost:19006
@@ -17,9 +18,8 @@ services:
       - REDIS_URL=redis://default:${REDIS_PASSWORD:-change-me-redis}@redis:6379
       - UPLOAD_DIR=uploads
       # Public URL de l'API utilisée dans les liens envoyés par email
-      - API_PUBLIC_URL=http://api.loocate.me
-      # Valeur héritée pour compatibilité; sera ignorée si API_PUBLIC_URL est défini
-      - BASE_URL=http://api.loocate.me
+      - API_PUBLIC_URL=${API_PUBLIC_URL:-http://localhost:4000}
+      - BASE_URL=${API_PUBLIC_URL:-http://localhost:4000}
       - APP_PUBLIC_URL=http://54.38.34.4:4000
       - SMTP_HOST=pro3.mail.ovh.net
       - SMTP_PORT=587
@@ -33,7 +33,7 @@ services:
       - SMTP_DEBUG=false
       - EMAIL_TEST_SECRET=change-me-test
       - EMAIL_VERIF_TOKEN_TTL=24h
-      - PWD_RESET_TOKEN_TTL=15m
+      - PWD_RESET_TOKEN_TTL=1h
       - MONGO_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-change-me-root}
       - MONGO_APP_PASSWORD=${MONGO_APP_PASSWORD:-change-me-app}
     volumes:
@@ -57,7 +57,9 @@ services:
     image: mongo:6
     container_name: loocateme-mongo
     restart: unless-stopped
-    # Do NOT expose Mongo to the Internet. Only the API should access it over the internal Docker network.
+    # Expose Mongo ONLY to localhost so local 'npm run dev' can connect
+    ports:
+      - "127.0.0.1:27017:27017"
     environment:
       - MONGO_INITDB_ROOT_USERNAME=admin
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-change-me-root}
@@ -72,6 +74,9 @@ services:
     image: redis:7-alpine
     container_name: loocateme-redis
     restart: unless-stopped
+    # Expose Redis ONLY to localhost so local 'npm run dev' can connect
+    ports:
+      - "127.0.0.1:6379:6379"
     # Do NOT expose Redis to the Internet
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-change-me-redis}"]
     volumes:

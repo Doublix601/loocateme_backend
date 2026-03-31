@@ -24,6 +24,7 @@ import proxyRoutes from './routes/proxy.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import blocksRoutes from './routes/blocks.routes.js';
 import followRoutes from './routes/follow.routes.js';
+import locationRoutes from './routes/location.routes.js';
 import { errorHandler, notFound } from './middlewares/error.js';
 import { verifyMailTransport } from './services/email.service.js';
 import { CronService } from './services/cron.service.js';
@@ -68,6 +69,7 @@ app.use('/api/proxy', proxyRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/blocks', blocksRoutes);
 app.use('/api/follow', followRoutes);
+app.use('/api/locations', locationRoutes);
 
 // 404 and error
 app.use(notFound);

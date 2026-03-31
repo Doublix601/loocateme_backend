@@ -34,6 +34,10 @@ const UserSchema = new mongoose.Schema(
     // Split first/last name cooldowns: each field is independent
     lastFirstNameChangeAt: { type: Date },
     lastLastNameChangeAt: { type: Date },
+    // Status field: 'green' | 'orange' | 'red'
+    status: { type: String, enum: ['green', 'orange', 'red'], default: 'green', index: true },
+    // Current location check-in: based on proximity
+    currentLocation: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', default: null, index: true },
     // GDPR consent and privacy preferences
     consent: {
       accepted: { type: Boolean, default: false },

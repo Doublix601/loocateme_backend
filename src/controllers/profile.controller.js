@@ -10,6 +10,19 @@ export const ProfileController = {
       next(err);
     }
   },
+  updateStatus: async (req, res, next) => {
+    try {
+      const { status } = req.body;
+      if (!['green', 'orange', 'red'].includes(status)) {
+        return res.status(400).json({ code: 'INVALID_STATUS', message: 'Invalid status' });
+      }
+      const { User } = await import('../models/User.js');
+      const user = await User.findByIdAndUpdate(req.user.id, { status }, { new: true }).select('-password');
+      return res.json({ user });
+    } catch (err) {
+      next(err);
+    }
+  },
   uploadPhoto: async (req, res, next) => {
     try {
       if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
