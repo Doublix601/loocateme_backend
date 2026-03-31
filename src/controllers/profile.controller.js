@@ -17,7 +17,14 @@ export const ProfileController = {
         return res.status(400).json({ code: 'INVALID_STATUS', message: 'Invalid status' });
       }
       const { User } = await import('../models/User.js');
-      const user = await User.findByIdAndUpdate(req.user.id, { status }, { new: true }).select('-password');
+      const userDoc = await User.findById(req.user.id);
+      if (userDoc.status === status) {
+        return res.json({ user: userDoc });
+      }
+      userDoc.status = status;
+      await userDoc.save();
+      const user = userDoc.toObject();
+      delete user.password;
       return res.json({ user });
     } catch (err) {
       next(err);
