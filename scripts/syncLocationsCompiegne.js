@@ -13,10 +13,10 @@ const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 const query = `
 [out:json];
 (
-  node["amenity"~"bar|nightclub|restaurant|cafe|library|university|college|food_court|cinema|ice_cream"](around:5000, 49.4179497, 2.8263171);
-  node["leisure"~"fitness_centre|park|beach_resort|theme_park|sports_centre|bowling_alley"](around:5000, 49.4179497, 2.8263171);
-  way["amenity"~"bar|nightclub|restaurant|cafe|library|university|college|food_court|cinema|ice_cream"](around:5000, 49.4179497, 2.8263171);
-  way["leisure"~"fitness_centre|park|beach_resort|theme_park|sports_centre|bowling_alley"](around:5000, 49.4179497, 2.8263171);
+  node["amenity"~"bar|nightclub|library|university|college|food_court|cinema|ice_cream"](around:5000, 49.4179497, 2.8263171);
+  node["leisure"~"fitness_centre|beach_resort|theme_park|sports_centre|bowling_alley"](around:5000, 49.4179497, 2.8263171);
+  way["amenity"~"bar|nightclub|library|university|college|food_court|cinema|ice_cream"](around:5000, 49.4179497, 2.8263171);
+  way["leisure"~"fitness_centre|beach_resort|theme_park|sports_centre|bowling_alley"](around:5000, 49.4179497, 2.8263171);
 );
 out center;
 `;
@@ -45,7 +45,7 @@ async function syncLocationsCompiegne() {
     const deleteResult = await Location.deleteMany({
       $or: [
         { name: 'Unknown' },
-        { type: { $in: ['THEATRE', 'COMMUNITYCENTRE', 'SOCIALFACILITY', 'theatre', 'communityCentre', 'socialFacility'] } },
+        { type: { $in: ['THEATRE', 'COMMUNITYCENTRE', 'SOCIALFACILITY', 'theatre', 'communityCentre', 'socialFacility', 'Restaurant 🍴', 'Parc 🌳', 'Café ☕'] } },
       ],
     });
     console.log(`Deleted ${deleteResult.deletedCount} excluded locations.`);
@@ -54,23 +54,22 @@ async function syncLocationsCompiegne() {
       .filter((el) => {
         const name = el.tags.name || 'Unknown';
         const amenity = el.tags.amenity;
+        const leisure = el.tags.leisure;
         if (name === 'Unknown') return false;
-        if (['theatre', 'community_centre', 'social_facility'].includes(amenity)) return false;
+        if (['theatre', 'community_centre', 'social_facility', 'restaurant', 'cafe'].includes(amenity)) return false;
+        if (leisure === 'park') return false;
         return true;
       })
       .map((el) => {
-        let type = 'Restaurant 🍴';
+        let type = 'Lieu 📍';
         const amenity = el.tags.amenity;
         const leisure = el.tags.leisure;
 
         if (amenity === 'bar') type = 'Bar 🍺';
         else if (amenity === 'nightclub') type = 'Boîte de nuit 💃';
         else if (leisure === 'fitness_centre') type = 'Salle de sport 🏋️';
-        else if (amenity === 'restaurant') type = 'Restaurant 🍴';
-        else if (leisure === 'park') type = 'Parc 🌳';
         else if (leisure === 'beach_resort') type = 'Plage 🏖️';
         else if (leisure === 'theme_park') type = 'Parc d\'attractions 🎢';
-        else if (amenity === 'cafe') type = 'Café ☕';
         else if (amenity === 'library') type = 'Bibliothèque 📚';
         else if (leisure === 'sports_centre') type = 'Centre sportif 🏟️';
         else if (leisure === 'bowling_alley') type = 'Bowling 🎳';
