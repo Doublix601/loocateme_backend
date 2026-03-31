@@ -8,26 +8,26 @@ const MONGO_URI = process.env.MONGODB_URI_LOCAL || process.env.MONGODB_URI || 'm
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 
-// Query for bar, nightclub, gym, restaurant, park, beach, amusement_park, coffee, library, education, food_court, cinema, theatre, community_centre, ice_cream, social_facility, sports_centre, bowling
-// Compiègne area (around 10km)
+// Query restricted to Compiègne area (around 5km for a tight fit)
+// Includes bar, nightclub, gym, restaurant, park, beach, amusement_park, coffee, library, education, food_court, cinema, theatre, community_centre, ice_cream, social_facility, sports_centre, bowling
 const query = `
 [out:json];
 (
-  node["amenity"~"bar|nightclub|restaurant|cafe|library|university|college|food_court|cinema|theatre|community_centre|ice_cream|social_facility"](around:10000, 49.4178, 2.8261);
-  node["leisure"~"fitness_centre|park|beach_resort|theme_park|sports_centre|bowling_alley"](around:10000, 49.4178, 2.8261);
-  way["amenity"~"bar|nightclub|restaurant|cafe|library|university|college|food_court|cinema|theatre|community_centre|ice_cream|social_facility"](around:10000, 49.4178, 2.8261);
-  way["leisure"~"fitness_centre|park|beach_resort|theme_park|sports_centre|bowling_alley"](around:10000, 49.4178, 2.8261);
+  node["amenity"~"bar|nightclub|restaurant|cafe|library|university|college|food_court|cinema|theatre|community_centre|ice_cream|social_facility"](around:5000, 49.4179497, 2.8263171);
+  node["leisure"~"fitness_centre|park|beach_resort|theme_park|sports_centre|bowling_alley"](around:5000, 49.4179497, 2.8263171);
+  way["amenity"~"bar|nightclub|restaurant|cafe|library|university|college|food_court|cinema|theatre|community_centre|ice_cream|social_facility"](around:5000, 49.4179497, 2.8263171);
+  way["leisure"~"fitness_centre|park|beach_resort|theme_park|sports_centre|bowling_alley"](around:5000, 49.4179497, 2.8263171);
 );
 out center;
 `;
 
-async function syncLocations() {
+async function syncLocationsCompiegne() {
   try {
     console.log('Connecting to MongoDB...');
     await mongoose.connect(MONGO_URI);
     console.log('Connected.');
 
-    console.log('Fetching POIs from Overpass API...');
+    console.log('Fetching POIs for Compiègne from Overpass API...');
     const response = await fetch(OVERPASS_URL, {
       method: 'POST',
       body: 'data=' + encodeURIComponent(query),
@@ -38,7 +38,7 @@ async function syncLocations() {
     }
 
     const data = await response.json();
-    console.log(`Found ${data.elements.length} elements.`);
+    console.log(`Found ${data.elements.length} elements in Compiègne.`);
 
     const ops = data.elements.map((el) => {
       let type = 'restaurant';
@@ -92,15 +92,15 @@ async function syncLocations() {
 
     if (ops.length > 0) {
       const result = await Location.bulkWrite(ops);
-      console.log(`Sync completed: ${result.upsertedCount} new, ${result.modifiedCount} updated.`);
+      console.log(`Sync for Compiègne completed: ${result.upsertedCount} new, ${result.modifiedCount} updated.`);
     } else {
-      console.log('No elements to sync.');
+      console.log('No elements to sync for Compiègne.');
     }
   } catch (error) {
-    console.error('Error syncing locations:', error);
+    console.error('Error syncing locations for Compiègne:', error);
   } finally {
     await mongoose.disconnect();
   }
 }
 
-syncLocations();
+syncLocationsCompiegne();
