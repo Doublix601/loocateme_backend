@@ -115,9 +115,48 @@ export const UserController = {
   },
   search: async (req, res, next) => {
     try {
-      const { q, limit } = req.query;
-      const users = await searchUsers({ q, limit, excludeUserId: req.user?.id });
-      return res.json({ users });
+      const { q, limit, lat, lon, includeUsers, includeLocations } = req.query;
+
+      const excludeUserId = req.user?.id;
+      const s = String(q || '').trim();
+      const safeLimit = Math.max(1, Math.min(10, parseInt(limit, 10) || 10));
+
+      if (!s || s.length < 2) {
+        return res.json({ users: [], locations: [] });
+      }
+
+      const results = { users: [], locations: [] };
+
+      // Users search
+      if (String(includeUsers) !== 'false') {
+        results.users = await searchUsers({ q: s, limit: safeLimit, excludeUserId });
+      }
+
+      // Locations search
+      if (String(includeLocations) !== 'false') {
+        const { Location } = await import('../models/Location.js');
+        const query = { name: { $regex: s, $options: 'i' } };
+
+        if (lat && lon) {
+          const latitude = parseFloat(lat);
+          const longitude = parseFloat(lon);
+          results.locations = await Location.aggregate([
+            {
+              $geoNear: {
+                near: { type: 'Point', coordinates: [longitude, latitude] },
+                distanceField: 'distance',
+                query: query,
+                spherical: true,
+              },
+            },
+            { $limit: safeLimit },
+          ]);
+        } else {
+          results.locations = await Location.find(query).limit(safeLimit).lean();
+        }
+      }
+
+      return res.json(results);
     } catch (err) {
       next(err);
     }

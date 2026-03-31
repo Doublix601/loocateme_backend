@@ -76,6 +76,10 @@ export const validators = {
       .isString()
       .isLength({ min: 2, max: 100 }),
     query('limit').optional().isInt({ min: 1, max: 10 }),
+    query('lat').optional().isFloat({ min: -90, max: 90 }),
+    query('lon').optional().isFloat({ min: -180, max: 180 }),
+    query('includeUsers').optional().isString(),
+    query('includeLocations').optional().isString(),
   ],
   getUsersByEmail: [
     // Accept: ?email=a@x.com or ?email=a@x.com,b@y.com or repeated ?email=a@x.com&email=b@y.com
@@ -237,7 +241,7 @@ export const validators = {
       .bail()
       .isString()
       .isLength({ min: 2, max: 100 }),
-    query('limit').optional().isInt({ min: 1, max: 20 }),
+    query('limit').optional().isInt({ min: 1, max: 10 }),
   ],
   moderationUserAction: [
     param('id').isMongoId(),

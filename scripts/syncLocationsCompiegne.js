@@ -82,6 +82,7 @@ async function syncLocationsCompiegne() {
         const lat = el.lat || el.center?.lat;
         const lon = el.lon || el.center?.lon;
         const name = el.tags.name;
+        const city = el.tags['addr:city'] || '';
         const osmId = el.id;
 
         return {
@@ -93,6 +94,7 @@ async function syncLocationsCompiegne() {
               $set: {
                 osmId: osmId,
                 name: name,
+                city: city,
                 type: type,
                 location: {
                   type: 'Point',

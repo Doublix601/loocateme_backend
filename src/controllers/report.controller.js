@@ -291,7 +291,7 @@ export const ReportController = {
     try {
       const q = String(req.query.q || '').trim();
       if (!q || q.length < 2) return res.json({ users: [] });
-      const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 10));
+      const limit = Math.min(10, Math.max(1, parseInt(req.query.limit, 10) || 10));
       const re = buildDiacriticRegex(q);
       const users = await User.find({
         $or: [
