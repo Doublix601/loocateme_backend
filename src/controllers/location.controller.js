@@ -140,4 +140,80 @@ export const LocationController = {
       next(err);
     }
   },
+
+  syncOsmLocations: async (req, res, next) => {
+    try {
+      const { locations } = req.body;
+
+      if (!Array.isArray(locations)) {
+        return res.status(400).json({ code: 'INVALID_DATA', message: 'locations must be an array' });
+      }
+
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+      const ops = locations.map((loc) => {
+        const { osmId, name, city, type, coordinates } = loc;
+
+        return {
+          updateOne: {
+            filter: {
+              osmId: osmId,
+              $or: [
+                { lastOsmSyncAt: { $exists: false } },
+                { lastOsmSyncAt: { $lt: yesterday } },
+              ],
+            },
+            update: {
+              $set: {
+                osmId: osmId,
+                name: name,
+                city: city,
+                type: type,
+                location: {
+                  type: 'Point',
+                  coordinates: coordinates,
+                },
+                lastOsmSyncAt: now,
+              },
+            },
+            upsert: true,
+          },
+        };
+      });
+
+      // On utilise bulkWrite mais on doit faire attention : 
+      // Si le filtre (lastOsmSyncAt < yesterday) ne matche pas, l'opération sera ignorée ou fera un upsert si non trouvé.
+      // S'il y a un upsert, osmId sera unique.
+      
+      if (ops.length > 0) {
+        // Note: upsert: true créera le document s'il n'existe pas du tout.
+        // Si le document existe mais a été mis à jour il y a moins de 24h, 
+        // le filtre osmId + lastOsmSyncAt < yesterday échouera.
+        // MAIS l'upsert risque de tenter de créer un NOUVEAU document avec le même osmId, 
+        // ce qui échouera à cause de l'index unique sur osmId.
+        // C'est exactement ce qu'on veut pour ignorer silencieusement les doublons récents.
+        
+        try {
+          const result = await Location.bulkWrite(ops, { ordered: false });
+          return res.json({ 
+            success: true, 
+            upsertedCount: result.upsertedCount, 
+            modifiedCount: result.modifiedCount 
+          });
+        } catch (bulkError) {
+          // ordered: false permet de continuer même si certains échouent (ex: E11000 duplicate key sur osmId)
+          return res.json({ 
+            success: true, 
+            message: 'Sync partially completed or some items already up to date',
+            details: bulkError.message 
+          });
+        }
+      }
+
+      return res.json({ success: true, message: 'No locations to sync' });
+    } catch (err) {
+      next(err);
+    }
+  },
 };
