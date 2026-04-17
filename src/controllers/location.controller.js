@@ -61,12 +61,18 @@ export const LocationController = {
               userCount: { $ifNull: [{ $arrayElemAt: ['$userCount.count', 0] }, 0] },
             },
           },
-          // On ajoute un champ de tri : prioritaire si popularité > 0 ou userCount > 0
+          // On ajoute un champ de tri : prioritaire si popularité > 0 ou userCount > 0 ou stars > 0
           {
             $addFields: {
               isPriority: {
                 $cond: {
-                  if: { $or: [{ $gt: ['$popularity', 0] }, { $gt: ['$userCount', 0] }] },
+                  if: {
+                    $or: [
+                      { $gt: ['$popularity', 0] },
+                      { $gt: ['$userCount', 0] },
+                      { $gt: ['$stars', 0] },
+                    ],
+                  },
                   then: 1,
                   else: 0,
                 },
@@ -76,6 +82,7 @@ export const LocationController = {
           {
             $sort: {
               isPriority: -1,
+              userCount: -1,
               popularity: -1,
               distance: 1,
             },
