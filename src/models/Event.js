@@ -3,11 +3,13 @@ import mongoose from 'mongoose';
 // type: 'profile_view' | 'social_click' | 'user_search'
 const EventSchema = new mongoose.Schema(
   {
-    type: { type: String, required: true, enum: ['profile_view', 'social_click', 'user_search'] },
+    type: { type: String, required: true, enum: ['profile_view', 'social_click', 'user_search', 'location_visit'] },
     actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false, index: true },
     targetUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false, index: true },
     // For social_click events
     socialNetwork: { type: String, enum: ['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin', 'youtube'], index: true },
+    // For location_visit events
+    locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', required: false, index: true },
     // Free-form query for user_search (optional)
     query: { type: String },
     meta: { type: Object, default: {} },

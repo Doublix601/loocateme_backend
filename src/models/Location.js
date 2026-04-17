@@ -12,6 +12,7 @@ const LocationSchema = new mongoose.Schema(
       coordinates: { type: [Number], required: true }, // [lon, lat]
     },
     popularity: { type: Number, default: 0 },
+    stars: { type: Number, default: 0 }, // 0, 1, 2 ou 3 (recalculé par cron)
   },
   { timestamps: true }
 );

@@ -1,5 +1,6 @@
 import { User } from '../models/User.js';
 import { Location } from '../models/Location.js';
+import { Event } from '../models/Event.js';
 import { redisClient } from '../config/redis.js';
 import { sendPushUnified } from './push.service.js';
 import { NotificationDedup } from '../models/NotificationDedup.js';
@@ -110,15 +111,28 @@ export async function updateLocation(userId, { lat, lon }) {
   const user = await User.findByIdAndUpdate(userId, update, { new: true });
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
 
-  // Update popularity of affected locations
-  if (currentLocationId) {
-    const count = await User.countDocuments({ currentLocation: currentLocationId });
-    await Location.findByIdAndUpdate(currentLocationId, { popularity: count });
-  }
+  // Record a location_visit if the user just checked into a new location
+  if (currentLocationId && String(currentLocationId) !== String(oldLocationId)) {
+    try {
+      // De-duplicate visits: only one visit per user/location per 12 hours
+      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+      const existingVisit = await Event.findOne({
+        type: 'location_visit',
+        actor: userId,
+        locationId: currentLocationId,
+        createdAt: { $gt: twelveHoursAgo }
+      });
 
-  if (oldLocationId && String(oldLocationId) !== String(currentLocationId)) {
-    const count = await User.countDocuments({ currentLocation: oldLocationId });
-    await Location.findByIdAndUpdate(oldLocationId, { popularity: count });
+      if (!existingVisit) {
+        await Event.create({
+          type: 'location_visit',
+          actor: userId,
+          locationId: currentLocationId
+        });
+      }
+    } catch (e) {
+      console.warn('[user.service] Failed to record location_visit', e.message);
+    }
   }
 
   // Optional: cache in Redis GEOSET

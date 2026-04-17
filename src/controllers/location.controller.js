@@ -48,6 +48,7 @@ export const LocationController = {
                 $match: {
                   $expr: { $eq: ['$currentLocation', '$$locationId'] },
                   isVisible: true,
+                  status: { $ne: 'red' },
                 },
               },
               { $count: 'count' },
@@ -101,6 +102,7 @@ export const LocationController = {
                   $match: {
                     $expr: { $eq: ['$currentLocation', '$$locationId'] },
                     isVisible: true,
+                    status: { $ne: 'red' },
                   },
                 },
                 { $count: 'count' },
