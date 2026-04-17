@@ -187,6 +187,13 @@ export const LocationController = {
       // S'il y a un upsert, osmId sera unique.
       
       if (ops.length > 0) {
+        // Cleanup old manual test locations (without osmId) that are not persistent (stars < 3)
+        // This ensures that only OSM locations and important partners remain.
+        await Location.deleteMany({
+          osmId: { $exists: false },
+          stars: { $lt: 3 }
+        });
+
         // Note: upsert: true créera le document s'il n'existe pas du tout.
         // Si le document existe mais a été mis à jour il y a moins de 24h, 
         // le filtre osmId + lastOsmSyncAt < yesterday échouera.

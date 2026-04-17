@@ -40,15 +40,16 @@ async function syncLocations() {
     const data = await response.json();
     console.log(`Found ${data.elements.length} elements.`);
 
-    // Cleanup excluded locations
-    console.log('Cleaning up excluded locations (Unknown name or excluded categories)...');
+    // Cleanup manual locations and excluded locations
+    console.log('Cleaning up manual and excluded locations...');
     const deleteResult = await Location.deleteMany({
       $or: [
+        { osmId: { $exists: false }, stars: { $lt: 3 } },
         { name: 'Unknown' },
         { type: { $in: ['THEATRE', 'COMMUNITYCENTRE', 'SOCIALFACILITY', 'theatre', 'communityCentre', 'socialFacility', 'Restaurant 🍴', 'Parc 🌳', 'Café ☕'] } },
       ],
     });
-    console.log(`Deleted ${deleteResult.deletedCount} excluded locations.`);
+    console.log(`Deleted ${deleteResult.deletedCount} locations.`);
 
     const ops = data.elements
       .filter((el) => {
