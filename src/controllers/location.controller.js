@@ -182,38 +182,41 @@ export const LocationController = {
         };
       });
 
-      // On utilise bulkWrite mais on doit faire attention : 
+      // On utilise bulkWrite mais on doit faire attention :
       // Si le filtre (lastOsmSyncAt < yesterday) ne matche pas, l'opération sera ignorée ou fera un upsert si non trouvé.
       // S'il y a un upsert, osmId sera unique.
-      
+
       if (ops.length > 0) {
         // Cleanup old manual test locations (without osmId) that are not persistent (stars < 3)
+        // OR locations explicitly marked for deletion (shouldDelete: true)
         // This ensures that only OSM locations and important partners remain.
         await Location.deleteMany({
-          osmId: { $exists: false },
-          stars: { $lt: 3 }
+          $or: [
+            { osmId: { $exists: false }, stars: { $lt: 3 } },
+            { shouldDelete: true }
+          ]
         });
 
         // Note: upsert: true créera le document s'il n'existe pas du tout.
-        // Si le document existe mais a été mis à jour il y a moins de 24h, 
+        // Si le document existe mais a été mis à jour il y a moins de 24h,
         // le filtre osmId + lastOsmSyncAt < yesterday échouera.
-        // MAIS l'upsert risque de tenter de créer un NOUVEAU document avec le même osmId, 
+        // MAIS l'upsert risque de tenter de créer un NOUVEAU document avec le même osmId,
         // ce qui échouera à cause de l'index unique sur osmId.
         // C'est exactement ce qu'on veut pour ignorer silencieusement les doublons récents.
-        
+
         try {
           const result = await Location.bulkWrite(ops, { ordered: false });
-          return res.json({ 
-            success: true, 
-            upsertedCount: result.upsertedCount, 
-            modifiedCount: result.modifiedCount 
+          return res.json({
+            success: true,
+            upsertedCount: result.upsertedCount,
+            modifiedCount: result.modifiedCount
           });
         } catch (bulkError) {
           // ordered: false permet de continuer même si certains échouent (ex: E11000 duplicate key sur osmId)
-          return res.json({ 
-            success: true, 
+          return res.json({
+            success: true,
             message: 'Sync partially completed or some items already up to date',
-            details: bulkError.message 
+            details: bulkError.message
           });
         }
       }

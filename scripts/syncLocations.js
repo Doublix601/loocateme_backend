@@ -46,6 +46,7 @@ async function syncLocations() {
       $or: [
         { osmId: { $exists: false }, stars: { $lt: 3 } },
         { name: 'Unknown' },
+        { shouldDelete: true },
         { type: { $in: ['THEATRE', 'COMMUNITYCENTRE', 'SOCIALFACILITY', 'theatre', 'communityCentre', 'socialFacility', 'Restaurant 🍴', 'Parc 🌳', 'Café ☕'] } },
       ],
     });
