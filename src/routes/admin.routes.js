@@ -228,4 +228,38 @@ router.put('/users/:id/unban', requireAuth, requireAdmin, async (req, res, next)
   }
 });
 
+// POST /api/admin/cleanup-presence
+// Sets all expired users (last_seen_at < 15min) to status: 'inactive' (currentLocation: null)
+router.post('/cleanup-presence', requireAuth, async (req, res, next) => {
+  try {
+    const threshold = new Date(Date.now() - 15 * 60 * 1000);
+    
+    // In MongoDB, we clear the currentLocation field to mark as "inactive/left"
+    const result = await User.updateMany(
+      {
+        currentLocation: { $ne: null },
+        $or: [
+          { 'location.updatedAt': { $lt: threshold } },
+          { 'location.updatedAt': { $exists: false } }
+        ]
+      },
+      {
+        $set: { currentLocation: null }
+      }
+    );
+
+    console.log(`[AdminCleanup] Reset presence for ${result.modifiedCount} orphan users.`);
+    
+    return res.json({
+      success: true,
+      message: `Presence reset for ${result.modifiedCount} users.`,
+      modifiedCount: result.modifiedCount,
+      threshold: threshold.toISOString()
+    });
+  } catch (err) {
+    console.error('[AdminCleanup] Error:', err);
+    next(err);
+  }
+});
+
 export default router;

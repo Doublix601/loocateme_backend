@@ -162,16 +162,23 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
       const ids = members
         .map((m) => m.member)
         .filter((id) => id && !excludeIds.includes(String(id)));
-      if (ids.length === 0) return [];
+      if (ids.length === 0) {
+        console.log(`[getNearbyUsers] Redis: Found ${members.length} total, but 0 after exclusion. Requester=${userId}`);
+        return [];
+      }
       const users = await User.find({
         _id: { $in: ids },
         isVisible: true,
         emailVerified: true,
         'location.updatedAt': { $gte: threshold },
       }).select('-password');
+      
+      console.log(`[getNearbyUsers] Redis audit: Found=${users.length}/${ids.length} candidates. Threshold=${threshold.toISOString()}. ExcludedIdsCount=${excludeIds.length}`);
       return users;
     }
-  } catch {}
+  } catch (err) {
+    console.warn('[getNearbyUsers] Redis search failed:', err.message);
+  }
 
   // Fallback to MongoDB geospatial query
   const users = await User.find({
@@ -189,6 +196,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
     .limit(100)
     .select('-password');
 
+  console.log(`[getNearbyUsers] MongoDB audit: Found=${users.length} users. Threshold=${threshold.toISOString()}. Radius=${radiusMeters}m`);
   return users;
 }
 
