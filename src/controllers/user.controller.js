@@ -74,6 +74,17 @@ export const UserController = {
       next(err);
     }
   },
+  heartbeat: async (req, res, next) => {
+    try {
+      const { lat, lon } = req.body;
+      // Heartbeat can just be a wrapper around updateLocation
+      // It ensures the user is marked as active/seen
+      const user = await updateLocation(req.user.id, { lat, lon });
+      return res.json({ status: 'ok', user });
+    } catch (err) {
+      next(err);
+    }
+  },
   nearby: async (req, res, next) => {
     try {
       const { lat, lon, radius } = req.query;

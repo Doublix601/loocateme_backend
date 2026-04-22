@@ -7,6 +7,7 @@ const router = Router();
 
 router.get('/me', requireAuth, UserController.me);
 router.post('/location', requireAuth, validate(validators.updateLocation), UserController.updateLocation);
+router.post('/heartbeat', requireAuth, validate(validators.updateLocation), UserController.heartbeat);
 router.get('/nearby', requireAuth, validate(validators.nearby), UserController.nearby);
 router.get('/popular', requireAuth, validate(validators.popular), UserController.popular);
 router.get('/by-email', requireAuth, validate(validators.getUsersByEmail), UserController.getByEmail);

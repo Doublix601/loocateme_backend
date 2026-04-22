@@ -55,6 +55,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/user', userRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/social', socialRoutes);
@@ -122,5 +123,24 @@ app.use(errorHandler);
   } catch (e) {
     console.warn('[email] SMTP verification threw:', e?.message || e);
   }
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    // Log all registered routes
+    const routes = [];
+    app._router.stack.forEach((middleware) => {
+      if (middleware.route) {
+        routes.push(`${Object.keys(middleware.route.methods).join(',').toUpperCase()} ${middleware.route.path}`);
+      } else if (middleware.name === 'router') {
+        const base = middleware.regexp.toString().replace('/^\\', '').replace('\\/?(?=\\/|$)/i', '');
+        middleware.handle.stack.forEach((handler) => {
+          if (handler.route) {
+            const path = handler.route.path;
+            const methods = Object.keys(handler.route.methods).join(',').toUpperCase();
+            routes.push(`${methods} ${base}${path}`);
+          }
+        });
+      }
+    });
+    console.log('Registered Routes:\n' + routes.join('\n'));
+  });
 })();
