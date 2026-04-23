@@ -45,10 +45,13 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(express.static(path.join(__dirname, '..', uploadsDir)));
 
-// Static files (profile images)
-const uploadsDir = process.env.UPLOAD_DIR || 'uploads';
-app.use('/uploads', express.static(path.join(__dirname, '..', uploadsDir)));
+// Diagnostic Middleware: Log every incoming request
+app.use((req, res, next) => {
+  console.log(`[Request] ${req.method} ${req.originalUrl}`);
+  next();
+});
 
 // Health
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
@@ -123,24 +126,30 @@ app.use(errorHandler);
   } catch (e) {
     console.warn('[email] SMTP verification threw:', e?.message || e);
   }
-  app.listen(PORT, () => {
+    app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     // Log all registered routes
     const routes = [];
     app._router.stack.forEach((middleware) => {
       if (middleware.route) {
-        routes.push(`${Object.keys(middleware.route.methods).join(',').toUpperCase()} ${middleware.route.path}`);
+        const methods = Object.keys(middleware.route.methods).join(',').toUpperCase();
+        routes.push(`  [Direct] ${methods.padEnd(7)} ${middleware.route.path}`);
       } else if (middleware.name === 'router') {
-        const base = middleware.regexp.toString().replace('/^\\', '').replace('\\/?(?=\\/|$)/i', '');
+        const base = middleware.regexp.toString()
+          .replace('/^\\', '')
+          .replace('\\/?(?=\\/|$)/i', '')
+          .replace(/\\\//g, '/');
         middleware.handle.stack.forEach((handler) => {
           if (handler.route) {
             const path = handler.route.path;
             const methods = Object.keys(handler.route.methods).join(',').toUpperCase();
-            routes.push(`${methods} ${base}${path}`);
+            routes.push(`  [Route]  ${methods.padEnd(7)} ${base}${path}`);
           }
         });
       }
     });
-    console.log('Registered Routes:\n' + routes.join('\n'));
+    console.log('\n=== Registered Routes ===');
+    console.log(routes.join('\n'));
+    console.log('=========================\n');
   });
 })();
