@@ -29,7 +29,6 @@ export const LocationController = {
                 {
                   $match: {
                     $expr: { $eq: ['$currentLocation', '$$locationId'] },
-                    isVisible: true,
                     status: { $in: ['green', 'orange'] },
                   },
                 },
@@ -47,7 +46,6 @@ export const LocationController = {
                 {
                   $match: {
                     $expr: { $eq: ['$currentLocation', '$$locationId'] },
-                    isVisible: true,
                     status: { $ne: 'red' },
                   },
                 },
@@ -132,8 +130,9 @@ export const LocationController = {
       const users = await User.find({
         currentLocation: id,
         status: { $ne: 'red' },
-        isVisible: true,
-      }).select('-password');
+      })
+      .select('-password')
+      .sort({ boostUntil: -1, createdAt: 1 }); // Prioritize boosted users
 
       return res.json({ location, users });
     } catch (err) {

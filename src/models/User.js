@@ -27,7 +27,6 @@ const UserSchema = new mongoose.Schema(
     customName: { type: String, default: '', index: true },
     bio: { type: String, default: '' },
     profileImageUrl: { type: String, default: '' },
-    isVisible: { type: Boolean, default: true },
     profileViews: { type: Number, default: 0, index: true },
     // Rate-limit name changes
     lastUsernameChangeAt: { type: Date },
@@ -38,6 +37,9 @@ const UserSchema = new mongoose.Schema(
     status: { type: String, enum: ['green', 'orange', 'red'], default: 'green', index: true },
     // Current location check-in: based on proximity
     currentLocation: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', default: null, index: true },
+    // Persistence threshold support
+    pendingLocation: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', default: null, index: true },
+    pendingLocationSince: { type: Date, default: null },
     // GDPR consent and privacy preferences
     consent: {
       accepted: { type: Boolean, default: false },
@@ -47,6 +49,7 @@ const UserSchema = new mongoose.Schema(
     privacyPreferences: {
       analytics: { type: Boolean, default: false },
       marketing: { type: Boolean, default: false },
+      doNotSell: { type: Boolean, default: false },
     },
     // User role: 'user' (default), 'moderator', 'admin'
     role: { type: String, enum: ['user', 'moderator', 'admin'], default: 'user', index: true },
@@ -72,8 +75,10 @@ const UserSchema = new mongoose.Schema(
       bannedPermanent: { type: Boolean, default: false },
       banReason: { type: String, default: '' },
     },
-    // Premium flags
+    // Premium & Monetization
     isPremium: { type: Boolean, default: false, index: true },
+    boostBalance: { type: Number, default: 0 },
+    boostUntil: { type: Date, index: true },
     premiumTrialStart: { type: Date },
     premiumTrialEnd: { type: Date },
     expoPushToken: { type: String, index: true },

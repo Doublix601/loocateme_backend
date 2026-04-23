@@ -27,7 +27,7 @@ export const GdprController = {
 
   async updateConsent(req, res) {
     const userId = req.user.id;
-    const { accepted, version, analytics = false, marketing = false } = req.body || {};
+    const { accepted, version, analytics = false, marketing = false, doNotSell = false } = req.body || {};
     const user = await User.findById(userId);
     if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
     user.consent = {
@@ -35,7 +35,7 @@ export const GdprController = {
       version: String(version || 'v1'),
       consentAt: accepted ? new Date() : user.consent?.consentAt,
     };
-    user.privacyPreferences = { analytics: !!analytics, marketing: !!marketing };
+    user.privacyPreferences = { analytics: !!analytics, marketing: !!marketing, doNotSell: !!doNotSell };
     await user.save();
     return res.json({ success: true, user: sanitizeUser(user) });
   },
@@ -57,7 +57,6 @@ export const GdprController = {
         name: user.name,
         bio: user.bio,
         profileImageUrl: user.profileImageUrl,
-        isVisible: user.isVisible,
         consent: user.consent || {},
         privacyPreferences: user.privacyPreferences || {},
         location: user.location || {},
