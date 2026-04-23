@@ -30,10 +30,13 @@ export const LocationController = {
                   $match: {
                     $expr: { $eq: ['$currentLocation', '$$locationId'] },
                     status: { $in: ['green', 'orange'] },
-                    'location.updatedAt': { $gte: new Date(Date.now() - 5 * 60 * 1000) }, // Heartbeat: 5 minutes TTL
+                    $or: [
+                      { 'location.updatedAt': { $gte: new Date(Date.now() - 5 * 60 * 1000) } },
+                      { boostUntil: { $gte: new Date() } }
+                    ]
                   },
                 },
-                { $project: { _id: 1, profileImageUrl: 1, status: 1 } },
+                { $project: { _id: 1, profileImageUrl: 1, status: 1, boostUntil: 1, location: 1 } },
                 { $limit: 3 },
               ],
               as: 'activeUsers',
@@ -48,7 +51,10 @@ export const LocationController = {
                   $match: {
                     $expr: { $eq: ['$currentLocation', '$$locationId'] },
                     status: { $ne: 'red' },
-                    'location.updatedAt': { $gte: new Date(Date.now() - 5 * 60 * 1000) }, // Heartbeat: 5 minutes TTL
+                    $or: [
+                      { 'location.updatedAt': { $gte: new Date(Date.now() - 5 * 60 * 1000) } },
+                      { boostUntil: { $gte: new Date() } }
+                    ]
                   },
                 },
                 { $count: 'count' },
@@ -129,16 +135,30 @@ export const LocationController = {
       }
 
       // Fetch users checked-in at this location, excluding 'red' status and respecting GDPR
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      const threshold = new Date(Date.now() - 5 * 60 * 1000);
+      const now = new Date();
       const users = await User.find({
         currentLocation: id,
         status: { $ne: 'red' },
-        'location.updatedAt': { $gte: fiveMinutesAgo },
+        $or: [
+          { 'location.updatedAt': { $gte: threshold } },
+          { boostUntil: { $gte: now } }
+        ]
       })
       .select('-password')
       .sort({ boostUntil: -1, createdAt: 1 }); // Prioritize boosted users
 
-      return res.json({ location, users });
+      // Add isGhost flag for boosted users who are offline
+      const usersWithGhostFlag = users.map(user => {
+        const isOffline = user.location && user.location.updatedAt < threshold;
+        const isBoosted = user.boostUntil && user.boostUntil >= now;
+        return {
+          ...user.toObject(),
+          isGhost: isOffline && isBoosted
+        };
+      });
+
+      return res.json({ location, users: usersWithGhostFlag });
     } catch (err) {
       next(err);
     }

@@ -152,6 +152,9 @@ export async function updateLocation(userId, { lat, lon }) {
     update.pendingLocationSince = new Date();
     // On quitte l'ancien POI immédiatement si on entre dans un nouveau (en attente de confirmation)
     update.currentLocation = null;
+    // Safety check: When entering a new POI (even if pending), we clear boostUntil
+    // to prevent being a "Ghost" in an old Bar while being "Present" in a new one.
+    update.boostUntil = null;
   }
 
   const user = await User.findByIdAndUpdate(userId, { $set: update }, { new: true });
@@ -217,7 +220,10 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
         _id: { $in: ids },
         status: { $ne: 'red' },
         emailVerified: true,
-        'location.updatedAt': { $gte: threshold },
+        $or: [
+          { 'location.updatedAt': { $gte: threshold } },
+          { boostUntil: { $gte: new Date() } }
+        ]
       })
       .select('-password')
       .sort({ boostUntil: -1 });
