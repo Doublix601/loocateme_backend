@@ -70,8 +70,12 @@ export async function getUsersByEmails(emails) {
 }
 
 export async function updateLocation(userId, { lat, lon }) {
-  const oldUser = await User.findById(userId).select('currentLocation');
-  const oldLocationId = oldUser?.currentLocation;
+  const userToUpdate = await User.findById(userId).select('currentLocation pendingLocation pendingLocationSince');
+  if (!userToUpdate) throw Object.assign(new Error('User not found'), { status: 404 });
+
+  const oldLocationId = userToUpdate.currentLocation;
+  const oldPendingLocationId = userToUpdate.pendingLocation;
+  const oldPendingSince = userToUpdate.pendingLocationSince;
 
   // Utilisation de l'agrégation pour obtenir les distances exactes et gérer le rayon par lieu
   const geoNearResult = await Location.aggregate([
@@ -86,30 +90,63 @@ export async function updateLocation(userId, { lat, lon }) {
     { $limit: 5 }
   ]);
 
-  let currentLocationId = null;
+  let matchedLocationId = null;
   if (geoNearResult.length > 0) {
     // 1. Logique d'hystérésis : si l'utilisateur était déjà dans un lieu, on vérifie s'il y est encore
     const oldLocationInList = oldLocationId ? geoNearResult.find(p => String(p._id) === String(oldLocationId)) : null;
 
     if (oldLocationInList && oldLocationInList.dist <= (oldLocationInList.radius || 100) * 1.1) {
-      // On reste dans le lieu actuel (avec 10% de marge de sortie pour éviter les sauts)
-      currentLocationId = oldLocationId;
+      matchedLocationId = oldLocationId;
     } else {
       // 2. Sinon, on prend le plus proche, s'il est dans son rayon de détection
       const nearest = geoNearResult[0];
       if (nearest.dist <= (nearest.radius || 100)) {
-        currentLocationId = nearest._id;
+        matchedLocationId = nearest._id;
       }
     }
   }
 
   const update = {
     location: { type: 'Point', coordinates: [lon, lat], updatedAt: new Date() },
-    currentLocation: currentLocationId,
   };
 
-  const user = await User.findByIdAndUpdate(userId, update, { new: true });
-  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+  const PERSISTENCE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+  if (!matchedLocationId) {
+    // L'utilisateur n'est dans aucun POI
+    update.currentLocation = null;
+    update.pendingLocation = null;
+    update.pendingLocationSince = null;
+  } else if (String(matchedLocationId) === String(oldLocationId)) {
+    // L'utilisateur est déjà confirmé dans ce POI, on ne change rien au statut de présence
+    // On s'assure juste que les champs pending sont vides
+    update.pendingLocation = null;
+    update.pendingLocationSince = null;
+  } else if (String(matchedLocationId) === String(oldPendingLocationId)) {
+    // L'utilisateur est en attente dans ce POI, on vérifie le seuil
+    const elapsed = Date.now() - new Date(oldPendingSince).getTime();
+    if (elapsed >= PERSISTENCE_THRESHOLD_MS) {
+      // Seuil atteint ! On confirme la présence
+      update.currentLocation = matchedLocationId;
+      update.pendingLocation = null;
+      update.pendingLocationSince = null;
+      console.log(`[Presence] User ${userId} confirmed at POI ${matchedLocationId} after ${Math.round(elapsed/1000)}s`);
+    } else {
+      // Toujours en attente, on ne met pas à jour currentLocation
+      // On garde oldLocationId si l'hystérésis n'a pas encore switché (mais ici matchedLocationId est diff de oldLocationId)
+      // Donc si on est ici, c'est qu'on a un nouveau matchedLocationId qui est le même que le pending actuel.
+    }
+  } else {
+    // L'utilisateur entre dans un NOUVEAU POI (ou change de POI en attente)
+    update.pendingLocation = matchedLocationId;
+    update.pendingLocationSince = new Date();
+    // On quitte l'ancien POI immédiatement si on entre dans un nouveau (en attente de confirmation)
+    update.currentLocation = null;
+  }
+
+  const user = await User.findByIdAndUpdate(userId, { $set: update }, { new: true });
+
+  const currentLocationId = user.currentLocation;
 
   // Record a location_visit if the user just checked into a new location
   if (currentLocationId && String(currentLocationId) !== String(oldLocationId)) {

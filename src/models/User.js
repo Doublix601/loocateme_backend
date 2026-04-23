@@ -38,6 +38,9 @@ const UserSchema = new mongoose.Schema(
     status: { type: String, enum: ['green', 'orange', 'red'], default: 'green', index: true },
     // Current location check-in: based on proximity
     currentLocation: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', default: null, index: true },
+    // Persistence threshold support
+    pendingLocation: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', default: null, index: true },
+    pendingLocationSince: { type: Date, default: null },
     // GDPR consent and privacy preferences
     consent: {
       accepted: { type: Boolean, default: false },
