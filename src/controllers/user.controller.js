@@ -74,6 +74,21 @@ export const UserController = {
       next(err);
     }
   },
+  heartbeat: async (req, res, next) => {
+    try {
+      const { lat, lon } = req.body;
+      console.log(`[heartbeat] Received from user=${req.user.id} at lat=${lat}, lon=${lon}`);
+      
+      const user = await updateLocation(req.user.id, { lat, lon });
+      
+      console.log(`[heartbeat] User updated: id=${user._id}, lastSeen=${user.location?.updatedAt}, loc=${user.currentLocation || 'none'}`);
+      
+      return res.json({ status: 'ok', user });
+    } catch (err) {
+      console.error(`[heartbeat] Error for user=${req.user?.id}:`, err.message);
+      next(err);
+    }
+  },
   nearby: async (req, res, next) => {
     try {
       const { lat, lon, radius } = req.query;
