@@ -38,13 +38,21 @@ export const PremiumController = {
         return res.status(400).json({ code: 'ALREADY_BOOSTED', message: 'Boost déjà actif' });
       }
 
-      // Check balance
-      if ((me.boostBalance || 0) <= 0) {
+      // Special handling for Mock/Test purchases in DEV
+      const isMock = req.body.isMock === true;
+
+      // Check balance (skip check if it's a mock purchase in dev)
+      if (!isMock && (me.boostBalance || 0) <= 0) {
         return res.status(403).json({ code: 'NO_BOOSTS', message: 'Aucun boost disponible' });
       }
 
-      // Use one boost
-      me.boostBalance -= 1;
+      // Use one boost (if not mock)
+      if (!isMock) {
+        me.boostBalance -= 1;
+      } else {
+        console.log(`[PremiumController] Mock boost activation for user ${me.username}`);
+      }
+
       me.boostUntil = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour boost
 
       await me.save();
