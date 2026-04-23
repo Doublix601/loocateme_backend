@@ -44,7 +44,7 @@ export const handleWebhook = async (req, res) => {
           const now = new Date();
           if (!user.boostUntil || user.boostUntil < now) {
             user.boostBalance -= 1;
-            user.boostUntil = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour boost
+            user.boostUntil = new Date(now.getTime() + 30 * 60 * 1000); // 30 minutes boost
           }
 
           await user.save();

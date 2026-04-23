@@ -53,7 +53,7 @@ export const PremiumController = {
         console.log(`[PremiumController] Mock boost activation for user ${me.username}`);
       }
 
-      me.boostUntil = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour boost
+      me.boostUntil = new Date(now.getTime() + 30 * 60 * 1000); // 30 minutes boost
 
       await me.save();
       return res.json({ success: true, boostUntil: me.boostUntil, boostBalance: me.boostBalance });
