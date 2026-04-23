@@ -190,7 +190,7 @@ export async function updateLocation(userId, { lat, lon }) {
 }
 
 export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) {
-  const freshnessMs = 6 * 60 * 60 * 1000; // 6 hours
+  const freshnessMs = 5 * 60 * 1000; // Heartbeat: 5 minutes TTL for visibility
   const threshold = new Date(Date.now() - freshnessMs);
   const blockedIds = await getBlockedIds(userId);
   const excludeIds = Array.from(new Set([String(userId), ...blockedIds]));

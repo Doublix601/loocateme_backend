@@ -30,6 +30,7 @@ export const LocationController = {
                   $match: {
                     $expr: { $eq: ['$currentLocation', '$$locationId'] },
                     status: { $in: ['green', 'orange'] },
+                    'location.updatedAt': { $gte: new Date(Date.now() - 5 * 60 * 1000) }, // Heartbeat: 5 minutes TTL
                   },
                 },
                 { $project: { _id: 1, profileImageUrl: 1, status: 1 } },
@@ -47,6 +48,7 @@ export const LocationController = {
                   $match: {
                     $expr: { $eq: ['$currentLocation', '$$locationId'] },
                     status: { $ne: 'red' },
+                    'location.updatedAt': { $gte: new Date(Date.now() - 5 * 60 * 1000) }, // Heartbeat: 5 minutes TTL
                   },
                 },
                 { $count: 'count' },
@@ -127,9 +129,11 @@ export const LocationController = {
       }
 
       // Fetch users checked-in at this location, excluding 'red' status and respecting GDPR
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
       const users = await User.find({
         currentLocation: id,
         status: { $ne: 'red' },
+        'location.updatedAt': { $gte: fiveMinutesAgo },
       })
       .select('-password')
       .sort({ boostUntil: -1, createdAt: 1 }); // Prioritize boosted users

@@ -33,6 +33,15 @@ export const PremiumController = {
       if (!me) return res.status(404).json({ code: 'USER_NOT_FOUND' });
 
       const now = new Date();
+
+      // NEW: Boost Gating - Check if user is physically present at a POI
+      if (!me.currentLocation) {
+        return res.status(403).json({
+          code: 'NOT_AT_POI',
+          message: 'Vous devez être présent dans un établissement pour activer un boost.'
+        });
+      }
+
       // Check if already boosted
       if (me.boostUntil && me.boostUntil > now) {
         return res.status(400).json({ code: 'ALREADY_BOOSTED', message: 'Boost déjà actif' });
