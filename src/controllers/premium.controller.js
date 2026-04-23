@@ -26,6 +26,29 @@ export const PremiumController = {
       next(err);
     }
   },
+  verifyPurchase: async (req, res, next) => {
+    try {
+      const userId = req.user?.id;
+      const me = await User.findById(userId);
+      if (!me) return res.status(404).json({ code: 'USER_NOT_FOUND' });
+
+      // Special handling for Mock/Test purchases in DEV
+      const isMock = req.body.isMock === true;
+      if (isMock && process.env.NODE_ENV !== 'production') {
+        console.log(`[PremiumController] Mock premium activation for user ${me.username}`);
+        me.isPremium = true;
+        me.planChangedAt = new Date();
+        await me.save();
+        return res.json({ success: true, premium: true });
+      }
+
+      // Normally, purchase verification is handled via Webhooks from RevenueCat.
+      // Here we just refresh the local user state to be sure.
+      return res.json({ success: true, premium: !!me.isPremium });
+    } catch (err) {
+      next(err);
+    }
+  },
   activateBoost: async (req, res, next) => {
     try {
       const userId = req.user?.id;
