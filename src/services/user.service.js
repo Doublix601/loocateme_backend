@@ -70,12 +70,13 @@ export async function getUsersByEmails(emails) {
 }
 
 export async function updateLocation(userId, { lat, lon }) {
-  const userToUpdate = await User.findById(userId).select('currentLocation pendingLocation pendingLocationSince');
+  const userToUpdate = await User.findById(userId).select('currentLocation pendingLocation pendingLocationSince location');
   if (!userToUpdate) throw Object.assign(new Error('User not found'), { status: 404 });
 
   const oldLocationId = userToUpdate.currentLocation;
   const oldPendingLocationId = userToUpdate.pendingLocation;
   const oldPendingSince = userToUpdate.pendingLocationSince;
+  const oldLocation = userToUpdate.location || { type: 'Point', coordinates: [0, 0] };
 
   // Utilisation de l'agrégation pour obtenir les distances exactes et gérer le rayon par lieu
   const geoNearResult = await Location.aggregate([
@@ -111,6 +112,15 @@ export async function updateLocation(userId, { lat, lon }) {
   };
 
   const PERSISTENCE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+  // Privacy: If the user is already confirmed at a POI, we avoid storing/updating raw coordinates
+  // to minimize location tracking history. We only update the presence status.
+  const isAlreadyConfirmedAtPOI = oldLocationId && matchedLocationId && String(oldLocationId) === String(matchedLocationId);
+
+  if (isAlreadyConfirmedAtPOI) {
+    // Data Minimization: Don't update coordinates, just update the timestamp
+    update.location = { ...oldLocation, updatedAt: new Date() };
+  }
 
   if (!matchedLocationId) {
     // L'utilisateur n'est dans aucun POI

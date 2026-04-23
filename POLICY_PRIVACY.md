@@ -1,23 +1,30 @@
 # Politique de confidentialité (RGPD)
 
-Dernière mise à jour: v1
+Dernière mise à jour: v1.1 (Audit Privacy by Design)
 
-Nous respectons votre vie privée. Cette application collecte uniquement les données nécessaires au fonctionnement du service:
+Nous respectons votre vie privée. Cette application collecte uniquement les données nécessaires au fonctionnement du service :
 
-- Compte: email, mot de passe (hashé), nom, bio
-- Localisation: uniquement si vous avez activé la visibilité et partagé la permission. Mise à jour en tâche de fond pendant 1 heure maximum, puis passage en mode invisible jusqu'à réouverture de l'app.
-- Médias: photo de profil uploadée par vous.
-- Réseaux sociaux: identifiants renseignés par vous (ex: Instagram)
+- Compte : email, mot de passe (hashé), nom, bio
+- Localisation : uniquement si vous avez activé la visibilité et partagé la permission. 
+  - **Minimisation des données** : Les coordonnées GPS précises ne sont plus stockées dès que vous êtes confirmé dans un lieu. Seul le nom du lieu est conservé pour la durée de votre présence.
+  - **Expiration automatique** : Votre présence est automatiquement effacée après 30 minutes d'inactivité (si l'app n'envoie plus de "heartbeat").
+- Médias : photo de profil uploadée par vous.
+- Réseaux sociaux : identifiants renseignés par vous (ex: Instagram)
 
-Utilisation:
+Utilisation :
 - Affichage de votre profil aux autres utilisateurs à proximité (si visibilité activée)
 - Fonctionnement de la messagerie et des fonctionnalités sociales
 
-Vos droits:
+Conservation des données (Rétention) :
+- Vos visites historiques sont anonymisées après 30 jours (suppression du lien avec votre profil).
+- Les données de compte sont conservées tant que votre compte est actif.
+
+Vos droits :
 - Consentement explicite à l'utilisation de vos données (obligatoire pour utiliser l'app)
-- Accès et portabilité: vous pouvez exporter vos données depuis l'app
-- Rectification: vous pouvez modifier vos informations de profil
-- Suppression: vous pouvez supprimer votre compte et toutes les données associées
+- **Do Not Sell (CCPA)** : Vous pouvez demander à ce que vos données ne soient pas vendues/partagées via les paramètres.
+- Accès et portabilité : vous pouvez exporter vos données depuis l'app
+- Rectification : vous pouvez modifier vos informations de profil
+- Suppression : vous pouvez supprimer votre compte et toutes les données associées
 
 Sécurité:
 - Mots de passe hashés (bcrypt), tokens sécurisés (JWT)
