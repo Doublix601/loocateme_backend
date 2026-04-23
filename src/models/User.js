@@ -77,6 +77,7 @@ const UserSchema = new mongoose.Schema(
     },
     // Premium flags
     isPremium: { type: Boolean, default: false, index: true },
+    boostBalance: { type: Number, default: 0 },
     premiumTrialStart: { type: Date },
     premiumTrialEnd: { type: Date },
     expoPushToken: { type: String, index: true },
