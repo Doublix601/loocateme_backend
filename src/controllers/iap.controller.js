@@ -37,7 +37,7 @@ export const handleWebhook = async (req, res) => {
       case 'NON_RENEWING_PURCHASE':
         // Handle Boosts (Consumables)
         // Check product_id to determine how many boosts to add
-        if (product_id === 'com.loocateme.boost.single') {
+        if (product_id === 'boost') {
           user.boostBalance = (user.boostBalance || 0) + 1;
 
           // Optionally auto-activate if not already boosted
