@@ -75,9 +75,10 @@ const UserSchema = new mongoose.Schema(
       bannedPermanent: { type: Boolean, default: false },
       banReason: { type: String, default: '' },
     },
-    // Premium flags
+    // Premium & Monetization
     isPremium: { type: Boolean, default: false, index: true },
     boostBalance: { type: Number, default: 0 },
+    boostUntil: { type: Date, index: true },
     premiumTrialStart: { type: Date },
     premiumTrialEnd: { type: Date },
     expoPushToken: { type: String, index: true },

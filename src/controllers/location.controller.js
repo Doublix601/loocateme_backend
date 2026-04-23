@@ -130,7 +130,9 @@ export const LocationController = {
       const users = await User.find({
         currentLocation: id,
         status: { $ne: 'red' },
-      }).select('-password');
+      })
+      .select('-password')
+      .sort({ boostUntil: -1, createdAt: 1 }); // Prioritize boosted users
 
       return res.json({ location, users });
     } catch (err) {

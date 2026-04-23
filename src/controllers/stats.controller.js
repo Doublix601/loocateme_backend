@@ -134,11 +134,9 @@ export const StatsController = {
       if (!effectiveStatisticsEnabled) {
         return res.status(403).json({ code: 'STATS_DISABLED', message: 'Statistiques désactivées' });
       }
-      // Premium-only when premium is enabled
+      // Check Premium status for data filtering
       const hasPremiumAccess = me?.isPremium || me?.role === 'admin' || me?.role === 'moderator';
-      if (premiumEnabled && !hasPremiumAccess) {
-        return res.status(403).json({ code: 'PREMIUM_REQUIRED', message: 'Fonctionnalité réservée aux comptes Premium' });
-      }
+
       const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 200);
       // Only last 30 days
       const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -147,20 +145,46 @@ export const StatsController = {
         .limit(limit)
         .populate('actor', 'username firstName lastName customName profileImageUrl bio socialNetworks location')
         .lean();
-      const items = events.map((e) => ({
-        id: e._id,
-        at: e.createdAt,
-        actor: e.actor ? {
-          id: e.actor._id,
-          username: e.actor.username,
-          name: e.actor.customName || e.actor.firstName || e.actor.username || 'Inconnu',
-          profileImageUrl: e.actor.profileImageUrl || '',
-          bio: e.actor.bio || '',
-          socialNetworks: Array.isArray(e.actor.socialNetworks) ? e.actor.socialNetworks : [],
-          location: e.actor.location || null,
-        } : null,
-      }));
-      return res.json({ items });
+
+      const items = events.map((e) => {
+        const isActorVisible = !!e.actor;
+        let actorData = null;
+
+        if (isActorVisible) {
+          if (premiumEnabled && !hasPremiumAccess) {
+            // Blurred data for non-premium
+            actorData = {
+              id: e.actor._id,
+              username: '*******',
+              name: 'Utilisateur Premium',
+              profileImageUrl: '', // Client side should handle blurring or placeholder
+              isBlurred: true,
+              at: e.createdAt,
+            };
+          } else {
+            // Full data for premium
+            actorData = {
+              id: e.actor._id,
+              username: e.actor.username,
+              name: e.actor.customName || e.actor.firstName || e.actor.username || 'Inconnu',
+              profileImageUrl: e.actor.profileImageUrl || '',
+              bio: e.actor.bio || '',
+              socialNetworks: Array.isArray(e.actor.socialNetworks) ? e.actor.socialNetworks : [],
+              location: e.actor.location || null,
+              isBlurred: false,
+              at: e.createdAt,
+            };
+          }
+        }
+
+        return {
+          id: e._id,
+          at: e.createdAt,
+          actor: actorData,
+        };
+      });
+
+      return res.json({ items, isPremium: hasPremiumAccess });
     } catch (err) {
       next(err);
     }

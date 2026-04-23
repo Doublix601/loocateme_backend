@@ -39,8 +39,16 @@ export const handleWebhook = async (req, res) => {
         // Check product_id to determine how many boosts to add
         if (product_id === 'com.loocateme.boost.single') {
           user.boostBalance = (user.boostBalance || 0) + 1;
+
+          // Optionally auto-activate if not already boosted
+          const now = new Date();
+          if (!user.boostUntil || user.boostUntil < now) {
+            user.boostBalance -= 1;
+            user.boostUntil = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour boost
+          }
+
           await user.save();
-          console.log(`[RevenueCat Webhook] User ${user.username} added 1 boost. New balance: ${user.boostBalance}`);
+          console.log(`[RevenueCat Webhook] User ${user.username} boost processed. Balance: ${user.boostBalance}, BoostUntil: ${user.boostUntil}`);
         }
         break;
 

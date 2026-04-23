@@ -218,7 +218,9 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
         status: { $ne: 'red' },
         emailVerified: true,
         'location.updatedAt': { $gte: threshold },
-      }).select('-password');
+      })
+      .select('-password')
+      .sort({ boostUntil: -1 });
 
       console.log(`[getNearbyUsers] Redis audit: Found=${users.length}/${ids.length} candidates. Threshold=${threshold.toISOString()}. ExcludedIdsCount=${excludeIds.length}`);
       return users;
@@ -240,6 +242,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
       },
     },
   })
+    .sort({ boostUntil: -1 })
     .limit(100)
     .select('-password');
 

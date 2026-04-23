@@ -35,6 +35,20 @@ export const CronService = {
       }
     });
 
+    // Reset Boost Balance and Grant Weekly Boost for Premium: Tous les lundis à 04:00
+    nodeCron.schedule('0 4 * * 1', async () => {
+      console.log('[cron] Granting weekly boost for Premium users...');
+      try {
+        await User.updateMany(
+          { isPremium: true },
+          { $inc: { boostBalance: 1 } }
+        );
+        console.log('[cron] Weekly boost granted.');
+      } catch (e) {
+        console.error('[cron] Weekly boost error:', e);
+      }
+    });
+
     console.log('[cron] Scheduled tasks initialized.');
   },
 
@@ -129,11 +143,11 @@ export const CronService = {
       const locations = await Location.find({});
       for (const loc of locations) {
         const popularity = popularityMap.get(String(loc._id)) || 0;
-        
+
         // Calcul des étoiles basé sur la moyenne hebdomadaire (popularité / (30/7))
         // Soit environ popularity / 4.28
         const weeklyAvg = popularity / (30 / 7);
-        
+
         let stars = 0;
         if (weeklyAvg >= 200) stars = 3;
         else if (weeklyAvg >= 50) stars = 2;

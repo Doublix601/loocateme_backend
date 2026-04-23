@@ -26,4 +26,31 @@ export const PremiumController = {
       next(err);
     }
   },
+  activateBoost: async (req, res, next) => {
+    try {
+      const userId = req.user?.id;
+      const me = await User.findById(userId);
+      if (!me) return res.status(404).json({ code: 'USER_NOT_FOUND' });
+
+      const now = new Date();
+      // Check if already boosted
+      if (me.boostUntil && me.boostUntil > now) {
+        return res.status(400).json({ code: 'ALREADY_BOOSTED', message: 'Boost déjà actif' });
+      }
+
+      // Check balance
+      if ((me.boostBalance || 0) <= 0) {
+        return res.status(403).json({ code: 'NO_BOOSTS', message: 'Aucun boost disponible' });
+      }
+
+      // Use one boost
+      me.boostBalance -= 1;
+      me.boostUntil = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour boost
+
+      await me.save();
+      return res.json({ success: true, boostUntil: me.boostUntil, boostBalance: me.boostBalance });
+    } catch (err) {
+      next(err);
+    }
+  },
 };
