@@ -5,8 +5,6 @@ import { SettingsController } from '../controllers/settings.controller.js';
 
 const router = Router();
 
-router.put('/visibility', requireAuth, validate(validators.visibility), SettingsController.setVisible);
-
 // Public endpoint to get feature flags (no auth required)
 router.get('/flags', SettingsController.getFlags);
 

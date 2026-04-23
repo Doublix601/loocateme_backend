@@ -27,7 +27,6 @@ const UserSchema = new mongoose.Schema(
     customName: { type: String, default: '', index: true },
     bio: { type: String, default: '' },
     profileImageUrl: { type: String, default: '' },
-    isVisible: { type: Boolean, default: true },
     profileViews: { type: Number, default: 0, index: true },
     // Rate-limit name changes
     lastUsernameChangeAt: { type: Date },

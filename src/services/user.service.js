@@ -50,7 +50,7 @@ export async function getUserByIdForViewer({ userId, targetId }) {
   const target = await User.findById(targetId).select('-password').lean();
   if (!target) return null;
   if (String(userId) !== String(targetId)) {
-    if (target.isVisible === false || target.emailVerified === false) return null;
+    if (target.status === 'red' || target.emailVerified === false) return null;
     const blockedIds = await getBlockedIds(userId);
     if (blockedIds.includes(String(targetId))) return null;
   }
@@ -205,11 +205,11 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
       }
       const users = await User.find({
         _id: { $in: ids },
-        isVisible: true,
+        status: { $ne: 'red' },
         emailVerified: true,
         'location.updatedAt': { $gte: threshold },
       }).select('-password');
-      
+
       console.log(`[getNearbyUsers] Redis audit: Found=${users.length}/${ids.length} candidates. Threshold=${threshold.toISOString()}. ExcludedIdsCount=${excludeIds.length}`);
       return users;
     }
@@ -220,7 +220,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
   // Fallback to MongoDB geospatial query
   const users = await User.find({
     _id: { $nin: excludeIds },
-    isVisible: true,
+    status: { $ne: 'red' },
     emailVerified: true,
     'location.updatedAt': { $gte: threshold },
     location: {
@@ -239,7 +239,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
 
 export async function getPopularUsers({ userId = null, limit = 10 } = {}) {
   const safeLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 10));
-  const query = { isVisible: true, emailVerified: true };
+  const query = { status: { $ne: 'red' }, emailVerified: true };
   if (userId) {
     const blockedIds = await getBlockedIds(userId);
     const excludeIds = Array.from(new Set([String(userId), ...blockedIds]));
@@ -255,7 +255,7 @@ export async function getPopularUsers({ userId = null, limit = 10 } = {}) {
 export async function searchUsers({ q = '', limit = 10, excludeUserId = null } = {}) {
   // Enforce max 10 results regardless of client request
   const safeLimit = Math.max(1, Math.min(10, parseInt(limit, 10) || 10));
-  const query = { isVisible: true };
+  const query = { status: { $ne: 'red' } };
   if (excludeUserId) {
     const blockedIds = await getBlockedIds(excludeUserId);
     const excludeIds = Array.from(new Set([String(excludeUserId), ...blockedIds]));

@@ -78,11 +78,11 @@ export const UserController = {
     try {
       const { lat, lon } = req.body;
       console.log(`[heartbeat] Received from user=${req.user.id} at lat=${lat}, lon=${lon}`);
-      
+
       const user = await updateLocation(req.user.id, { lat, lon });
-      
+
       console.log(`[heartbeat] User updated: id=${user._id}, lastSeen=${user.location?.updatedAt}, loc=${user.currentLocation || 'none'}`);
-      
+
       return res.json({ status: 'ok', user });
     } catch (err) {
       console.error(`[heartbeat] Error for user=${req.user?.id}:`, err.message);
@@ -95,9 +95,9 @@ export const UserController = {
       // Enforce that invisible users cannot see others
       try {
         const { User } = await import('../models/User.js');
-        const me = await User.findById(req.user.id).select('isVisible');
+        const me = await User.findById(req.user.id).select('status');
         if (!me) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
-        if (me.isVisible === false) return res.status(403).json({ code: 'INVISIBLE', message: 'Visibility is disabled' });
+        if (me.status === 'red') return res.status(403).json({ code: 'INVISIBLE', message: 'Visibility is disabled' });
       } catch (_e) { /* proceed even if check fails; service will further validate */ }
       const users = await getNearbyUsers({
         userId: req.user.id,

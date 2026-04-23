@@ -304,7 +304,7 @@ export const ReportController = {
         ],
       })
         .limit(limit)
-        .select('username firstName lastName customName email profileImageUrl moderation role isVisible')
+        .select('username firstName lastName customName email profileImageUrl moderation role')
         .lean();
       const mapped = users.map((u) => ({
         id: u._id,
@@ -315,7 +315,6 @@ export const ReportController = {
         email: u.email || '',
         profileImageUrl: u.profileImageUrl || '',
         role: u.role || 'user',
-        isVisible: u.isVisible !== false,
         moderation: u.moderation || {},
       }));
       return res.json({ users: mapped });

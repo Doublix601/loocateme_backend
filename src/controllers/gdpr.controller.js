@@ -57,7 +57,6 @@ export const GdprController = {
         name: user.name,
         bio: user.bio,
         profileImageUrl: user.profileImageUrl,
-        isVisible: user.isVisible,
         consent: user.consent || {},
         privacyPreferences: user.privacyPreferences || {},
         location: user.location || {},

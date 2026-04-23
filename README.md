@@ -85,7 +85,7 @@ scripts/
 
 5) Modèle de données (User)
 - email (unique), password
-- name, bio, profileImageUrl, isVisible
+- name, bio, profileImageUrl
 - location: GeoJSON Point [lon, lat] + updatedAt
 - socialNetworks: [{ type: instagram|facebook|x|snapchat|tiktok|linkedin, handle }]
 
@@ -126,9 +126,6 @@ Profil
 Réseaux sociaux
 - PUT /social (auth) body: { type, handle }
 - DELETE /social/:type (auth)
-
-Paramètres
-- PUT /settings/visibility (auth) body: { isVisible: boolean }
 
 7) Validation et gestion des erreurs
 - express-validator sur toutes les entrées.

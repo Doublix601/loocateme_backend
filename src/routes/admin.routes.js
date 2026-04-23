@@ -8,7 +8,7 @@ import { sendUnifiedNotification } from '../services/fcm.service.js';
 const router = Router();
 
 // GET /api/admin/users
-// Returns all users (regardless of isVisible), paginated, without password field
+// Returns all users, paginated, without password field
 router.get('/users', requireAuth, async (req, res, next) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);

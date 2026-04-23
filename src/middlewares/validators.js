@@ -214,7 +214,6 @@ export const validators = {
       }),
   ],
   socialRemove: [param('type').isIn(['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin', 'youtube'])],
-  visibility: [body('isVisible').isBoolean()],
   gdprConsent: [
     body('accepted').isBoolean(),
     body('version').optional().isString().isLength({ max: 20 }),
