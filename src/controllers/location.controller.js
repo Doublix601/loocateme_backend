@@ -166,6 +166,33 @@ export const LocationController = {
         ]);
       }
 
+      // Garantie stricte d'un minimum de `limit` lieux pour la vibe demandée :
+      // si la DB locale ne contient pas assez de lieux compatibles vibe (jour ou
+      // nuit), on complète avec les lieux les plus proches de l'AUTRE vibe afin
+      // d'atteindre le minimum. Mieux vaut afficher des lieux moins « in‑vibe »
+      // que de présenter une liste quasi vide à l'utilisateur.
+      if (locations.length < limit) {
+        const existingIds = new Set(locations.map(l => String(l._id)));
+        const fillers = await Location.aggregate([
+          {
+            $geoNear: {
+              near: { type: 'Point', coordinates: [lon, lat] },
+              distanceField: 'distance',
+              spherical: true,
+              // Pas de filtre `type` : on prend les plus proches, toutes vibes
+              // confondues, puis on dédoublonne avec ce qu'on a déjà.
+            },
+          },
+          { $limit: limit * 3 },
+        ]);
+        for (const loc of fillers) {
+          if (locations.length >= limit) break;
+          if (existingIds.has(String(loc._id))) continue;
+          locations.push(loc);
+          existingIds.add(String(loc._id));
+        }
+      }
+
       // Les prioritaires (popularité, utilisateurs, étoiles) sont déjà en tête
       // grâce au $sort de l'agrégation (sauf pour le fallback sans maxDistance,
       // mais celui-ci est trié par distance pour rester pertinent).
