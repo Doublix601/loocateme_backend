@@ -270,6 +270,68 @@ export const LocationController = {
     }
   },
 
+  // Seed unitaire d'un POI Overpass déjà observé côté client. Permet d'enregistrer
+  // immédiatement un lieu OSM affiché dans la liste (et donc d'éviter un 404 si
+  // l'utilisateur ouvre l'écran de détail avant que la sync globale ne le couvre).
+  osmSeedOne: async (req, res, next) => {
+    try {
+      const { osmId, name, type, lat, lon } = req.body || {};
+      const osmIdNum = Number(osmId);
+      if (!Number.isFinite(osmIdNum)) {
+        return res.status(400).json({ code: 'INVALID_DATA', message: 'osmId must be a number' });
+      }
+      if (typeof lat !== 'number' || typeof lon !== 'number') {
+        return res.status(400).json({ code: 'INVALID_DATA', message: 'lat/lon must be numbers' });
+      }
+
+      // Mapping clé OSM brute → libellé backend (Location.type enum).
+      // Doit rester aligné avec LocationSyncService côté client.
+      const OSM_TO_BACKEND = {
+        bar: 'Bar 🍺', pub: 'Bar 🍺', nightclub: 'Boîte de nuit 💃',
+        restaurant: 'Restaurant 🍴', cafe: 'Café ☕',
+        fast_food: 'Fast food 🍔', food_court: 'Fast food 🍔',
+        gym: 'Salle de sport 🏋️', fitness_centre: 'Salle de sport 🏋️',
+        beach_resort: 'Plage 🏖️', theme_park: "Parc d'attractions 🎢",
+        library: 'Bibliothèque 📚',
+        sports_centre: 'Centre sportif 🏟️', stadium: 'Centre sportif 🏟️', pitch: 'Centre sportif 🏟️',
+        bowling_alley: 'Bowling 🎳',
+        university: 'Éducation 🎓', college: 'Éducation 🎓', school: 'Éducation 🎓',
+        cinema: 'Cinéma 🎬',
+        ice_cream: 'Glacier 🍦',
+      };
+      const mappedType = OSM_TO_BACKEND[type] || null;
+      if (!mappedType) {
+        return res.status(400).json({ code: 'UNSUPPORTED_TYPE', message: `Unsupported OSM type: ${type}` });
+      }
+
+      const location = await Location.findOneAndUpdate(
+        { osmId: osmIdNum },
+        {
+          $set: {
+            osmId: osmIdNum,
+            name: name || 'Lieu OSM',
+            type: mappedType,
+            location: { type: 'Point', coordinates: [lon, lat] },
+            lastOsmSyncAt: new Date(),
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+
+      return res.json({ success: true, location });
+    } catch (err) {
+      // Si conflit d'index (ex: deux clients qui seedent en parallèle), on tente
+      // simplement de re-lire le doc plutôt que de remonter une 500.
+      if (err && (err.code === 11000)) {
+        try {
+          const existing = await Location.findOne({ osmId: Number(req.body?.osmId) });
+          if (existing) return res.json({ success: true, location: existing });
+        } catch (_) { /* fall through */ }
+      }
+      next(err);
+    }
+  },
+
   syncOsmLocations: async (req, res, next) => {
     try {
       const { locations } = req.body;
