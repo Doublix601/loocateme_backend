@@ -63,7 +63,7 @@ async function syncLocations() {
         return true;
       })
       .map((el) => {
-        let type = 'Lieu 📍';
+        let type = null;
         const amenity = el.tags.amenity;
         const leisure = el.tags.leisure;
 
@@ -76,7 +76,7 @@ async function syncLocations() {
         else if (leisure === 'sports_centre') type = 'Centre sportif 🏟️';
         else if (leisure === 'bowling_alley') type = 'Bowling 🎳';
         else if (amenity === 'university' || amenity === 'college') type = 'Éducation 🎓';
-        else if (amenity === 'food_court') type = 'Espace restauration 🍱';
+        else if (amenity === 'food_court') type = 'Fast food 🍔';
         else if (amenity === 'cinema') type = 'Cinéma 🎬';
         else if (amenity === 'ice_cream') type = 'Glacier 🍦';
 
@@ -85,6 +85,8 @@ async function syncLocations() {
         const name = el.tags.name;
         const city = el.tags['addr:city'] || '';
         const osmId = el.id;
+
+        if (!type) return null;
 
         return {
           updateOne: {
@@ -106,7 +108,8 @@ async function syncLocations() {
             upsert: true,
           },
         };
-      });
+      })
+      .filter((op) => op !== null);
 
     if (ops.length > 0) {
       const result = await Location.bulkWrite(ops);

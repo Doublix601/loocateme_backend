@@ -5,7 +5,7 @@ const LocationSchema = new mongoose.Schema(
     osmId: { type: Number, unique: true, sparse: true },
     name: { type: String, required: true },
     city: { type: String },
-    type: { type: String, enum: ['Bar 🍺', 'Boîte de nuit 💃', 'Salle de sport 🏋️', 'Restaurant 🍴', 'Parc 🌳', 'Plage 🏖️', 'Parc d\'attractions 🎢', 'Café ☕', 'Bibliothèque 📚', 'Centre sportif 🏟️', 'Bowling 🎳', 'Éducation 🎓', 'Espace restauration 🍱', 'Cinéma 🎬', 'Glacier 🍦', 'Lieu 📍', 'TEST 🤖'], required: true },
+    type: { type: String, enum: ['Bar 🍺', 'Boîte de nuit 💃', 'Salle de sport 🏋️', 'Restaurant 🍴', 'Parc 🌳', 'Plage 🏖️', 'Parc d\'attractions 🎢', 'Café ☕', 'Bibliothèque 📚', 'Centre sportif 🏟️', 'Bowling 🎳', 'Éducation 🎓', 'Fast food 🍔', 'Cinéma 🎬', 'Glacier 🍦', 'TEST 🤖'], required: true },
     radius: { type: Number, default: 100 }, // Rayon de détection en mètres
     location: {
       type: { type: String, enum: ['Point'], default: 'Point' },

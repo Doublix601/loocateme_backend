@@ -8,15 +8,15 @@ const TYPES_BY_VIBE = {
   moon: new Set([
     'Bar 🍺', 'Boîte de nuit 💃',
     // partagés
-    'Restaurant 🍴', 'Café ☕', 'Cinéma 🎬', 'Espace restauration 🍱',
-    'Bowling 🎳', 'Lieu 📍', 'TEST 🤖',
+    'Restaurant 🍴', 'Café ☕', 'Cinéma 🎬', 'Fast food 🍔',
+    'Bowling 🎳', 'TEST 🤖',
   ]),
   sun: new Set([
     'Salle de sport 🏋️', 'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢",
     'Bibliothèque 📚', 'Centre sportif 🏟️', 'Éducation 🎓', 'Glacier 🍦',
     // partagés
-    'Restaurant 🍴', 'Café ☕', 'Cinéma 🎬', 'Espace restauration 🍱',
-    'Bowling 🎳', 'Lieu 📍', 'TEST 🤖',
+    'Restaurant 🍴', 'Café ☕', 'Cinéma 🎬', 'Fast food 🍔',
+    'Bowling 🎳', 'TEST 🤖',
   ]),
 };
 
@@ -28,6 +28,17 @@ function getAllowedTypesForVibe(vibe) {
   const v = normalizeVibe(vibe);
   // Pour le filtre $match Mongo: liste explicite des types autorisés.
   return Array.from(TYPES_BY_VIBE[v]);
+}
+
+// Types strictement réservés à la vibe opposée : ne doivent JAMAIS apparaître
+// dans l'autre mode, même en fallback de remplissage. Un type est exclusif à
+// une vibe s'il appartient à son ensemble mais pas à l'ensemble de l'autre
+// vibe (donc hors types partagés comme Restaurant, Café, Cinéma…).
+function getExcludedTypesForVibe(vibe) {
+  const v = normalizeVibe(vibe);
+  const other = v === 'sun' ? 'moon' : 'sun';
+  const allowed = TYPES_BY_VIBE[v];
+  return Array.from(TYPES_BY_VIBE[other]).filter((t) => !allowed.has(t));
 }
 
 export const LocationController = {
@@ -53,6 +64,7 @@ export const LocationController = {
       // le mode jour/nuit en élargissant la recherche si nécessaire.
       const vibe = normalizeVibe(req.query.vibe);
       const allowedTypes = getAllowedTypesForVibe(vibe);
+      const excludedTypes = getExcludedTypesForVibe(vibe);
 
       const getAggregatedLocations = async (maxDistance) => {
         return await Location.aggregate([
@@ -160,7 +172,7 @@ export const LocationController = {
               near: { type: 'Point', coordinates: [lon, lat] },
               distanceField: 'distance',
               spherical: true,
-              query: { type: { $in: allowedTypes } },
+              query: { type: { $in: allowedTypes, $nin: ['Lieu 📍'] } },
             },
           },
         ]);
@@ -179,8 +191,12 @@ export const LocationController = {
               near: { type: 'Point', coordinates: [lon, lat] },
               distanceField: 'distance',
               spherical: true,
-              // Pas de filtre `type` : on prend les plus proches, toutes vibes
-              // confondues, puis on dédoublonne avec ce qu'on a déjà.
+              // On prend les plus proches, mais on EXCLUT toujours les types
+              // strictement réservés à la vibe opposée (ex : un Bar ne doit
+              // jamais apparaître en mode jour, même en remplissage). Les
+              // types partagés (Restaurant, Café…) restent autorisés.
+              // "Lieu 📍" est définitivement exclu (legacy en DB, non désiré par l'utilisateur).
+              query: { type: { $nin: [...excludedTypes, 'Lieu 📍'] } },
             },
           },
           { $limit: limit * 3 },
