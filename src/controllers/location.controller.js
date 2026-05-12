@@ -11,6 +11,15 @@ export const LocationController = {
         return res.status(400).json({ code: 'INVALID_COORDINATES', message: 'Invalid coordinates' });
       }
 
+      // Pagination simple par "limit" (min 20, max 50).
+      // Le client demande au minimum 20 lieux et peut en charger plus jusqu'à 50
+      // en faisant défiler la liste (cf. LocationListScreen onEndReached).
+      const MIN_LIMIT = 20;
+      const MAX_LIMIT = 50;
+      let limit = parseInt(req.query.limit, 10);
+      if (!Number.isFinite(limit) || limit < MIN_LIMIT) limit = MIN_LIMIT;
+      if (limit > MAX_LIMIT) limit = MAX_LIMIT;
+
       const getAggregatedLocations = async (maxDistance) => {
         return await Location.aggregate([
           {
@@ -98,27 +107,15 @@ export const LocationController = {
 
       let locations = await getAggregatedLocations(10000); // 10km
 
-      // Si on a moins de 10 lieux au total (populaires ou non), on passe à 30km
-      if (locations.length < 10) {
+      // Si on a moins que la limite demandée, on élargit à 30km
+      if (locations.length < limit) {
         locations = await getAggregatedLocations(30000); // 30km
       }
 
-      // Si on a toujours moins de 10 lieux (très peu probable à 30km, mais sait-on jamais)
-      // On retourne ce qu'on a. Sinon on limite les non-populaires pour ne pas en avoir trop?
-      // L'énoncé dit "afficher des lieux moins populaires [...] afin qu'il y en ait 10 dans la liste"
-      // Ça suggère qu'on veut exactement 10 si on doit compléter.
-      // Mais si on a déjà 15 lieux populaires, on garde les 15.
-
-      const priorityLocations = locations.filter(l => l.isPriority === 1);
-      if (priorityLocations.length < 10) {
-        // On prend tous les prioritaires + assez de non-prioritaires pour arriver à 10
-        const nonPriorityLocations = locations.filter(l => l.isPriority === 0);
-        const needed = 10 - priorityLocations.length;
-        locations = [...priorityLocations, ...nonPriorityLocations.slice(0, needed)];
-      } else {
-        // On a déjà assez de prioritaires, on ne garde que ceux-là
-        locations = priorityLocations;
-      }
+      // On veut au minimum `limit` lieux (20 par défaut, jusqu'à 50) triés par
+      // distance/priorité. Les prioritaires (popularité, utilisateurs, étoiles)
+      // sont déjà en tête grâce au $sort, on tronque simplement à `limit`.
+      locations = locations.slice(0, limit);
 
       return res.json({ locations });
     } catch (err) {
