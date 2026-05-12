@@ -223,7 +223,19 @@ export const LocationController = {
   getLocationById: async (req, res, next) => {
     try {
       const { id } = req.params;
-      const location = await Location.findById(id);
+      // Support des identifiants OSM côté client (`osm:<osmId>`). Ces lieux sont
+      // synchronisés en base via `/locations/sync-osm` et indexés par `osmId`.
+      // On résout vers le document Mongo correspondant pour éviter un cast
+      // ObjectId qui ferait planter la requête.
+      let location = null;
+      if (typeof id === 'string' && id.startsWith('osm:')) {
+        const osmId = Number(id.slice(4));
+        if (Number.isFinite(osmId)) {
+          location = await Location.findOne({ osmId });
+        }
+      } else {
+        location = await Location.findById(id);
+      }
       if (!location) {
         return res.status(404).json({ code: 'LOCATION_NOT_FOUND', message: 'Location not found' });
       }
@@ -232,7 +244,7 @@ export const LocationController = {
       const threshold = new Date(Date.now() - 5 * 60 * 1000);
       const now = new Date();
       const users = await User.find({
-        currentLocation: id,
+        currentLocation: location._id,
         status: { $ne: 'red' },
         $or: [
           { 'location.updatedAt': { $gte: threshold } },
