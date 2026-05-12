@@ -1,6 +1,35 @@
 import { Location } from '../models/Location.js';
 import { User } from '../models/User.js';
 
+// Filtrage des lieux par vibe (jour/nuit). Un lieu est exclu uniquement si son
+// `type` est exclusivement réservé à la vibe opposée. Les types partagés
+// (restaurant, café, cinéma…) restent visibles dans les deux modes.
+const TYPES_BY_VIBE = {
+  moon: new Set([
+    'Bar 🍺', 'Boîte de nuit 💃',
+    // partagés
+    'Restaurant 🍴', 'Café ☕', 'Cinéma 🎬', 'Espace restauration 🍱',
+    'Bowling 🎳', 'Lieu 📍', 'TEST 🤖',
+  ]),
+  sun: new Set([
+    'Salle de sport 🏋️', 'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢",
+    'Bibliothèque 📚', 'Centre sportif 🏟️', 'Éducation 🎓', 'Glacier 🍦',
+    // partagés
+    'Restaurant 🍴', 'Café ☕', 'Cinéma 🎬', 'Espace restauration 🍱',
+    'Bowling 🎳', 'Lieu 📍', 'TEST 🤖',
+  ]),
+};
+
+function normalizeVibe(v) {
+  return v === 'moon' ? 'moon' : 'sun';
+}
+
+function getAllowedTypesForVibe(vibe) {
+  const v = normalizeVibe(vibe);
+  // Pour le filtre $match Mongo: liste explicite des types autorisés.
+  return Array.from(TYPES_BY_VIBE[v]);
+}
+
 export const LocationController = {
   getLocations: async (req, res, next) => {
     try {
@@ -20,6 +49,11 @@ export const LocationController = {
       if (!Number.isFinite(limit) || limit < MIN_LIMIT) limit = MIN_LIMIT;
       if (limit > MAX_LIMIT) limit = MAX_LIMIT;
 
+      // Filtre par vibe : on garantit au moins `limit` lieux pertinents pour
+      // le mode jour/nuit en élargissant la recherche si nécessaire.
+      const vibe = normalizeVibe(req.query.vibe);
+      const allowedTypes = getAllowedTypesForVibe(vibe);
+
       const getAggregatedLocations = async (maxDistance) => {
         return await Location.aggregate([
           {
@@ -28,6 +62,7 @@ export const LocationController = {
               distanceField: 'distance',
               maxDistance: maxDistance,
               spherical: true,
+              query: { type: { $in: allowedTypes } },
             },
           },
           {
@@ -105,16 +140,35 @@ export const LocationController = {
         ]);
       };
 
-      let locations = await getAggregatedLocations(10000); // 10km
-
-      // Si on a moins que la limite demandée, on élargit à 30km
+      // On veut au minimum `limit` lieux (20 par défaut, jusqu'à 50). Si la zone
+      // proche ne contient pas assez de lieux pour la vibe demandée, on élargit
+      // progressivement le rayon de recherche jusqu'à trouver assez de lieux,
+      // ou jusqu'à atteindre une recherche sans limite de distance.
+      const RADIUS_STEPS = [10000, 30000, 100000, 500000]; // 10km → 500km
+      let locations = [];
+      for (const r of RADIUS_STEPS) {
+        locations = await getAggregatedLocations(r);
+        if (locations.length >= limit) break;
+      }
+      // Dernier recours: aucune limite de distance (toute la collection)
       if (locations.length < limit) {
-        locations = await getAggregatedLocations(30000); // 30km
+        // $geoNear nécessite maxDistance optionnel; sans maxDistance on prend
+        // tous les lieux triés par distance croissante.
+        locations = await Location.aggregate([
+          {
+            $geoNear: {
+              near: { type: 'Point', coordinates: [lon, lat] },
+              distanceField: 'distance',
+              spherical: true,
+              query: { type: { $in: allowedTypes } },
+            },
+          },
+        ]);
       }
 
-      // On veut au minimum `limit` lieux (20 par défaut, jusqu'à 50) triés par
-      // distance/priorité. Les prioritaires (popularité, utilisateurs, étoiles)
-      // sont déjà en tête grâce au $sort, on tronque simplement à `limit`.
+      // Les prioritaires (popularité, utilisateurs, étoiles) sont déjà en tête
+      // grâce au $sort de l'agrégation (sauf pour le fallback sans maxDistance,
+      // mais celui-ci est trié par distance pour rester pertinent).
       locations = locations.slice(0, limit);
 
       return res.json({ locations });
