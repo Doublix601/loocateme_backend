@@ -124,7 +124,9 @@ export async function requestPasswordReset(email) {
     // 2) BASE_URL (backward compatibility)
     // 3) https://api.loocate.me (sane default for prod if not configured)
     const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'https://api.loocate.me';
-    const resetUrl = `${baseUrl}/api/auth/reset-password?token=${encodeURIComponent(token)}`;
+    // Use a different hostname for password reset to avoid being intercepted by the mobile app's Universal Links
+    const resetBaseUrl = baseUrl.replace('api.loocate.me', 'auth.loocate.me');
+    const resetUrl = `${resetBaseUrl}/api/auth/reset-password?token=${encodeURIComponent(token)}`;
     try {
       await sendMail({
         to: user.email,
@@ -169,7 +171,9 @@ async function createAndSendEmailVerification(user) {
   await user.save();
   // See priority comment above
   const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'https://api.loocate.me';
-  const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
+  // Use a different hostname for email verification to avoid being intercepted by the mobile app's Universal Links
+  const verifyBaseUrl = baseUrl.replace('api.loocate.me', 'auth.loocate.me');
+  const verifyUrl = `${verifyBaseUrl}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
   try {
     await sendMail({
       to: user.email,
