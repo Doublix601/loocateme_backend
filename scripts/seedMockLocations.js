@@ -55,7 +55,7 @@ async function seedMockLocations() {
           $set: {
             name: loc.name,
             type: loc.type,
-            radius: loc.radius || 100,
+            radius: loc.radius || 40,
             location: {
               type: 'Point',
               coordinates: loc.coordinates,
@@ -65,7 +65,7 @@ async function seedMockLocations() {
         },
         { upsert: true }
       );
-      console.log(`Seeded: ${loc.name} (popularity: ${loc.popularity || 0}, radius: ${loc.radius || 100}m)`);
+      console.log(`Seeded: ${loc.name} (popularity: ${loc.popularity || 0}, radius: ${loc.radius || 40}m)`);
     }
   } catch (error) {
     console.error('Error seeding mock locations:', error);

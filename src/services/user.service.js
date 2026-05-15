@@ -96,12 +96,12 @@ export async function updateLocation(userId, { lat, lon }) {
     // 1. Logique d'hystérésis : si l'utilisateur était déjà dans un lieu, on vérifie s'il y est encore
     const oldLocationInList = oldLocationId ? geoNearResult.find(p => String(p._id) === String(oldLocationId)) : null;
 
-    if (oldLocationInList && oldLocationInList.dist <= (oldLocationInList.radius || 100) * 1.1) {
+    if (oldLocationInList && oldLocationInList.dist <= (oldLocationInList.radius || 40) * 1.2) {
       matchedLocationId = oldLocationId;
     } else {
       // 2. Sinon, on prend le plus proche, s'il est dans son rayon de détection
       const nearest = geoNearResult[0];
-      if (nearest.dist <= (nearest.radius || 100)) {
+      if (nearest.dist <= (nearest.radius || 40)) {
         matchedLocationId = nearest._id;
       }
     }
