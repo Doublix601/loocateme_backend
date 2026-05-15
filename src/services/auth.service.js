@@ -122,8 +122,8 @@ export async function requestPasswordReset(email) {
     // Build the public API base URL used in emails. Priority:
     // 1) API_PUBLIC_URL (explicit public URL of the API)
     // 2) BASE_URL (backward compatibility)
-    // 3) https://api.loocate.me (sane default for prod if not configured)
-    const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'https://api.loocate.me';
+    // 3) http://api.loocate.me (sane default for prod if not configured)
+    const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'http://api.loocate.me';
     const resetUrl = `${baseUrl}/api/auth/reset-password?token=${encodeURIComponent(token)}`;
     try {
       await sendMail({
@@ -168,7 +168,7 @@ async function createAndSendEmailVerification(user) {
   user.emailVerifyExpiresAt = expiresAt;
   await user.save();
   // See priority comment above
-  const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'https://api.loocate.me';
+  const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'http://api.loocate.me';
   const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
   try {
     await sendMail({
