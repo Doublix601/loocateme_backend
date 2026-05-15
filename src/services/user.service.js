@@ -111,8 +111,6 @@ export async function updateLocation(userId, { lat, lon }) {
     location: { type: 'Point', coordinates: [lon, lat], updatedAt: new Date() },
   };
 
-  const PERSISTENCE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
-
   // Privacy: If the user is already confirmed at a POI, we avoid storing/updating raw coordinates
   // to minimize location tracking history. We only update the presence status.
   const isAlreadyConfirmedAtPOI = oldLocationId && matchedLocationId && String(oldLocationId) === String(matchedLocationId);
@@ -122,40 +120,28 @@ export async function updateLocation(userId, { lat, lon }) {
     update.location = { ...oldLocation, updatedAt: new Date() };
   }
 
+  // Mise à jour instantanée de la présence : dès que l'utilisateur est physiquement
+  // dans le rayon d'un POI il est compté, et dès qu'il en sort il est retiré.
+  // Les champs `pendingLocation` / `pendingLocationSince` (ancienne logique d'hystérésis
+  // temporelle de 2 minutes) sont conservés au schéma pour rétrocompatibilité mais
+  // toujours remis à null.
+  update.pendingLocation = null;
+  update.pendingLocationSince = null;
+
   if (!matchedLocationId) {
-    // L'utilisateur n'est dans aucun POI
+    // L'utilisateur n'est dans aucun POI → retrait immédiat
     update.currentLocation = null;
-    update.pendingLocation = null;
-    update.pendingLocationSince = null;
   } else if (String(matchedLocationId) === String(oldLocationId)) {
-    // L'utilisateur est déjà confirmé dans ce POI, on ne change rien au statut de présence
-    // On s'assure juste que les champs pending sont vides
-    update.pendingLocation = null;
-    update.pendingLocationSince = null;
-  } else if (String(matchedLocationId) === String(oldPendingLocationId)) {
-    // L'utilisateur est en attente dans ce POI, on vérifie le seuil
-    const elapsed = Date.now() - new Date(oldPendingSince).getTime();
-    if (elapsed >= PERSISTENCE_THRESHOLD_MS) {
-      // Seuil atteint ! On confirme la présence
-      update.currentLocation = matchedLocationId;
-      update.pendingLocation = null;
-      update.pendingLocationSince = null;
-      console.log(`[Presence] User ${userId} confirmed at POI ${matchedLocationId} after ${Math.round(elapsed/1000)}s`);
-    } else {
-      // Toujours en attente, on ne met pas à jour currentLocation
-      // On garde oldLocationId si l'hystérésis n'a pas encore switché (mais ici matchedLocationId est diff de oldLocationId)
-      // Donc si on est ici, c'est qu'on a un nouveau matchedLocationId qui est le même que le pending actuel.
-    }
+    // L'utilisateur est déjà dans ce POI, rien à changer côté présence
   } else {
-    // L'utilisateur entre dans un NOUVEAU POI (ou change de POI en attente)
-    update.pendingLocation = matchedLocationId;
-    update.pendingLocationSince = new Date();
-    // On quitte l'ancien POI immédiatement si on entre dans un nouveau (en attente de confirmation)
-    update.currentLocation = null;
-    // Safety check: When entering a new POI (even if pending), we clear boostUntil
-    // to prevent being a "Ghost" in an old Bar while being "Present" in a new one.
+    // Entrée immédiate dans le POI matché (nouveau ou différent de l'ancien)
+    update.currentLocation = matchedLocationId;
+    // Safety check: clear boostUntil to prevent being a "Ghost" in an old Bar
+    // while being "Present" in a new one.
     update.boostUntil = null;
+    console.log(`[Presence] User ${userId} entered POI ${matchedLocationId} (instant)`);
   }
+  void oldPendingLocationId; void oldPendingSince; // kept for backward-compat reads
 
   const user = await User.findByIdAndUpdate(userId, { $set: update }, { new: true });
 
