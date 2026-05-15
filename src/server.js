@@ -60,6 +60,36 @@ app.use((req, res, next) => {
 // Health
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
+// Apple App Site Association & Android Asset Links
+app.get(['/apple-app-site-association', '/.well-known/apple-app-site-association'], (req, res) => {
+  res.json({
+    applinks: {
+      apps: [],
+      details: [
+        {
+          appID: 'S87X78358N.me.loocate.app', // TEAM_ID.Bundle_ID
+          paths: ['NOT /api/auth/*', '/profile/*', '/*'],
+        },
+      ],
+    },
+  });
+});
+
+app.get(['/assetlinks.json', '/.well-known/assetlinks.json'], (req, res) => {
+  res.json([
+    {
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: {
+        namespace: 'android_app',
+        package_name: 'me.loocate.app',
+        sha256_cert_fingerprints: [
+          'FA:C6:17:45:DC:09:03:78:6F:B9:ED:46:21:05:91:D0:65:07:34:68:55:A6:5E:F6:6D:73:96:29:A8:4C:E6:B5',
+        ],
+      },
+    },
+  ]);
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
