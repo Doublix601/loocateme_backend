@@ -135,7 +135,7 @@ export const StatsController = {
         return res.status(403).json({ code: 'STATS_DISABLED', message: 'Statistiques désactivées' });
       }
       // Check Premium status for data filtering
-      const hasPremiumAccess = me?.isPremium || me?.role === 'admin' || me?.role === 'moderator';
+      const hasPremiumAccess = me?.isPremium;
 
       const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 200);
       // Only last 30 days

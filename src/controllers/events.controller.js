@@ -17,7 +17,7 @@ function hasPremiumAccess(user) {
   if (!user) return false;
   const now = new Date();
   const trialActive = user.premiumTrialEnd && user.premiumTrialEnd > now;
-  return !!user.isPremium || !!trialActive || user.role === 'admin' || user.role === 'moderator';
+  return !!user.isPremium || !!trialActive;
 }
 
 export const EventsController = {
