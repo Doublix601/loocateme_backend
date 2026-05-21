@@ -1,9 +1,12 @@
 import { User } from '../models/User.js';
 
-/**
- * RevenueCat Webhook Controller
- * Handles subscription updates and consumable purchases (Boosts)
- */
+const CONSUMABLE_GRANTS = {
+  loocateme_boost_pack_1: { field: 'boostBalance', amount: 1 },
+  loocateme_boost_pack_5: { field: 'boostBalance', amount: 5 },
+  loocateme_superlike_pack_3: { field: 'superlikeBalance', amount: 3 },
+  loocateme_superlike_pack_10: { field: 'superlikeBalance', amount: 10 },
+};
+
 export const handleWebhook = async (req, res) => {
   try {
     const { event } = req.body;
@@ -26,31 +29,25 @@ export const handleWebhook = async (req, res) => {
       case 'RENEWAL':
       case 'CANCELLATION':
       case 'EXPIRATION':
-      case 'BILLING_ISSUE':
-        // Handle Premium Entitlement
+      case 'BILLING_ISSUE': {
         const hasPremium = entitlement_ids && entitlement_ids.includes('premium');
         user.isPremium = hasPremium;
         await user.save();
         console.log(`[RevenueCat Webhook] User ${user.username} premium status updated to: ${hasPremium}`);
         break;
+      }
 
-      case 'NON_RENEWING_PURCHASE':
-        // Handle Boosts (Consumables)
-        // Check product_id to determine how many boosts to add
-        if (product_id === 'boost') {
-          user.boostBalance = (user.boostBalance || 0) + 1;
-
-          // Optionally auto-activate if not already boosted
-          const now = new Date();
-          if (!user.boostUntil || user.boostUntil < now) {
-            user.boostBalance -= 1;
-            user.boostUntil = new Date(now.getTime() + 30 * 60 * 1000); // 30 minutes boost
-          }
-
+      case 'NON_RENEWING_PURCHASE': {
+        const grant = CONSUMABLE_GRANTS[product_id];
+        if (grant) {
+          user[grant.field] = (user[grant.field] || 0) + grant.amount;
           await user.save();
-          console.log(`[RevenueCat Webhook] User ${user.username} boost processed. Balance: ${user.boostBalance}, BoostUntil: ${user.boostUntil}`);
+          console.log(`[RevenueCat Webhook] User ${user.username} ${grant.field} +${grant.amount} → ${user[grant.field]}`);
+        } else {
+          console.warn(`[RevenueCat Webhook] Unknown consumable product_id: ${product_id}`);
         }
         break;
+      }
 
       default:
         console.log(`[RevenueCat Webhook] Unhandled event type: ${type}`);

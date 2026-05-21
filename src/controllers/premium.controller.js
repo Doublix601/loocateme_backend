@@ -91,6 +91,33 @@ export const PremiumController = {
     }
   },
 
+  getWeeklyAllowance: async (req, res, next) => {
+    try {
+      const userId = req.user?.id;
+      const me = await User.findById(userId);
+      if (!me) return res.status(404).json({ code: 'USER_NOT_FOUND' });
+
+      if (!me.isPremium) {
+        return res.json({ granted: false, superlikeBalance: me.superlikeBalance || 0 });
+      }
+
+      const now = new Date();
+      const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+      const needsReset = !me.lastAllowanceAt || (now.getTime() - new Date(me.lastAllowanceAt).getTime()) >= oneWeekMs;
+
+      if (needsReset) {
+        me.superlikeBalance = 3;
+        me.lastAllowanceAt = now;
+        await me.save();
+        return res.json({ granted: true, superlikeBalance: me.superlikeBalance });
+      }
+
+      return res.json({ granted: false, superlikeBalance: me.superlikeBalance });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   activateBoost: async (req, res, next) => {
     try {
       const userId = req.user?.id;

@@ -82,6 +82,7 @@ const UserSchema = new mongoose.Schema(
     boostUntil: { type: Date, index: true },
     premiumTrialStart: { type: Date },
     premiumTrialEnd: { type: Date },
+    lastAllowanceAt: { type: Date },
     expoPushToken: { type: String, index: true },
     location: {
       type: { type: String, enum: ['Point'], default: 'Point' },

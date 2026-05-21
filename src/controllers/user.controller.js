@@ -92,20 +92,19 @@ export const UserController = {
   nearby: async (req, res, next) => {
     try {
       const { lat, lon, radius } = req.query;
-      // Enforce that invisible users cannot see others
-      try {
-        const { User } = await import('../models/User.js');
-        const me = await User.findById(req.user.id).select('status');
-        if (!me) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
-        if (me.status === 'red') return res.status(403).json({ code: 'INVISIBLE', message: 'Visibility is disabled' });
-      } catch (_e) { /* proceed even if check fails; service will further validate */ }
+      const { User } = await import('../models/User.js');
+      const me = await User.findById(req.user.id).select('status isPremium');
+      if (!me) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
+      if (me.status === 'red') return res.status(403).json({ code: 'INVISIBLE', message: 'Visibility is disabled' });
+      const maxRadius = me.isPremium ? 2000 : 500;
+      const radiusMeters = radius ? Math.min(parseInt(radius, 10), maxRadius) : maxRadius;
       const users = await getNearbyUsers({
         userId: req.user.id,
         lat: parseFloat(lat),
         lon: parseFloat(lon),
-        radiusMeters: radius ? parseInt(radius, 10) : 2000,
+        radiusMeters,
       });
-      return res.json({ users });
+      return res.json({ users, maxRadius });
     } catch (err) {
       next(err);
     }

@@ -18,6 +18,9 @@ export const ProfileController = {
       }
       const { User } = await import('../models/User.js');
       const userDoc = await User.findById(req.user.id);
+      if (status === 'red' && !userDoc.isPremium) {
+        return res.status(403).json({ code: 'PREMIUM_REQUIRED', message: 'Le mode invisible est réservé aux abonnés Premium.' });
+      }
       if (userDoc.status === status) {
         return res.json({ user: userDoc });
       }
