@@ -1,4 +1,5 @@
 import { User } from '../models/User.js';
+import { sendPushUnified } from '../services/push.service.js';
 
 export const PremiumController = {
   startTrial: async (req, res, next) => {
@@ -49,6 +50,47 @@ export const PremiumController = {
       next(err);
     }
   },
+  sendSuperlike: async (req, res, next) => {
+    try {
+      const senderId = req.user?.id;
+      const { targetUserId } = req.body;
+
+      if (!targetUserId) return res.status(400).json({ code: 'MISSING_TARGET' });
+      if (String(senderId) === String(targetUserId)) {
+        return res.status(400).json({ code: 'SELF_SUPERLIKE' });
+      }
+
+      const sender = await User.findById(senderId);
+      if (!sender) return res.status(404).json({ code: 'USER_NOT_FOUND' });
+
+      const isMock = req.body.isMock === true && process.env.NODE_ENV !== 'production';
+
+      if (!isMock && (sender.superlikeBalance || 0) <= 0) {
+        return res.status(403).json({ code: 'NO_SUPERLIKES', message: 'Aucun superlike disponible' });
+      }
+
+      if (!isMock) {
+        sender.superlikeBalance = Math.max(0, (sender.superlikeBalance || 0) - 1);
+        await sender.save();
+      }
+
+      // Push notification to target
+      try {
+        const senderName = sender.customName || sender.username || 'Quelqu\'un';
+        await sendPushUnified({
+          userIds: [String(targetUserId)],
+          title: '⭐ Superlike reçu !',
+          body: `${senderName} te remarque dans cet endroit.`,
+          data: { kind: 'superlike', senderId: String(senderId) },
+        });
+      } catch (_) {}
+
+      return res.json({ success: true, superlikeBalance: sender.superlikeBalance });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   activateBoost: async (req, res, next) => {
     try {
       const userId = req.user?.id;

@@ -78,6 +78,7 @@ const UserSchema = new mongoose.Schema(
     // Premium & Monetization
     isPremium: { type: Boolean, default: false, index: true },
     boostBalance: { type: Number, default: 0 },
+    superlikeBalance: { type: Number, default: 0 },
     boostUntil: { type: Date, index: true },
     premiumTrialStart: { type: Date },
     premiumTrialEnd: { type: Date },
