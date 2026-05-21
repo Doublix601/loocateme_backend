@@ -91,17 +91,18 @@ export async function updateLocation(userId, { lat, lon }) {
     { $limit: 5 }
   ]);
 
+  const MAX_RADIUS = 30; // Cap global — overrides stale DB entries with larger values
   let matchedLocationId = null;
   if (geoNearResult.length > 0) {
     // 1. Logique d'hystérésis : si l'utilisateur était déjà dans un lieu, on vérifie s'il y est encore
     const oldLocationInList = oldLocationId ? geoNearResult.find(p => String(p._id) === String(oldLocationId)) : null;
 
-    if (oldLocationInList && oldLocationInList.dist <= (oldLocationInList.radius || 40) * 1.2) {
+    if (oldLocationInList && oldLocationInList.dist <= Math.min(oldLocationInList.radius || MAX_RADIUS, MAX_RADIUS) * 1.1) {
       matchedLocationId = oldLocationId;
     } else {
       // 2. Sinon, on prend le plus proche, s'il est dans son rayon de détection
       const nearest = geoNearResult[0];
-      if (nearest.dist <= (nearest.radius || 40)) {
+      if (nearest.dist <= Math.min(nearest.radius || MAX_RADIUS, MAX_RADIUS)) {
         matchedLocationId = nearest._id;
       }
     }
