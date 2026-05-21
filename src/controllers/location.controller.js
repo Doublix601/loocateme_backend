@@ -14,8 +14,8 @@ const TYPES_BY_VIBE = {
   sun: new Set([
     'Salle de sport 🏋️', 'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢",
     'Bibliothèque 📚', 'Centre sportif 🏟️', 'Éducation 🎓', 'Coworking 🧑‍💻', 'Glacier 🍦',
-    // partagés
-    'Restaurant 🍴', 'Café ☕', 'Cinéma 🎬', 'Fast food 🍔',
+    // partagés (Restaurant retiré : uniquement en mode nuit)
+    'Café ☕', 'Cinéma 🎬', 'Fast food 🍔',
     'Bowling 🎳', 'TEST 🤖',
   ]),
 };
