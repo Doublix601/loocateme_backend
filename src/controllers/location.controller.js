@@ -13,7 +13,7 @@ const TYPES_BY_VIBE = {
   ]),
   sun: new Set([
     'Salle de sport 🏋️', 'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢",
-    'Bibliothèque 📚', 'Centre sportif 🏟️', 'Éducation 🎓', 'Glacier 🍦',
+    'Bibliothèque 📚', 'Centre sportif 🏟️', 'Éducation 🎓', 'Coworking 🧑‍💻', 'Glacier 🍦',
     // partagés
     'Restaurant 🍴', 'Café ☕', 'Cinéma 🎬', 'Fast food 🍔',
     'Bowling 🎳', 'TEST 🤖',
@@ -296,6 +296,7 @@ export const LocationController = {
         sports_centre: 'Centre sportif 🏟️', stadium: 'Centre sportif 🏟️', pitch: 'Centre sportif 🏟️',
         bowling_alley: 'Bowling 🎳',
         university: 'Éducation 🎓', college: 'Éducation 🎓', school: 'Éducation 🎓',
+        coworking_space: 'Coworking 🧑‍💻',
         cinema: 'Cinéma 🎬',
         ice_cream: 'Glacier 🍦',
       };
