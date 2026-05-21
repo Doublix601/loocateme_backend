@@ -51,11 +51,11 @@ export const LocationController = {
         return res.status(400).json({ code: 'INVALID_COORDINATES', message: 'Invalid coordinates' });
       }
 
-      // Pagination simple par "limit" (min 20, max 50).
-      // Le client demande au minimum 20 lieux et peut en charger plus jusqu'à 50
+      // Pagination simple par "limit" (min 40, max 80).
+      // Le client demande au minimum 40 lieux et peut en charger plus jusqu'à 80
       // en faisant défiler la liste (cf. LocationListScreen onEndReached).
-      const MIN_LIMIT = 20;
-      const MAX_LIMIT = 50;
+      const MIN_LIMIT = 40;
+      const MAX_LIMIT = 80;
       let limit = parseInt(req.query.limit, 10);
       if (!Number.isFinite(limit) || limit < MIN_LIMIT) limit = MIN_LIMIT;
       if (limit > MAX_LIMIT) limit = MAX_LIMIT;
@@ -77,6 +77,10 @@ export const LocationController = {
               query: { type: { $in: allowedTypes } },
             },
           },
+          // Cap early so the two $lookup stages below only join the closest candidates.
+          // Without this, a dense DB (1000+ locations within 10 km) would run
+          // user-joins on every document before sorting — very expensive.
+          { $limit: limit * 3 },
           {
             $lookup: {
               from: 'users',
