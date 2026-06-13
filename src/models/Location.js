@@ -5,7 +5,19 @@ const LocationSchema = new mongoose.Schema(
     osmId: { type: Number, unique: true, sparse: true },
     name: { type: String, required: true },
     city: { type: String },
-    type: { type: String, enum: ['Bar 🍺', 'Boîte de nuit 💃', 'Salle de sport 🏋️', 'Restaurant 🍴', 'Parc 🌳', 'Plage 🏖️', 'Parc d\'attractions 🎢', 'Café ☕', 'Bibliothèque 📚', 'Centre sportif 🏟️', 'Bowling 🎳', 'Éducation 🎓', 'Coworking 🧑‍💻', 'Fast food 🍔', 'Cinéma 🎬', 'Glacier 🍦', 'TEST 🤖'], required: true },
+    type: { type: String, enum: [
+      // ── Mode ☀️ Jour ──────────────────────────────────────────
+      'Café ☕', 'Coworking 🧑‍💻', 'Salle de sport 🏋️', 'Centre sportif 🏟️',
+      'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢", 'Bibliothèque 📚',
+      'Éducation 🎓', 'Glacier 🍦',
+      'Marché 🛒', 'Musée 🏛️', 'Brunch 🥞',
+      // ── Mode 🌙 Nuit ──────────────────────────────────────────
+      'Bar 🍺', 'Boîte de nuit 💃', 'Restaurant 🍴', 'Cinéma 🎬',
+      'Bowling 🎳', 'Fast food 🍔',
+      'Rooftop 🌆', 'Karaoké 🎤', 'Club de jeux 🎮',
+      // ── Interne ───────────────────────────────────────────────
+      'TEST 🤖',
+    ], required: true },
     radius: { type: Number, default: 30 }, // Rayon de détection en mètres
     location: {
       type: { type: String, enum: ['Point'], default: 'Point' },
