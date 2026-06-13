@@ -1,22 +1,19 @@
 import { Location } from '../models/Location.js';
 import { User } from '../models/User.js';
 
-// Filtrage des lieux par vibe (jour/nuit). Un lieu est exclu uniquement si son
-// `type` est exclusivement réservé à la vibe opposée. Les types partagés
-// (restaurant, café, cinéma…) restent visibles dans les deux modes.
+// Filtrage des lieux par vibe (jour/nuit). Séparation stricte : chaque type
+// appartient à un seul mode.
 const TYPES_BY_VIBE = {
   moon: new Set([
-    'Bar 🍺', 'Boîte de nuit 💃',
-    // partagés
-    'Restaurant 🍴', 'Café ☕', 'Cinéma 🎬', 'Fast food 🍔',
-    'Bowling 🎳', 'TEST 🤖',
+    'Bar 🍺', 'Boîte de nuit 💃', 'Restaurant 🍴', 'Cinéma 🎬',
+    'Fast food 🍔', 'Bowling 🎳', 'Rooftop 🌆', 'Karaoké 🎤', 'Club de jeux 🎮',
+    'TEST 🤖',
   ]),
   sun: new Set([
-    'Salle de sport 🏋️', 'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢",
-    'Bibliothèque 📚', 'Centre sportif 🏟️', 'Éducation 🎓', 'Coworking 🧑‍💻', 'Glacier 🍦',
-    // partagés (Restaurant retiré : uniquement en mode nuit)
-    'Café ☕', 'Cinéma 🎬', 'Fast food 🍔',
-    'Bowling 🎳', 'TEST 🤖',
+    'Café ☕', 'Coworking 🧑‍💻', 'Salle de sport 🏋️', 'Centre sportif 🏟️',
+    'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢", 'Bibliothèque 📚',
+    'Éducation 🎓', 'Glacier 🍦', 'Marché 🛒', 'Musée 🏛️', 'Brunch 🥞',
+    'TEST 🤖',
   ]),
 };
 
