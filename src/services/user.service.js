@@ -166,6 +166,20 @@ export async function updateLocation(userId, { lat, lon }) {
           actor: userId,
           locationId: currentLocationId
         });
+
+        // Recalcule immédiatement popularity + stars pour ce lieu
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const [agg] = await Event.aggregate([
+          { $match: { type: 'location_visit', locationId: currentLocationId, createdAt: { $gt: thirtyDaysAgo } } },
+          { $group: { _id: null, uniqueVisitors: { $addToSet: '$actor' } } },
+          { $project: { popularity: { $size: '$uniqueVisitors' } } }
+        ]);
+        const popularity = agg?.popularity ?? 1;
+        let stars = 0;
+        if (popularity > 40) stars = 3;
+        else if (popularity > 10) stars = 2;
+        else if (popularity > 0) stars = 1;
+        await Location.updateOne({ _id: currentLocationId }, { $set: { popularity, stars } });
       }
     } catch (e) {
       console.warn('[user.service] Failed to record location_visit', e.message);
