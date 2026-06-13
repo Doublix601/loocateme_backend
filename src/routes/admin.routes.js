@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middlewares/auth.js';
 import { User } from '../models/User.js';
 import { FeatureFlag } from '../models/FeatureFlag.js';
+import { CronService } from '../services/cron.service.js';
 import { sendMail, verifyMailTransport } from '../services/email.service.js';
 import { sendUnifiedNotification } from '../services/fcm.service.js';
 
@@ -258,6 +259,17 @@ router.post('/cleanup-presence', requireAuth, async (req, res, next) => {
     });
   } catch (err) {
     console.error('[AdminCleanup] Error:', err);
+    next(err);
+  }
+});
+
+// POST /api/admin/sync-locations
+// Déclenche manuellement le recalcul des stats (popularity + stars) de tous les lieux.
+router.post('/sync-locations', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    await CronService.updateLocationStats();
+    return res.json({ success: true, message: 'Recalcul des stats lieux terminé.' });
+  } catch (err) {
     next(err);
   }
 });
