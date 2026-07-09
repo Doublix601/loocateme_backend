@@ -165,7 +165,13 @@ export const BusinessBillingController = {
         }
         case 'invoice.paid': {
           const invoice = event.data.object;
-          if (invoice.subscription) {
+          // billing_reason distingue l'abonnement initial / le renouvellement mensuel
+          // ('subscription_create', 'subscription_cycle') des factures de proration
+          // générées par un changement de palier en cours de mois ('subscription_update').
+          // Ne créditer que sur les deux premiers cas pour garantir 1 crédit/mois, même
+          // si le lieu bascule plusieurs fois de palier dans la même période.
+          const grantsCredit = ['subscription_create', 'subscription_cycle'].includes(invoice.billing_reason);
+          if (invoice.subscription && grantsCredit) {
             const location = await Location.findOne({ 'subscription.stripeSubscriptionId': invoice.subscription });
             if (location && location.businessTier === 'pro3') {
               location.proOffers = location.proOffers || { ultraBoostBalance: 0, proBoostBalance: 0 };
