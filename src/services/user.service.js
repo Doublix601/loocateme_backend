@@ -4,6 +4,9 @@ import { Event } from '../models/Event.js';
 import { redisClient } from '../config/redis.js';
 import { sendPushUnified } from './push.service.js';
 import { NotificationDedup } from '../models/NotificationDedup.js';
+import { recalculateCityStars } from './location.service.js';
+
+const MIN_STAY_MS = 5 * 60 * 1000; // 5 minutes minimum pour être comptabilisé
 
 // Build a diacritic-insensitive regex by expanding common French accented letters
 function buildDiacriticRegex(input) {
@@ -70,12 +73,13 @@ export async function getUsersByEmails(emails) {
 }
 
 export async function updateLocation(userId, { lat, lon }) {
-  const userToUpdate = await User.findById(userId).select('currentLocation pendingLocation pendingLocationSince location');
+  const userToUpdate = await User.findById(userId).select('currentLocation pendingLocation pendingLocationSince currentLocationSince location');
   if (!userToUpdate) throw Object.assign(new Error('User not found'), { status: 404 });
 
   const oldLocationId = userToUpdate.currentLocation;
   const oldPendingLocationId = userToUpdate.pendingLocation;
   const oldPendingSince = userToUpdate.pendingLocationSince;
+  const oldCurrentLocationSince = userToUpdate.currentLocationSince;
   const oldLocation = userToUpdate.location || { type: 'Point', coordinates: [0, 0] };
 
   // Utilisation de l'agrégation pour obtenir les distances exactes et gérer le rayon par lieu
@@ -91,7 +95,12 @@ export async function updateLocation(userId, { lat, lon }) {
     { $limit: 5 }
   ]);
 
-  const MAX_RADIUS = 30; // Cap global — overrides stale DB entries with larger values
+  const MAX_RADIUS = 50; // Cap global — overrides stale DB entries with larger values
+  // Avantage minimal (en mètres) que le lieu le plus proche doit avoir sur le
+  // second pour déclencher une nouvelle entrée. Évite les faux check-ins causés
+  // par l'imprécision GPS (~±15 m) lorsque deux lieux adjacents ont des centres
+  // séparés de moins de 40–50 m (ex : Nevermind vs Bakin Donuts côte à côte).
+  const MIN_LEAD_M = 12;
   let matchedLocationId = null;
   if (geoNearResult.length > 0) {
     // 1. Logique d'hystérésis : si l'utilisateur était déjà dans un lieu, on vérifie s'il y est encore
@@ -100,10 +109,19 @@ export async function updateLocation(userId, { lat, lon }) {
     if (oldLocationInList && oldLocationInList.dist <= Math.min(oldLocationInList.radius || MAX_RADIUS, MAX_RADIUS) * 1.1) {
       matchedLocationId = oldLocationId;
     } else {
-      // 2. Sinon, on prend le plus proche, s'il est dans son rayon de détection
+      // 2. Sinon, on prend le plus proche, s'il est dans son rayon de détection.
+      //    Pour éviter les confusions entre lieux adjacents, on exige que le gagnant
+      //    soit au moins MIN_LEAD_M plus proche que le second candidat (sauf s'il
+      //    est le seul résultat dans le rayon).
       const nearest = geoNearResult[0];
-      if (nearest.dist <= Math.min(nearest.radius || MAX_RADIUS, MAX_RADIUS)) {
-        matchedLocationId = nearest._id;
+      const effectiveRadius = Math.min(nearest.radius || MAX_RADIUS, MAX_RADIUS);
+      if (nearest.dist <= effectiveRadius) {
+        const second = geoNearResult[1];
+        const hasMinLead = !second || (second.dist - nearest.dist) >= MIN_LEAD_M;
+        if (hasMinLead) {
+          matchedLocationId = nearest._id;
+        }
+        // Sinon : ambiguïté entre lieux trop proches → on garde l'ancien lieu (ou null)
       }
     }
   }
@@ -132,11 +150,14 @@ export async function updateLocation(userId, { lat, lon }) {
   if (!matchedLocationId) {
     // L'utilisateur n'est dans aucun POI → retrait immédiat
     update.currentLocation = null;
+    update.currentLocationSince = null;
   } else if (String(matchedLocationId) === String(oldLocationId)) {
     // L'utilisateur est déjà dans ce POI, rien à changer côté présence
+    // (currentLocationSince reste inchangé)
   } else {
     // Entrée immédiate dans le POI matché (nouveau ou différent de l'ancien)
     update.currentLocation = matchedLocationId;
+    update.currentLocationSince = new Date(); // début du compteur 5 min
     // Safety check: clear boostUntil to prevent being a "Ghost" in an old Bar
     // while being "Present" in a new one.
     update.boostUntil = null;
@@ -148,41 +169,34 @@ export async function updateLocation(userId, { lat, lon }) {
 
   const currentLocationId = user.currentLocation;
 
-  // Record a location_visit if the user just checked into a new location
-  if (currentLocationId && String(currentLocationId) !== String(oldLocationId)) {
-    try {
-      // De-duplicate visits: only one visit per user/location per 12 hours
-      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
-      const existingVisit = await Event.findOne({
-        type: 'location_visit',
-        actor: userId,
-        locationId: currentLocationId,
-        createdAt: { $gt: twelveHoursAgo }
-      });
-
-      if (!existingVisit) {
-        await Event.create({
+  // Record a location_visit only after the user has been in the POI for at least 5 minutes.
+  // - On new entry: currentLocationSince is set in `update` above → skip this block.
+  // - On subsequent heartbeats (same POI): check elapsed time using oldCurrentLocationSince.
+  const isStayingAtSamePOI = currentLocationId && String(currentLocationId) === String(oldLocationId);
+  if (isStayingAtSamePOI && oldCurrentLocationSince) {
+    const elapsedMs = Date.now() - new Date(oldCurrentLocationSince).getTime();
+    if (elapsedMs >= MIN_STAY_MS) {
+      try {
+        // De-duplicate visits: only one visit per user/location per 12 hours
+        const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+        const existingVisit = await Event.findOne({
           type: 'location_visit',
           actor: userId,
-          locationId: currentLocationId
+          locationId: currentLocationId,
+          createdAt: { $gt: twelveHoursAgo }
         });
 
-        // Recalcule immédiatement popularity + stars pour ce lieu
-        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        const [agg] = await Event.aggregate([
-          { $match: { type: 'location_visit', locationId: currentLocationId, createdAt: { $gt: thirtyDaysAgo } } },
-          { $group: { _id: null, uniqueVisitors: { $addToSet: '$actor' } } },
-          { $project: { popularity: { $size: '$uniqueVisitors' } } }
-        ]);
-        const popularity = agg?.popularity ?? 1;
-        let stars = 0;
-        if (popularity > 40) stars = 3;
-        else if (popularity > 10) stars = 2;
-        else if (popularity > 0) stars = 1;
-        await Location.updateOne({ _id: currentLocationId }, { $set: { popularity, stars } });
+        if (!existingVisit) {
+          await Event.create({ type: 'location_visit', actor: userId, locationId: currentLocationId });
+
+          // Recalcule popularity + étoiles par tertiles de ville
+          const loc = await Location.findById(currentLocationId, 'city').lean();
+          await recalculateCityStars(loc?.city || null);
+          console.log(`[Presence] Visit recorded for user ${userId} at POI ${currentLocationId} after ${Math.round(elapsedMs / 60000)}min`);
+        }
+      } catch (e) {
+        console.warn('[user.service] Failed to record location_visit', e.message);
       }
-    } catch (e) {
-      console.warn('[user.service] Failed to record location_visit', e.message);
     }
   }
 

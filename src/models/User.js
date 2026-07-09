@@ -40,6 +40,8 @@ const UserSchema = new mongoose.Schema(
     // Persistence threshold support
     pendingLocation: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', default: null, index: true },
     pendingLocationSince: { type: Date, default: null },
+    // Timestamp when user entered their current location (for 5-min minimum stay rule)
+    currentLocationSince: { type: Date, default: null },
     // GDPR consent and privacy preferences
     consent: {
       accepted: { type: Boolean, default: false },
@@ -60,6 +62,14 @@ const UserSchema = new mongoose.Schema(
     },
     // User role: 'user' (default), 'moderator', 'admin'
     role: { type: String, enum: ['user', 'moderator', 'admin'], default: 'user', index: true },
+    // Account type: 'individual' (default, mobile app) vs 'business' (web-only, pro dashboard)
+    accountType: { type: String, enum: ['individual', 'business'], default: 'individual', index: true },
+    // Activation link for business accounts (set password + verify email in one step)
+    businessActivationTokenHash: { type: String, index: true },
+    businessActivationExpiresAt: { type: Date },
+    // Optional demographics, opt-in via privacyPreferences.analytics, used for business location stats
+    birthdate: { type: Date },
+    gender: { type: String, enum: ['male', 'female', 'other', 'prefer_not_to_say'] },
     // Moderation & safety
     moderation: {
       warningsCount: { type: Number, default: 0 },

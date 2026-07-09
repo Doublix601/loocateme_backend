@@ -3,6 +3,8 @@ import { User } from '../models/User.js';
 import { Event } from '../models/Event.js';
 import { Location } from '../models/Location.js';
 import { sendPushUnified } from './push.service.js';
+import { recalculateAllCityStars } from './location.service.js';
+import { recomputeAllLocationAnalytics } from './businessStats.service.js';
 import { processPolicyEmailJobs } from './policyNotification.service.js';
 
 /**
@@ -40,12 +42,54 @@ export const CronService = {
         // RGPD: anonymise l'historique de visite et purge les coordonnées des
         // comptes invisibles (cf. scripts/cleanupPrivacyData.js, désormais scheduled ici)
         await CronService.runPrivacyCleanup();
+
         // Recalculer les stats des lieux (Popularité 30j et Étoiles)
         await CronService.updateLocationStats();
+
+        // Recalculer les stats pro dénormalisées (fréquentation, âge/genre)
+        try {
+          const count = await recomputeAllLocationAnalytics();
+          console.log(`[cron] Business analytics recomputed for ${count} locations.`);
+        } catch (e) {
+          console.error('[cron] Business analytics recompute error:', e);
+        }
 
         console.log('[cron] Cleanup and stats update finished.');
       } catch (e) {
         console.error('[cron] Cleanup/Stats error:', e);
+      }
+    });
+
+    // Expiration des Stories pro (24h) : toutes les 15 minutes
+    nodeCron.schedule('*/15 * * * *', async () => {
+      try {
+        const res = await Location.updateMany(
+          { 'stories.0': { $exists: true } },
+          { $pull: { stories: { expiresAt: { $lt: new Date() } } } }
+        );
+        if (res.modifiedCount) console.log(`[cron] Expired stories removed from ${res.modifiedCount} locations.`);
+      } catch (e) {
+        console.error('[cron] Story expiration error:', e);
+      }
+    });
+
+    // Libération du "Pro Boost" (SponsorshipSlot) expiré : toutes les 5 minutes
+    nodeCron.schedule('*/5 * * * *', async () => {
+      try {
+        const { SponsorshipSlot } = await import('../models/SponsorshipSlot.js');
+        const now = new Date();
+        const slot = await SponsorshipSlot.findOneAndUpdate(
+          { _id: 'GLOBAL', until: { $lte: now } },
+          { activeLocationId: null, until: null }
+        );
+        if (slot?.activeLocationId) {
+          await Location.updateMany(
+            { _id: slot.activeLocationId, 'sponsorship.until': { $lte: now } },
+            { 'sponsorship.active': false }
+          );
+        }
+      } catch (e) {
+        console.error('[cron] Sponsorship slot release error:', e);
       }
     });
 
@@ -145,52 +189,13 @@ export const CronService = {
 
   /**
    * Recalcule la popularité (visiteurs uniques 30j) et les étoiles de tous les lieux.
+   * Les étoiles sont attribuées par tertiles relatifs à la ville du lieu.
    */
   updateLocationStats: async () => {
     try {
-      console.log('[cron] Recalculating location stats...');
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-
-      // Agrégation pour compter les visiteurs uniques par lieu sur 30 jours
-      const stats = await Event.aggregate([
-        {
-          $match: {
-            type: 'location_visit',
-            createdAt: { $gt: thirtyDaysAgo }
-          }
-        },
-        {
-          $group: {
-            _id: '$locationId',
-            uniqueVisitors30d: { $addToSet: '$actor' }
-          }
-        },
-        {
-          $project: {
-            locationId: '$_id',
-            popularity: { $size: '$uniqueVisitors30d' }
-          }
-        }
-      ]);
-
-      // Map pour accès rapide
-      const popularityMap = new Map(stats.map(s => [String(s.locationId), s.popularity]));
-
-      const locations = await Location.find({});
-      for (const loc of locations) {
-        const popularity = popularityMap.get(String(loc._id)) || 0;
-
-        let stars = 0;
-        if (popularity > 40) stars = 3;
-        else if (popularity > 10) stars = 2;
-        else if (popularity > 0) stars = 1;
-
-        await Location.updateOne(
-          { _id: loc._id },
-          { $set: { popularity, stars } }
-        );
-      }
-      console.log(`[cron] Updated stats for ${locations.length} locations.`);
+      console.log('[cron] Recalculating location stats (city tertiles)...');
+      const count = await recalculateAllCityStars();
+      console.log(`[cron] Updated stats for ${count} locations.`);
     } catch (e) {
       console.error('[cron] Update location stats error:', e);
     }

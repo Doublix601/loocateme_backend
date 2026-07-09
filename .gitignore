@@ -2,3 +2,6 @@
 /.idea/
 /data/
 /uploads/
+.env
+.env.*
+!.env.example

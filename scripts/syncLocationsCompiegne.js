@@ -117,6 +117,13 @@ async function syncLocationsCompiegne() {
     } else {
       console.log('No elements to sync for Compiègne.');
     }
+
+    // Delete OSM locations that no longer exist in Overpass results
+    const activeOsmIds = data.elements.map((el) => el.id);
+    const staleDelete = await Location.deleteMany({
+      osmId: { $exists: true, $nin: activeOsmIds },
+    });
+    console.log(`Deleted ${staleDelete.deletedCount} stale OSM locations no longer in Overpass.`);
   } catch (error) {
     console.error('Error syncing locations for Compiègne:', error);
   } finally {

@@ -187,6 +187,23 @@ export const EventsController = {
       next(err);
     }
   },
+  locationView: async (req, res, next) => {
+    try {
+      const actorId = req.user?.id || null;
+      const { locationId } = req.body;
+      const ev = await Event.create({ type: 'location_view', actor: actorId, locationId });
+
+      // Rétention 30 jours, comme les autres events (cf. cleanup RGPD dans cron.service.js)
+      try {
+        const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        Event.deleteMany({ type: 'location_view', createdAt: { $lt: cutoff } }).catch(() => {});
+      } catch (_) { /* ignore cleanup errors */ }
+
+      return res.status(201).json({ success: true, eventId: ev._id });
+    } catch (err) {
+      next(err);
+    }
+  },
   userSearch: async (req, res, next) => {
     try {
       const actorId = req.user?.id || null;

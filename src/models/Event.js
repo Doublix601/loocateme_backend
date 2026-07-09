@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 
-// type: 'profile_view' | 'social_click' | 'user_search'
+// type: 'profile_view' | 'social_click' | 'user_search' | 'location_visit' | 'location_view'
 const EventSchema = new mongoose.Schema(
   {
-    type: { type: String, required: true, enum: ['profile_view', 'social_click', 'user_search', 'location_visit'] },
+    type: { type: String, required: true, enum: ['profile_view', 'social_click', 'user_search', 'location_visit', 'location_view'] },
     actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false, index: true },
     targetUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false, index: true },
     // For social_click events

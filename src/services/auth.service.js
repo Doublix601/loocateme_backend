@@ -72,6 +72,12 @@ export async function login({ email, password }) {
   if (!user) throw Object.assign(new Error('Authentification échouée'), { status: 401, code: 'INVALID_CREDENTIALS' });
   const ok = await user.comparePassword(password);
   if (!ok) throw Object.assign(new Error('Authentification échouée'), { status: 401, code: 'INVALID_CREDENTIALS' });
+  if (user.accountType === 'business') {
+    const err = new Error("Ce compte professionnel ne peut pas se connecter à l'application mobile pour le moment.");
+    err.status = 403;
+    err.code = 'BUSINESS_ACCOUNT_WEB_ONLY';
+    throw err;
+  }
   const mod = user.moderation || {};
   const now = new Date();
   if (mod.bannedPermanent) {
@@ -204,6 +210,75 @@ export async function verifyEmailByToken(token) {
   user.emailVerified = true;
   user.emailVerifyTokenHash = undefined;
   user.emailVerifyExpiresAt = undefined;
+  await user.save();
+  return sanitize(user);
+}
+
+export async function businessLogin({ email, password }) {
+  const user = await User.findOne({ email }).select('+password');
+  if (!user) throw Object.assign(new Error('Authentification échouée'), { status: 401, code: 'INVALID_CREDENTIALS' });
+  if (user.accountType !== 'business') {
+    const err = new Error("Ce compte n'est pas un compte professionnel.");
+    err.status = 403;
+    err.code = 'NOT_A_BUSINESS_ACCOUNT';
+    throw err;
+  }
+  const ok = await user.comparePassword(password);
+  if (!ok) throw Object.assign(new Error('Authentification échouée'), { status: 401, code: 'INVALID_CREDENTIALS' });
+  if (!user.emailVerified) {
+    const err = new Error("Votre email n'est pas encore vérifié. Utilisez le lien d'activation reçu par email.");
+    err.status = 403;
+    err.code = 'EMAIL_NOT_VERIFIED';
+    throw err;
+  }
+  const accessToken = signAccessToken(user._id);
+  const refreshToken = await createRefreshToken(user._id);
+  return { user: sanitize(user), accessToken, refreshToken };
+}
+
+// Envoie le lien d'activation d'un compte pro (fixe le mot de passe + vérifie
+// l'email en une seule action). Remplace l'envoi de mot de passe en clair.
+export async function requestBusinessActivationEmail(user) {
+  const { token, hash, expiresAt } = generateOpaqueToken(process.env.BUSINESS_ACTIVATION_TOKEN_TTL || '7d');
+  user.businessActivationTokenHash = hash;
+  user.businessActivationExpiresAt = expiresAt;
+  await user.save();
+  const siteUrl = process.env.BUSINESS_SITE_PUBLIC_URL || 'https://pro.loocate.me';
+  const activateUrl = `${siteUrl}/activate?token=${encodeURIComponent(token)}`;
+  try {
+    await sendMail({
+      to: user.email,
+      subject: 'Votre compte professionnel LoocateMe est validé 🎉',
+      text: `Bonjour,
+Votre demande de compte professionnel LoocateMe a été validée par notre équipe.
+Cliquez sur ce lien pour activer votre compte et définir votre mot de passe (valide 7 jours): ${activateUrl}`,
+      html: `<p>Bonjour,</p><p>Votre demande de compte professionnel <strong>LoocateMe</strong> a été validée par notre équipe.</p><p><a href="${activateUrl}">Cliquez ici pour activer votre compte et définir votre mot de passe</a> (valide 7 jours).</p>`,
+    });
+  } catch (e) {
+    console.error('Failed to send business activation email:', e?.message || e);
+  }
+}
+
+export async function activateBusinessAccount(token, password) {
+  const hash = sha256(token);
+  const now = new Date();
+  const user = await User.findOne({ businessActivationTokenHash: hash }).select('+password');
+  if (!user) {
+    const err = new Error("Lien d'activation invalide");
+    err.status = 400;
+    err.code = 'ACTIVATION_TOKEN_INVALID';
+    throw err;
+  }
+  if (user.businessActivationExpiresAt && user.businessActivationExpiresAt < now) {
+    const err = new Error("Le lien d'activation a expiré");
+    err.status = 400;
+    err.code = 'ACTIVATION_TOKEN_EXPIRED';
+    throw err;
+  }
+  user.password = password; // hashed by pre-save hook
+  user.emailVerified = true;
+  user.businessActivationTokenHash = undefined;
+  user.businessActivationExpiresAt = undefined;
   await user.save();
   return sanitize(user);
 }

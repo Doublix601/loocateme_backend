@@ -53,4 +53,29 @@ export const ProfileController = {
       next(err);
     }
   },
+  // Collecte opt-in de l'âge/genre, utilisée pour les statistiques de
+  // fréquentation des lieux pro (moyenne d'âge, répartition H/F). L'envoi de
+  // ces champs vaut consentement explicite : on active privacyPreferences.analytics.
+  updateDemographics: async (req, res, next) => {
+    try {
+      const { birthdate, gender } = req.body || {};
+      const { User } = await import('../models/User.js');
+      const update = { 'privacyPreferences.analytics': true };
+      if (birthdate) {
+        const d = new Date(birthdate);
+        if (isNaN(d.getTime())) return res.status(400).json({ code: 'INVALID_BIRTHDATE', message: 'Date de naissance invalide' });
+        update.birthdate = d;
+      }
+      if (gender) {
+        if (!['male', 'female', 'other', 'prefer_not_to_say'].includes(gender)) {
+          return res.status(400).json({ code: 'INVALID_GENDER', message: 'Genre invalide' });
+        }
+        update.gender = gender;
+      }
+      const user = await User.findByIdAndUpdate(req.user.id, update, { new: true }).select('-password');
+      return res.json({ user });
+    } catch (err) {
+      next(err);
+    }
+  },
 };

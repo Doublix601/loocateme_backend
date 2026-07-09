@@ -1,4 +1,4 @@
-import { login, signup, logout, requestPasswordReset, verifyEmailByToken, resetPasswordByToken } from '../services/auth.service.js';
+import { login, signup, logout, requestPasswordReset, verifyEmailByToken, resetPasswordByToken, businessLogin, activateBusinessAccount } from '../services/auth.service.js';
 import jwt from 'jsonwebtoken';
 import { RefreshToken } from '../models/RefreshToken.js';
 
@@ -32,6 +32,70 @@ export const AuthController = {
       setRefreshCookie(res, data.refreshToken);
       return res.json({ user: data.user, accessToken: data.accessToken });
     } catch (err) {
+      next(err);
+    }
+  },
+  businessLogin: async (req, res, next) => {
+    try {
+      const { email, password } = req.body;
+      const data = await businessLogin({ email, password });
+      setRefreshCookie(res, data.refreshToken);
+      return res.json({ user: data.user, accessToken: data.accessToken });
+    } catch (err) {
+      next(err);
+    }
+  },
+  businessActivateGet: async (req, res) => {
+    const token = String(req.query.token || '');
+    const siteUrl = process.env.BUSINESS_SITE_PUBLIC_URL || 'https://pro.loocate.me';
+    if (!token) return res.status(400).send(renderHtmlPage({
+      title: 'Activation du compte professionnel',
+      heading: 'Lien invalide',
+      content: '<p>Le lien est invalide (token manquant).</p>',
+    }));
+    return res.send(renderHtmlPage({
+      title: 'Activer votre compte professionnel',
+      heading: 'Définir votre mot de passe',
+      content: `
+        <form method="POST" action="/api/auth/business/activate">
+          <input type="hidden" name="token" value="${token}"/>
+          <label>Mot de passe</label>
+          <input type="password" name="password" required minlength="6" autocomplete="new-password"/>
+          <label>Confirmer le mot de passe</label>
+          <input type="password" name="confirm" required minlength="6" autocomplete="new-password"/>
+          <button type="submit">Activer mon compte</button>
+          <p class="hint">Votre mot de passe doit comporter au moins 6 caractères.</p>
+        </form>
+      `,
+      secondary: `<p class="hint">Cette page est un secours ; vous pouvez normalement activer votre compte directement sur <a href="${siteUrl}/activate?token=${encodeURIComponent(token)}">${siteUrl}</a>.</p>`,
+    }));
+  },
+  businessActivatePost: async (req, res, next) => {
+    const token = String(req.body.token || req.query.token || '');
+    const password = String(req.body.password || '');
+    const confirm = String(req.body.confirm || '');
+    const isFormPost = !req.is('application/json');
+    try {
+      if (!token) throw Object.assign(new Error('Token manquant'), { status: 400, code: 'TOKEN_REQUIRED' });
+      if (!password || password.length < 6) throw Object.assign(new Error('Mot de passe trop court'), { status: 400, code: 'PASSWORD_TOO_SHORT' });
+      if (isFormPost && password !== confirm) throw Object.assign(new Error('Les mots de passe ne correspondent pas'), { status: 400, code: 'PASSWORD_MISMATCH' });
+      const user = await activateBusinessAccount(token, password);
+      if (isFormPost) {
+        return res.send(renderHtmlPage({
+          title: 'Compte activé',
+          heading: 'Votre compte professionnel est activé ✅',
+          content: '<p>Vous pouvez maintenant vous connecter sur le site LoocateMe Pro.</p>',
+        }));
+      }
+      return res.json({ success: true, user });
+    } catch (err) {
+      if (isFormPost) {
+        return res.status(err.status || 400).send(renderHtmlPage({
+          title: 'Activation du compte professionnel',
+          heading: 'Lien invalide ou expiré',
+          content: `<p>${err.message || "Impossible d'activer le compte."}</p>`,
+        }));
+      }
       next(err);
     }
   },

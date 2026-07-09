@@ -10,6 +10,10 @@ router.post('/login', validate(validators.login), AuthController.login);
 router.post('/refresh', AuthController.refresh);
 router.post('/logout', requireAuth, AuthController.logout);
 router.post('/forgot-password', validate(validators.forgot), AuthController.forgotPassword);
+// Comptes professionnels (site Web uniquement)
+router.post('/business/login', validate(validators.login), AuthController.businessLogin);
+router.get('/business/activate', AuthController.businessActivateGet);
+router.post('/business/activate', AuthController.businessActivatePost);
 // Email verification
 router.get('/verify-email', AuthController.verifyEmailGet);
 router.post('/verify-email', AuthController.verifyEmailPost);

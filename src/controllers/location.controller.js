@@ -17,6 +17,17 @@ const TYPES_BY_VIBE = {
   ]),
 };
 
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function normalizeVibe(v) {
   return v === 'moon' ? 'moon' : 'sun';
 }
@@ -124,29 +135,9 @@ export const LocationController = {
               userCount: { $ifNull: [{ $arrayElemAt: ['$userCount.count', 0] }, 0] },
             },
           },
-          // On ajoute un champ de tri : prioritaire si popularité > 0 ou userCount > 0 ou stars > 0
-          {
-            $addFields: {
-              isPriority: {
-                $cond: {
-                  if: {
-                    $or: [
-                      { $gt: ['$popularity', 0] },
-                      { $gt: ['$userCount', 0] },
-                      { $gt: ['$stars', 0] },
-                    ],
-                  },
-                  then: 1,
-                  else: 0,
-                },
-              },
-            },
-          },
           {
             $sort: {
-              isPriority: -1,
-              userCount: -1,
-              popularity: -1,
+              stars: -1,
               distance: 1,
             },
           },
@@ -215,6 +206,48 @@ export const LocationController = {
       // mais celui-ci est trié par distance pour rester pertinent).
       locations = locations.slice(0, limit);
 
+      // "Pro Boost" : un seul lieu sponsorisé globalement, épinglé en tête de
+      // liste avec le flag isSponsored, si l'utilisateur est dans un rayon
+      // raisonnable (200km) — évite d'afficher un lieu sponsorisé à l'autre
+      // bout du pays.
+      const sponsor = await Location.findOne({
+        'sponsorship.active': true,
+        'sponsorship.until': { $gt: new Date() },
+      }).lean();
+      if (sponsor && String(sponsor._id) !== String(locations[0]?._id)) {
+        const [sLon, sLat] = sponsor.location.coordinates;
+        const distance = haversineMeters(lat, lon, sLat, sLon);
+        if (distance <= 200000) {
+          locations = locations.filter((l) => String(l._id) !== String(sponsor._id));
+          locations.unshift({ ...sponsor, distance, isSponsored: true });
+          locations = locations.slice(0, limit);
+        }
+      } else if (sponsor) {
+        locations = locations.map((l) => (String(l._id) === String(sponsor._id) ? { ...l, isSponsored: true } : l));
+      }
+
+      return res.json({ locations });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // Recherche publique par nom/ville, utilisée par le flux de candidature pro
+  // (le professionnel recherche son établissement avant de le revendiquer).
+  // Exclut les lieux déjà revendiqués (isPro:true).
+  searchByName: async (req, res, next) => {
+    try {
+      const q = String(req.query.q || '').trim();
+      if (!q || q.length < 2) return res.json({ locations: [] });
+      const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 10));
+      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const locations = await Location.find({
+        isPro: { $ne: true },
+        $or: [{ name: re }, { city: re }],
+      })
+        .select('name city type location')
+        .limit(limit)
+        .lean();
       return res.json({ locations });
     } catch (err) {
       next(err);
@@ -265,7 +298,7 @@ export const LocationController = {
         };
       });
 
-      return res.json({ location, users: usersWithGhostFlag });
+      return res.json({ location, users: usersWithGhostFlag, monthlyUsers: location.popularity || 0 });
     } catch (err) {
       next(err);
     }
@@ -380,25 +413,20 @@ export const LocationController = {
       // S'il y a un upsert, osmId sera unique.
 
       if (ops.length > 0) {
-        // Cleanup old manual test locations (without osmId) that are not persistent (stars < 3)
-        // OR locations explicitly marked for deletion (shouldDelete: true)
-        // This ensures that only OSM locations and important partners remain.
-        await Location.deleteMany({
-          $or: [
-            { osmId: { $exists: false }, stars: { $lt: 3 } },
-            { shouldDelete: true }
-          ]
-        });
-
-        // Note: upsert: true créera le document s'il n'existe pas du tout.
-        // Si le document existe mais a été mis à jour il y a moins de 24h,
-        // le filtre osmId + lastOsmSyncAt < yesterday échouera.
-        // MAIS l'upsert risque de tenter de créer un NOUVEAU document avec le même osmId,
-        // ce qui échouera à cause de l'index unique sur osmId.
-        // C'est exactement ce qu'on veut pour ignorer silencieusement les doublons récents.
-
+        // Upsert d'abord, puis nettoyage : on évite ainsi de laisser la DB vide
+        // si le process crashe entre les deux opérations.
         try {
           const result = await Location.bulkWrite(ops, { ordered: false });
+
+          // Cleanup old manual test locations (without osmId) that are not persistent (stars < 3)
+          // OR locations explicitly marked for deletion (shouldDelete: true)
+          await Location.deleteMany({
+            $or: [
+              { osmId: { $exists: false }, stars: { $lt: 3 } },
+              { shouldDelete: true }
+            ]
+          }).catch(e => console.warn('[syncOsmLocations] deleteMany failed:', e.message));
+
           return res.json({
             success: true,
             upsertedCount: result.upsertedCount,

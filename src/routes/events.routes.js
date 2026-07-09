@@ -24,4 +24,9 @@ router.post('/social-click', requireAuth, (req, res, next) => {
 
 router.post('/user-search', requireAuth, EventsController.userSearch);
 
+router.post('/location-view', requireAuth, (req, res, next) => {
+  if (!req.body?.locationId) return res.status(400).json({ code: 'LOCATION_REQUIRED', message: 'locationId requis' });
+  next();
+}, EventsController.locationView);
+
 export default router;

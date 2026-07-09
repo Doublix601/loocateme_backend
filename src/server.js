@@ -26,6 +26,11 @@ import blocksRoutes from './routes/blocks.routes.js';
 import followRoutes from './routes/follow.routes.js';
 import locationRoutes from './routes/location.routes.js';
 import iapRoutes from './routes/iap.routes.js';
+import businessClaimRoutes from './routes/businessClaim.routes.js';
+import businessProfileRoutes from './routes/businessProfile.routes.js';
+import businessBillingRoutes from './routes/businessBilling.routes.js';
+import businessBoostRoutes from './routes/businessBoost.routes.js';
+import { BusinessBillingController } from './controllers/businessBilling.controller.js';
 import { errorHandler, notFound } from './middlewares/error.js';
 import { verifyMailTransport } from './services/email.service.js';
 import { CronService } from './services/cron.service.js';
@@ -40,9 +45,25 @@ app.set('trust proxy', 1);
 
 const PORT = process.env.PORT || 4000;
 const ORIGIN = process.env.CORS_ORIGIN || '*';
+// Supporte une liste d'origines séparées par des virgules (ex: app mobile Expo +
+// site Web pro sur un sous-domaine distinct), en plus d'une origine unique ou '*'.
+const ALLOWED_ORIGINS = ORIGIN === '*' ? true : ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
 
-app.use(cors({ origin: ORIGIN === '*' ? true : ORIGIN, credentials: true }));
+app.use(cors({
+  origin: ALLOWED_ORIGINS === true
+    ? true
+    : (origin, callback) => {
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+        return callback(new Error('Not allowed by CORS'));
+      },
+  credentials: true,
+}));
 app.use(morgan('dev'));
+
+// Webhook Stripe : DOIT être monté avant express.json() pour recevoir le
+// corps brut (nécessaire à la vérification de signature).
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), BusinessBillingController.stripeWebhook);
+
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -109,6 +130,10 @@ app.use('/api/blocks', blocksRoutes);
 app.use('/api/follow', followRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/iap', iapRoutes);
+app.use('/api/business-claims', businessClaimRoutes);
+app.use('/api/business', businessProfileRoutes);
+app.use('/api/business/billing', businessBillingRoutes);
+app.use('/api/business', businessBoostRoutes);
 
 // 404 and error
 app.use(notFound);

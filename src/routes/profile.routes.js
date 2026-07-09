@@ -10,5 +10,6 @@ router.put('/', requireAuth, validate(validators.profileUpdate), ProfileControll
 router.patch('/status', requireAuth, ProfileController.updateStatus);
 router.post('/photo', requireAuth, upload.single('photo'), ProfileController.uploadPhoto);
 router.delete('/photo', requireAuth, ProfileController.deletePhoto);
+router.put('/demographics', requireAuth, ProfileController.updateDemographics);
 
 export default router;

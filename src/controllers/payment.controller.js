@@ -3,10 +3,13 @@ import { User } from '../models/User.js';
 export const PaymentController = {
   revenueCatWebhook: async (req, res, next) => {
     try {
-      // Sécurité optionnelle : vérifier le secret RevenueCat si configuré
       const authHeader = req.headers.authorization;
       const secret = process.env.REVENUECAT_WEBHOOK_SECRET;
-      if (secret && authHeader !== `Bearer ${secret}`) {
+      if (!secret) {
+        console.error('[Payment] REVENUECAT_WEBHOOK_SECRET is not set — rejecting webhook');
+        return res.status(500).json({ message: 'Webhook secret not configured' });
+      }
+      if (authHeader !== `Bearer ${secret}`) {
         return res.status(401).json({ message: 'Unauthorized webhook' });
       }
 

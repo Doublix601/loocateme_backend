@@ -18,7 +18,7 @@ const LocationSchema = new mongoose.Schema(
       // ── Interne ───────────────────────────────────────────────
       'TEST 🤖',
     ], required: true },
-    radius: { type: Number, default: 30 }, // Rayon de détection en mètres
+    radius: { type: Number, default: 50 }, // Rayon de détection en mètres
     location: {
       type: { type: String, enum: ['Point'], default: 'Point' },
       coordinates: { type: [Number], required: true }, // [lon, lat]
@@ -49,6 +49,26 @@ const LocationSchema = new mongoose.Schema(
       expiresAt: { type: Date },
       createdAt: { type: Date, default: Date.now }
     }],
+    // Palier d'abonnement business ('none' = pas d'abonnement payant actif)
+    businessTier: { type: String, enum: ['none', 'pro1', 'pro2', 'pro3'], default: 'none', index: true },
+    subscription: {
+      stripeCustomerId: { type: String },
+      stripeSubscriptionId: { type: String, index: true },
+      stripePriceId: { type: String },
+      status: { type: String, enum: ['active', 'trialing', 'past_due', 'canceled', 'incomplete', ''], default: '' },
+      currentPeriodEnd: { type: Date },
+    },
+    // Crédits consommables réservés au palier Pro3, recrédités à chaque cycle Stripe
+    proOffers: {
+      ultraBoostBalance: { type: Number, default: 0 },
+      proBoostBalance: { type: Number, default: 0 },
+    },
+    // Sponsorisation "Pro Boost" : un seul lieu actif à la fois (cf. SponsorshipSlot)
+    sponsorship: {
+      active: { type: Boolean, default: false, index: true },
+      until: { type: Date },
+      activatedAt: { type: Date },
+    },
     analytics: {
       peakHours: [Number], // [12, 19, 20]
       ageGroups: {
@@ -56,7 +76,16 @@ const LocationSchema = new mongoose.Schema(
         '25-34': { type: Number, default: 0 },
         '35-44': { type: Number, default: 0 },
         '45+': { type: Number, default: 0 }
-      }
+      },
+      // Fréquentation par jour de semaine, index 0 = lundi ... 6 = dimanche
+      visitsByWeekday: { type: [Number], default: [0, 0, 0, 0, 0, 0, 0] },
+      genderSplit: {
+        male: { type: Number, default: 0 },
+        female: { type: Number, default: 0 },
+        other: { type: Number, default: 0 },
+      },
+      avgAgeVisitors: { type: Number, default: null },
+      lastComputedAt: { type: Date },
     }
   },
   { timestamps: true }
