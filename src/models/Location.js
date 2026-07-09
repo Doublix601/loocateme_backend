@@ -81,6 +81,9 @@ const LocationSchema = new mongoose.Schema(
       active: { type: Boolean, default: false },
       until: { type: Date },
       activatedAt: { type: Date },
+      // Utilisateurs ayant déjà réclamé le boost de profil gratuit pour CETTE activation
+      // (remis à zéro à chaque nouvelle activation, cf. businessBoost.controller.js).
+      claimedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     },
     analytics: {
       peakHours: [Number], // [12, 19, 20]

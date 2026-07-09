@@ -28,7 +28,7 @@ export const BusinessBoostController = {
       const { recipients } = await broadcastUltraBoost(location);
       const now = new Date();
       location.proOffers.ultraBoostBalance -= 1;
-      location.ultraBoost = { active: true, until: new Date(now.getTime() + ULTRA_BOOST_DURATION_MS), activatedAt: now };
+      location.ultraBoost = { active: true, until: new Date(now.getTime() + ULTRA_BOOST_DURATION_MS), activatedAt: now, claimedBy: [] };
       await location.save();
       return res.json({
         success: true,

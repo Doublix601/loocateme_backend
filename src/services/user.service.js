@@ -7,6 +7,8 @@ import { NotificationDedup } from '../models/NotificationDedup.js';
 import { recalculateCityStars } from './location.service.js';
 
 const MIN_STAY_MS = 5 * 60 * 1000; // 5 minutes minimum pour être comptabilisé
+const ULTRA_BOOST_CLAIM_MS = 20 * 60 * 1000; // 20 minutes, cf. texte du push dans ultraBoost.service.js
+const FREE_BOOST_DURATION_MS = 30 * 60 * 1000; // même durée que le boost payant (premium.controller.js)
 
 // Build a diacritic-insensitive regex by expanding common French accented letters
 function buildDiacriticRegex(input) {
@@ -196,6 +198,35 @@ export async function updateLocation(userId, { lat, lon }) {
         }
       } catch (e) {
         console.warn('[user.service] Failed to record location_visit', e.message);
+      }
+    }
+
+    // Récompense Ultra Boost : 20 min sur place pendant qu'une offre Ultra Boost est
+    // active sur ce lieu → un boost de profil gratuit (même durée que le boost payant,
+    // cf. premium.controller.js:activateBoost), une fois par activation. `claimedBy` est
+    // remis à zéro à chaque nouvelle activation (businessBoost.controller.js), donc rester
+    // sur place lors d'une activation ultérieure permet de réclamer à nouveau.
+    if (elapsedMs >= ULTRA_BOOST_CLAIM_MS) {
+      try {
+        const now = new Date();
+        const alreadyBoosted = user.boostUntil && user.boostUntil > now;
+        if (!alreadyBoosted) {
+          const loc = await Location.findOneAndUpdate(
+            {
+              _id: currentLocationId,
+              'ultraBoost.active': true,
+              'ultraBoost.until': { $gt: now },
+              'ultraBoost.claimedBy': { $ne: userId },
+            },
+            { $addToSet: { 'ultraBoost.claimedBy': userId } }
+          );
+          if (loc) {
+            await User.findByIdAndUpdate(userId, { $set: { boostUntil: new Date(now.getTime() + FREE_BOOST_DURATION_MS) } });
+            console.log(`[UltraBoost] Free profile boost granted to user ${userId} at POI ${currentLocationId} after ${Math.round(elapsedMs / 60000)}min`);
+          }
+        }
+      } catch (e) {
+        console.warn('[user.service] Failed to grant ultra boost reward', e.message);
       }
     }
   }
