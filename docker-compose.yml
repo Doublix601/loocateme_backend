@@ -38,6 +38,11 @@ services:
       - BUSINESS_DOCS_DIR=data/business-docs
       - MONGO_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-change-me-root}
       - MONGO_APP_PASSWORD=${MONGO_APP_PASSWORD:-change-me-app}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY must be set in .env}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET must be set in .env}
+      - STRIPE_PRICE_PRO1=${STRIPE_PRICE_PRO1:?STRIPE_PRICE_PRO1 must be set in .env}
+      - STRIPE_PRICE_PRO2=${STRIPE_PRICE_PRO2:?STRIPE_PRICE_PRO2 must be set in .env}
+      - STRIPE_PRICE_PRO3=${STRIPE_PRICE_PRO3:?STRIPE_PRICE_PRO3 must be set in .env}
     volumes:
       - ./:/app
       - ./data/uploads:/app/uploads
