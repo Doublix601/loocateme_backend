@@ -71,6 +71,16 @@ if [[ ! -f docker-compose.yml ]]; then
   exit 1
 fi
 
+# .env is gitignored, so `git reset --hard` below never touches it directly — but if it's
+# ever missing, required vars like JWT_ACCESS_SECRET/SMTP_PASS make `docker-compose up` fail,
+# and by then `docker-compose down` has already stopped the running services. Fail fast here,
+# before anything is stopped, so a missing .env is a no-op instead of an outage.
+if [[ ! -f .env ]]; then
+  err ".env not found in $SCRIPT_DIR — refusing to restart services (would take prod down with no way back up)."
+  err "Restore it from backup (e.g. ~/.secrets-backup/loocateme_backend.env) before re-running this script."
+  exit 1
+fi
+
 # --- Git update ---
 if ! command -v git >/dev/null 2>&1; then
   err "git not installed."

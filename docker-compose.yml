@@ -9,7 +9,7 @@ services:
       - DOCKER_CONTAINER=true
       - PORT=4000
       - NODE_ENV=development
-      - CORS_ORIGIN=http://localhost:19006,${BUSINESS_SITE_PUBLIC_URL:-https://pro.loocate.me}
+      - CORS_ORIGIN=http://localhost:19006,http://localhost:3000,${BUSINESS_SITE_PUBLIC_URL:-https://pro.loocate.me}
       - MONGODB_URI=mongodb://appuser:${MONGO_APP_PASSWORD:-change-me-app}@mongo:27017/loocateme
       - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET must be set in .env}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set in .env}
