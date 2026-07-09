@@ -55,6 +55,9 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
     depends_on:
       - api
+    networks:
+      - default
+      - loocateme_shared
   mongo:
     image: mongo:6
     container_name: loocateme-mongo
@@ -87,3 +90,8 @@ services:
 volumes:
   mongo_data:
   redis_data:
+
+networks:
+  default:
+  loocateme_shared:
+    external: true
