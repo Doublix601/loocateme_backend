@@ -74,6 +74,14 @@ const LocationSchema = new mongoose.Schema(
       until: { type: Date },
       activatedAt: { type: Date },
     },
+    // Fenêtre d'offre "Ultra Boost" : période pendant laquelle la bannière "20min sur
+    // place = boost de profil gratuit" doit s'afficher sur la fiche du lieu, en écho au
+    // texte de la notification push envoyée par broadcastUltraBoost (ultraBoost.service.js).
+    ultraBoost: {
+      active: { type: Boolean, default: false },
+      until: { type: Date },
+      activatedAt: { type: Date },
+    },
     analytics: {
       peakHours: [Number], // [12, 19, 20]
       ageGroups: {

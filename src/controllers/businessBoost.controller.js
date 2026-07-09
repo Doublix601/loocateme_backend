@@ -2,6 +2,7 @@ import { SponsorshipSlot } from '../models/SponsorshipSlot.js';
 import { broadcastUltraBoost } from '../services/ultraBoost.service.js';
 
 const PRO_BOOST_DURATION_MS = 24 * 60 * 60 * 1000;
+const ULTRA_BOOST_DURATION_MS = 24 * 60 * 60 * 1000;
 
 export const BusinessBoostController = {
   getBoosts: async (req, res, next) => {
@@ -11,6 +12,7 @@ export const BusinessBoostController = {
         ultraBoostBalance: location.proOffers?.ultraBoostBalance || 0,
         proBoostBalance: location.proOffers?.proBoostBalance || 0,
         sponsorship: location.sponsorship || { active: false, until: null },
+        ultraBoost: location.ultraBoost || { active: false, until: null },
       });
     } catch (err) {
       next(err);
@@ -24,9 +26,16 @@ export const BusinessBoostController = {
         return res.status(403).json({ code: 'NO_ULTRA_BOOST', message: 'Aucun Ultra Boost disponible' });
       }
       const { recipients } = await broadcastUltraBoost(location);
+      const now = new Date();
       location.proOffers.ultraBoostBalance -= 1;
+      location.ultraBoost = { active: true, until: new Date(now.getTime() + ULTRA_BOOST_DURATION_MS), activatedAt: now };
       await location.save();
-      return res.json({ success: true, recipients, ultraBoostBalance: location.proOffers.ultraBoostBalance });
+      return res.json({
+        success: true,
+        recipients,
+        ultraBoostBalance: location.proOffers.ultraBoostBalance,
+        ultraBoost: location.ultraBoost,
+      });
     } catch (err) {
       next(err);
     }
