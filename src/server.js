@@ -161,6 +161,7 @@ app.use(errorHandler);
   } catch (e) {
     console.warn('[email] SMTP verification threw:', e?.message || e);
   }
+  CronService.init();
     app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT} (listening on 0.0.0.0)`);
     // Log all registered routes

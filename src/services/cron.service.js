@@ -3,6 +3,7 @@ import { User } from '../models/User.js';
 import { Event } from '../models/Event.js';
 import { Location } from '../models/Location.js';
 import { sendPushUnified } from './push.service.js';
+import { processPolicyEmailJobs } from './policyNotification.service.js';
 
 /**
  * Service de tâches planifiées (Cron) pour LoocateMe.
@@ -18,6 +19,16 @@ export const CronService = {
       CronService.sendWeeklyDigest();
     });
 
+    // Envoi par lots des emails de mise à jour de la politique de confidentialité
+    // (une tranche d'utilisateurs par minute, pour ne pas saturer le SMTP)
+    nodeCron.schedule('* * * * *', async () => {
+      try {
+        await processPolicyEmailJobs();
+      } catch (e) {
+        console.error('[cron] Policy email job error:', e);
+      }
+    });
+
     // Cleanup: Toutes les nuits à 03:00
     nodeCron.schedule('0 3 * * *', async () => {
       console.log('[cron] Starting Nightly Cleanup and Stats Update...');
@@ -26,6 +37,9 @@ export const CronService = {
         const cutoffDedup = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         await NotificationDedup.deleteMany({ createdAt: { $lt: cutoffDedup } });
 
+        // RGPD: anonymise l'historique de visite et purge les coordonnées des
+        // comptes invisibles (cf. scripts/cleanupPrivacyData.js, désormais scheduled ici)
+        await CronService.runPrivacyCleanup();
         // Recalculer les stats des lieux (Popularité 30j et Étoiles)
         await CronService.updateLocationStats();
 
@@ -104,6 +118,28 @@ export const CronService = {
       console.log(`[cron] Weekly digest sent to ${activeIds.length} users.`);
     } catch (e) {
       console.error('[cron] Weekly digest error:', e);
+    }
+  },
+
+  /**
+   * Nettoyage RGPD quotidien (portage de scripts/cleanupPrivacyData.js) :
+   * anonymise les visites de lieux de plus de 30 jours et purge les
+   * coordonnées des comptes en mode invisible (status: red).
+   */
+  runPrivacyCleanup: async () => {
+    try {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const eventRes = await Event.updateMany(
+        { type: 'location_visit', actor: { $ne: null }, createdAt: { $lt: thirtyDaysAgo } },
+        { $set: { actor: null } }
+      );
+      const invisibleRes = await User.updateMany(
+        { status: 'red', 'location.coordinates': { $ne: [0, 0] } },
+        { $set: { 'location.coordinates': [0, 0] } }
+      );
+      console.log(`[cron] Privacy cleanup: anonymized ${eventRes.modifiedCount} visits, wiped coordinates for ${invisibleRes.modifiedCount} invisible users.`);
+    } catch (e) {
+      console.error('[cron] Privacy cleanup error:', e);
     }
   },
 

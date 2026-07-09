@@ -46,6 +46,13 @@ const UserSchema = new mongoose.Schema(
       version: { type: String, default: '' },
       consentAt: { type: Date },
     },
+    // Privacy policy versioning (major.minor): last version explicitly
+    // accepted by the user (required after a MAJOR bump) and last version
+    // the user has seen the update banner for (used to dismiss MINOR bumps).
+    policyVersionAccepted: { type: String, default: '' },
+    policyVersionAcceptedAt: { type: Date },
+    policyVersionSeen: { type: String, default: '' },
+    policyVersionSeenAt: { type: Date },
     privacyPreferences: {
       analytics: { type: Boolean, default: false },
       marketing: { type: Boolean, default: false },
