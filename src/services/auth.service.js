@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { sendMail } from './email.service.js';
+import { isAtLeast18 } from '../utils/age.js';
 
 function signAccessToken(userId) {
   // Issue a non-expiring access token. It will remain valid until the user logs out or changes password.
@@ -35,13 +36,21 @@ function parseExpiry(str) {
   return 30 * 24 * 60 * 60 * 1000;
 }
 
-export async function signup({ email, password, username, firstName = '', lastName = '', customName = '' }) {
+export async function signup({ email, password, username, firstName = '', lastName = '', customName = '', birthdate, gender }) {
   // Refuse signup if an account already exists for this email (do NOT delete existing accounts)
   const existing = await User.findOne({ email }).select('_id');
   if (existing) {
     const err = new Error('Un compte existe déjà avec cet email');
     err.status = 409;
     err.code = 'EMAIL_TAKEN';
+    throw err;
+  }
+  // Vérification 18+ : purement légale, ne vaut pas consentement analytics
+  // (contrairement à l'endpoint /profile/demographics utilisé après inscription).
+  if (!isAtLeast18(birthdate)) {
+    const err = new Error('Vous devez avoir au moins 18 ans pour créer un compte.');
+    err.status = 400;
+    err.code = 'UNDERAGE';
     throw err;
   }
   // Normaliser le username (aligné sur les règles Instagram): tout en minuscules
@@ -56,6 +65,8 @@ export async function signup({ email, password, username, firstName = '', lastNa
     firstName: String(firstName || '').trim(),
     lastName: String(lastName || '').trim(),
     customName: String(customName || '').trim(),
+    birthdate: new Date(birthdate),
+    gender: gender || undefined,
     lastUsernameChangeAt: now,
     lastFirstNameChangeAt: now,
     lastLastNameChangeAt: now,

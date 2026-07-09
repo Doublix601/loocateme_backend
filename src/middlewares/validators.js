@@ -1,4 +1,5 @@
 import { body, query, param, validationResult } from 'express-validator';
+import { isAtLeast18 } from '../utils/age.js';
 
 export const validate = (validations) => {
   return async (req, res, next) => {
@@ -57,6 +58,17 @@ export const validators = {
       .matches(/^\p{Lu}[\p{L}\p{M}' -]*$/u)
       .withMessage('Le nom doit commencer par une majuscule et peut contenir des lettres (accents autorisés), espaces, apostrophes ou tirets.'),
     body('customName').optional({ checkFalsy: true }).isString().isLength({ max: 80 }),
+    body('birthdate')
+      .exists()
+      .bail()
+      .isISO8601()
+      .toDate()
+      .custom((value) => isAtLeast18(value))
+      .withMessage('Vous devez avoir au moins 18 ans pour créer un compte.'),
+    body('gender')
+      .optional({ checkFalsy: true })
+      .isIn(['male', 'female', 'prefer_not_to_say'])
+      .withMessage('Genre invalide'),
   ],
   login: [body('email').isEmail(), body('password').isString()],
   forgot: [body('email').isEmail()],
