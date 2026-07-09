@@ -56,13 +56,23 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot_webroot:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
     depends_on:
       - api
     networks:
       - default
       - loocateme_shared
+  certbot:
+    image: certbot/certbot
+    container_name: loocateme-certbot
+    volumes:
+      - certbot_webroot:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    entrypoint: ["sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h; done"]
   mongo:
     image: mongo:6
     container_name: loocateme-mongo
@@ -95,6 +105,8 @@ services:
 volumes:
   mongo_data:
   redis_data:
+  certbot_webroot:
+  certbot_certs:
 
 networks:
   default:
