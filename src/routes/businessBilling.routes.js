@@ -6,5 +6,6 @@ const router = Router();
 
 router.post('/checkout-session', requireAuth, BusinessBillingController.checkoutSession);
 router.post('/portal-session', requireAuth, BusinessBillingController.portalSession);
+router.post('/cancel-subscription', requireAuth, BusinessBillingController.cancelSubscription);
 
 export default router;

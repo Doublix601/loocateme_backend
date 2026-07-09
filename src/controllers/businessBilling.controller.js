@@ -86,6 +86,31 @@ export const BusinessBillingController = {
     }
   },
 
+  // Repasse immédiatement le lieu en compte gratuit : annule l'abonnement Stripe
+  // sans attendre la fin de la période en cours plutôt que de le programmer pour
+  // plus tard, pour rester cohérent avec le changement de palier immédiat de
+  // checkoutSession ci-dessus.
+  cancelSubscription: async (req, res, next) => {
+    try {
+      const { locationId } = req.body || {};
+      const location = await loadOwnedLocation(req, locationId);
+      const subId = location.subscription?.stripeSubscriptionId;
+      if (subId) {
+        try {
+          await stripe.subscriptions.cancel(subId);
+        } catch (err) {
+          if (err?.code !== 'resource_missing') throw err;
+        }
+      }
+      location.businessTier = 'none';
+      if (location.subscription) location.subscription.status = 'canceled';
+      await location.save();
+      return res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   // Route publique (signature Stripe vérifiée), body brut (express.raw), montée
   // avant express.json() dans server.js.
   stripeWebhook: async (req, res) => {
