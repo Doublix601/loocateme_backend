@@ -165,19 +165,24 @@ export const BusinessBillingController = {
         }
         case 'invoice.paid': {
           const invoice = event.data.object;
-          // billing_reason distingue l'abonnement initial / le renouvellement mensuel
-          // ('subscription_create', 'subscription_cycle') des factures de proration
-          // générées par un changement de palier en cours de mois ('subscription_update').
-          // Ne créditer que sur les deux premiers cas pour garantir 1 crédit/mois, même
-          // si le lieu bascule plusieurs fois de palier dans la même période.
-          const grantsCredit = ['subscription_create', 'subscription_cycle'].includes(invoice.billing_reason);
-          if (invoice.subscription && grantsCredit) {
+          if (invoice.subscription) {
             const location = await Location.findOne({ 'subscription.stripeSubscriptionId': invoice.subscription });
             if (location && location.businessTier === 'pro3') {
-              location.proOffers = location.proOffers || { ultraBoostBalance: 0, proBoostBalance: 0 };
-              location.proOffers.ultraBoostBalance = (location.proOffers.ultraBoostBalance || 0) + 1;
-              location.proOffers.proBoostBalance = (location.proOffers.proBoostBalance || 0) + 1;
-              await location.save();
+              // Idempotent par période de facturation Stripe plutôt que par billing_reason :
+              // un abonnement initial, une facture de proration (changement de palier en
+              // cours de mois) ou un renouvellement doivent tous pouvoir déclencher le
+              // crédit s'ils font entrer/rester le lieu en Pro3 — mais une seule fois par
+              // période, même si plusieurs factures tombent dans la même période (ex :
+              // upgrade Pro1→Pro3 puis renouvellement le même mois).
+              const periodEnd = invoice.lines?.data?.[0]?.period?.end || null;
+              const alreadyGranted = periodEnd && location.proOffers?.lastGrantedPeriodEnd === periodEnd;
+              if (!alreadyGranted) {
+                location.proOffers = location.proOffers || { ultraBoostBalance: 0, proBoostBalance: 0 };
+                location.proOffers.ultraBoostBalance = (location.proOffers.ultraBoostBalance || 0) + 1;
+                location.proOffers.proBoostBalance = (location.proOffers.proBoostBalance || 0) + 1;
+                if (periodEnd) location.proOffers.lastGrantedPeriodEnd = periodEnd;
+                await location.save();
+              }
             }
           }
           break;

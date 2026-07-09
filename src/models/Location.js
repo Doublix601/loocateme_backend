@@ -58,10 +58,15 @@ const LocationSchema = new mongoose.Schema(
       status: { type: String, enum: ['active', 'trialing', 'past_due', 'canceled', 'incomplete', ''], default: '' },
       currentPeriodEnd: { type: Date },
     },
-    // Crédits consommables réservés au palier Pro3, recrédités à chaque cycle Stripe
+    // Crédits consommables réservés au palier Pro3, recrédités à chaque cycle Stripe.
+    // lastGrantedPeriodEnd (fin de période Stripe, timestamp unix) rend le crédit
+    // idempotent : une seule attribution par période de facturation, que le lieu
+    // l'atteigne via un abonnement initial, une facture de changement de palier
+    // (proration) ou le renouvellement mensuel normal.
     proOffers: {
       ultraBoostBalance: { type: Number, default: 0 },
       proBoostBalance: { type: Number, default: 0 },
+      lastGrantedPeriodEnd: { type: Number },
     },
     // Sponsorisation "Pro Boost" : un seul lieu actif à la fois (cf. SponsorshipSlot)
     sponsorship: {
