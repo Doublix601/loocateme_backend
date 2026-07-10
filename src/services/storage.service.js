@@ -106,7 +106,7 @@ const businessMediaStorage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     const ext = path.extname(file.originalname || '').toLowerCase();
-    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp4', '.mov', '.pdf'].includes(ext) ? ext : '';
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.mp4', '.mov', '.webm', '.pdf'].includes(ext) ? ext : '';
     const kind = file.fieldname || 'media';
     const locationId = req.params?.locationId || 'loc';
     const name = `business_${locationId}_${kind}_${Date.now()}${safeExt}`;
@@ -115,15 +115,22 @@ const businessMediaStorage = multer.diskStorage({
 });
 
 const businessMediaFileFilter = (_req, file, cb) => {
-  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/quicktime', 'application/pdf'];
+  const allowed = [
+    'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+    'video/mp4', 'video/quicktime', 'video/webm',
+    'application/pdf',
+  ];
   if (allowed.includes(file.mimetype)) return cb(null, true);
   cb(new Error('Unsupported file type'));
 };
 
+// Limite haute car ce sont les fichiers BRUTS envoyés par le navigateur/téléphone
+// avant compression serveur (cf. mediaProcessing.service.js) — une vidéo de story
+// non compressée peut largement dépasser l'ancienne limite de 15 Mo.
 export const uploadBusinessMedia = multer({
   storage: businessMediaStorage,
   fileFilter: businessMediaFileFilter,
-  limits: { fileSize: 15 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
 // Construit l'URL publique absolue d'un média pro, alignée sur le pattern

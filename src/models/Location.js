@@ -42,10 +42,20 @@ const LocationSchema = new mongoose.Schema(
     media: [{
       type: { type: String }, // 'PDF', 'FLYER', 'MENU'
       url: { type: String },
-      title: { type: String }
+      title: { type: String },
+      // Icône prédéfinie choisie par le pro sur le dashboard business pour ce PDF,
+      // affichée dans l'app — cf. liste partagée loocateme-app/constants/pdfIcons.js
+      // et loocateme_website src/lib/pdfIcons.ts.
+      icon: {
+        type: String,
+        enum: ['document', 'menu', 'drinks', 'events', 'pricing', 'info'],
+        default: 'document',
+      },
     }],
     stories: [{
       url: { type: String },
+      mediaType: { type: String, enum: ['image', 'video'], default: 'image' },
+      thumbnailUrl: { type: String }, // frame extraite pour les vidéos, absent pour les images
       expiresAt: { type: Date },
       createdAt: { type: Date, default: Date.now }
     }],
@@ -57,6 +67,10 @@ const LocationSchema = new mongoose.Schema(
       stripePriceId: { type: String },
       status: { type: String, enum: ['active', 'trialing', 'past_due', 'canceled', 'incomplete', ''], default: '' },
       currentPeriodEnd: { type: Date },
+      // true entre la résiliation demandée par le pro et la fin de la période payée :
+      // l'abonnement (et donc businessTier) reste actif jusqu'à currentPeriodEnd, puis
+      // Stripe termine l'abonnement sans le renouveler.
+      cancelAtPeriodEnd: { type: Boolean, default: false },
     },
     // Crédits consommables réservés au palier Pro3, recrédités à chaque cycle Stripe.
     // lastGrantedPeriodEnd (fin de période Stripe, timestamp unix) rend le crédit

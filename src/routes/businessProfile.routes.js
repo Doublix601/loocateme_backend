@@ -28,6 +28,20 @@ router.put(
   uploadBusinessMedia.single('logo'),
   BusinessProfileController.updateLogo
 );
+router.delete(
+  '/locations/:locationId/cover',
+  requireAuth,
+  requireLocationOwner,
+  requireBusinessTier('pro1'),
+  BusinessProfileController.removeCover
+);
+router.delete(
+  '/locations/:locationId/logo',
+  requireAuth,
+  requireLocationOwner,
+  requireBusinessTier('pro1'),
+  BusinessProfileController.removeLogo
+);
 router.post(
   '/locations/:locationId/stories',
   requireAuth,

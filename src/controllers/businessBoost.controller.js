@@ -1,8 +1,15 @@
 import { SponsorshipSlot } from '../models/SponsorshipSlot.js';
 import { broadcastUltraBoost } from '../services/ultraBoost.service.js';
+import { stripe } from '../services/stripe.service.js';
+import { ensureStripeCustomer } from './businessBilling.controller.js';
 
 const PRO_BOOST_DURATION_MS = 24 * 60 * 60 * 1000;
 const ULTRA_BOOST_DURATION_MS = 24 * 60 * 60 * 1000;
+
+// Achat à l'unité (hors abonnement Pro3) : prix fixes en centimes, pas besoin
+// de Price Stripe pré-créée puisque le montant ne varie jamais.
+const BOOST_PRICE_CENTS = { pro: 5000, ultra: 10000 };
+const BOOST_LABELS = { pro: 'Pro Boost', ultra: 'Ultra Boost' };
 
 export const BusinessBoostController = {
   getBoosts: async (req, res, next) => {
@@ -76,6 +83,41 @@ export const BusinessBoostController = {
       await location.save();
 
       return res.json({ success: true, sponsorship: location.sponsorship, proBoostBalance: location.proOffers.proBoostBalance });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  purchaseCheckout: async (req, res, next) => {
+    try {
+      const location = req.location;
+      const { boostType } = req.body || {};
+      if (!BOOST_PRICE_CENTS[boostType]) {
+        return res.status(400).json({ code: 'INVALID_BOOST_TYPE', message: 'Type de boost invalide' });
+      }
+
+      const customerId = await ensureStripeCustomer(location);
+      const siteUrl = process.env.BUSINESS_SITE_PUBLIC_URL || 'http://localhost:3000';
+
+      const session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        customer: customerId,
+        line_items: [
+          {
+            price_data: {
+              currency: 'eur',
+              unit_amount: BOOST_PRICE_CENTS[boostType],
+              product_data: { name: BOOST_LABELS[boostType] },
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: `${siteUrl}/dashboard?boost=success`,
+        cancel_url: `${siteUrl}/dashboard?boost=cancelled`,
+        metadata: { kind: 'boost_purchase', locationId: String(location._id), boostType },
+      });
+
+      return res.json({ url: session.url });
     } catch (err) {
       next(err);
     }

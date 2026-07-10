@@ -1,8 +1,30 @@
+import bcrypt from 'bcryptjs';
 import { Location } from '../models/Location.js';
 import { User } from '../models/User.js';
+import { RefreshToken } from '../models/RefreshToken.js';
 import { stripe, priceIdForTier, tierForPriceId } from '../services/stripe.service.js';
+import { deleteOldMediaFile } from './businessProfile.controller.js';
 
 const VALID_TIERS = ['pro1', 'pro2', 'pro3'];
+
+// Supprime les avantages premium liés à l'abonnement (photo de profil/couverture,
+// stories, PDF) quand un pro annule/perd son abonnement (businessTier -> 'none').
+// Ne touche volontairement PAS à proOffers/sponsorship/ultraBoost : les crédits de
+// boost sont conservés et un boost en cours reste actif jusqu'à sa propre expiration
+// (gérée séparément par cron.service.js), qu'il y ait ou non un abonnement actif.
+function revokePremiumAdvantages(location) {
+  deleteOldMediaFile(location.bannerUrl);
+  deleteOldMediaFile(location.logoUrl);
+  location.stories.forEach((story) => {
+    deleteOldMediaFile(story.url);
+    deleteOldMediaFile(story.thumbnailUrl);
+  });
+  location.media.forEach((item) => deleteOldMediaFile(item.url));
+  location.bannerUrl = '';
+  location.logoUrl = '';
+  location.stories = [];
+  location.media = [];
+}
 
 async function loadOwnedLocation(req, locationId) {
   const location = await Location.findById(locationId);
@@ -13,7 +35,7 @@ async function loadOwnedLocation(req, locationId) {
   return location;
 }
 
-async function ensureStripeCustomer(location) {
+export async function ensureStripeCustomer(location) {
   if (location.subscription?.stripeCustomerId) return location.subscription.stripeCustomerId;
   const user = await User.findById(location.ownerId).select('email').lean();
   const customer = await stripe.customers.create({
@@ -47,10 +69,14 @@ export const BusinessBillingController = {
         await stripe.subscriptions.update(existingSubId, {
           items: [{ id: itemId, price: priceId }],
           proration_behavior: 'create_prorations',
+          // Choisir un palier annule toute résiliation programmée (cf. cancelSubscription
+          // ci-dessous) : le pro reste sur un abonnement actif classique.
+          cancel_at_period_end: false,
           metadata: { locationId: String(location._id), tier },
         });
         location.businessTier = tier;
         location.subscription.stripePriceId = priceId;
+        location.subscription.cancelAtPeriodEnd = false;
         await location.save();
         return res.json({ url: `${siteUrl}/dashboard/billing?updated=1` });
       }
@@ -86,26 +112,91 @@ export const BusinessBillingController = {
     }
   },
 
-  // Repasse immédiatement le lieu en compte gratuit : annule l'abonnement Stripe
-  // sans attendre la fin de la période en cours plutôt que de le programmer pour
-  // plus tard, pour rester cohérent avec le changement de palier immédiat de
-  // checkoutSession ci-dessus.
+  // Résilie l'abonnement pour la fin de la période déjà payée plutôt que de
+  // repasser le lieu en gratuit immédiatement : le pro a payé cette période,
+  // il en garde le bénéfice (businessTier inchangé) jusqu'à currentPeriodEnd,
+  // et l'abonnement ne se renouvelle simplement pas ensuite (webhook
+  // customer.subscription.deleted / updated ci-dessous s'occupe du passage
+  // en 'none' le moment venu).
   cancelSubscription: async (req, res, next) => {
     try {
       const { locationId } = req.body || {};
       const location = await loadOwnedLocation(req, locationId);
       const subId = location.subscription?.stripeSubscriptionId;
-      if (subId) {
-        try {
-          await stripe.subscriptions.cancel(subId);
-        } catch (err) {
-          if (err?.code !== 'resource_missing') throw err;
-        }
+      if (!subId) {
+        return res.status(400).json({ code: 'NO_SUBSCRIPTION', message: 'Aucun abonnement actif' });
       }
-      location.businessTier = 'none';
-      if (location.subscription) location.subscription.status = 'canceled';
+      try {
+        await stripe.subscriptions.update(subId, { cancel_at_period_end: true });
+      } catch (err) {
+        if (err?.code !== 'resource_missing') throw err;
+      }
+      location.subscription.cancelAtPeriodEnd = true;
+      await location.save();
+      return res.json({ ok: true, currentPeriodEnd: location.subscription.currentPeriodEnd || null });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // Annule une résiliation programmée avant la fin de la période en cours :
+  // l'abonnement continue de se renouveler normalement.
+  reactivateSubscription: async (req, res, next) => {
+    try {
+      const { locationId } = req.body || {};
+      const location = await loadOwnedLocation(req, locationId);
+      const subId = location.subscription?.stripeSubscriptionId;
+      if (!subId || !location.subscription?.cancelAtPeriodEnd) {
+        return res.status(400).json({ code: 'NO_PENDING_CANCELLATION', message: 'Aucune résiliation à annuler' });
+      }
+      await stripe.subscriptions.update(subId, { cancel_at_period_end: false });
+      location.subscription.cancelAtPeriodEnd = false;
       await location.save();
       return res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // Supprime le compte pro (accountType === 'business') : résilie immédiatement
+  // tout abonnement Stripe actif (aucun remboursement — cf. politique
+  // affichée avant confirmation côté site), détache les lieux gérés (ils
+  // redeviennent des fiches gratuites non revendiquées) et supprime le
+  // compte. N'a aucun effet sur un éventuel compte personnel (mobile), qui
+  // est un User distinct (accountType 'individual').
+  deleteAccount: async (req, res, next) => {
+    try {
+      const { password } = req.body || {};
+      const user = await User.findById(req.user.id).select('+password accountType');
+      if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
+      if (user.accountType !== 'business') {
+        return res.status(403).json({ code: 'NOT_BUSINESS_ACCOUNT', message: "Ce compte n'est pas un compte pro" });
+      }
+      const ok = await bcrypt.compare(String(password || ''), user.password);
+      if (!ok) return res.status(401).json({ code: 'INVALID_CREDENTIALS', message: 'Mot de passe invalide' });
+
+      const locations = await Location.find({ ownerId: user._id });
+      for (const location of locations) {
+        const subId = location.subscription?.stripeSubscriptionId;
+        if (subId) {
+          try {
+            await stripe.subscriptions.cancel(subId);
+          } catch (err) {
+            if (err?.code !== 'resource_missing') throw err;
+          }
+        }
+        location.ownerId = undefined;
+        location.isPro = false;
+        location.businessTier = 'none';
+        location.subscription = { status: 'canceled' };
+        revokePremiumAdvantages(location);
+        await location.save();
+      }
+
+      await RefreshToken.deleteMany({ user: user._id });
+      await User.deleteOne({ _id: user._id });
+
+      return res.json({ success: true });
     } catch (err) {
       next(err);
     }
@@ -127,8 +218,11 @@ export const BusinessBillingController = {
       switch (event.type) {
         case 'checkout.session.completed': {
           const session = event.data.object;
-          const { locationId, tier } = session.metadata || {};
-          if (locationId && tier) {
+          const { locationId, tier, kind, boostType } = session.metadata || {};
+          if (kind === 'boost_purchase' && locationId && boostType) {
+            const field = boostType === 'ultra' ? 'ultraBoostBalance' : 'proBoostBalance';
+            await Location.findByIdAndUpdate(locationId, { $inc: { [`proOffers.${field}`]: 1 } });
+          } else if (locationId && tier) {
             await Location.findByIdAndUpdate(locationId, {
               businessTier: tier,
               'subscription.stripeSubscriptionId': session.subscription,
@@ -147,9 +241,14 @@ export const BusinessBillingController = {
             location.subscription.currentPeriodEnd = subscription.current_period_end
               ? new Date(subscription.current_period_end * 1000)
               : undefined;
+            location.subscription.cancelAtPeriodEnd = !!subscription.cancel_at_period_end;
             if (tier) {
               location.subscription.stripePriceId = priceId;
+              const wasSubscribed = location.businessTier !== 'none';
               location.businessTier = ['active', 'trialing'].includes(subscription.status) ? tier : 'none';
+              if (wasSubscribed && location.businessTier === 'none') {
+                revokePremiumAdvantages(location);
+              }
             }
             await location.save();
           }
@@ -157,10 +256,14 @@ export const BusinessBillingController = {
         }
         case 'customer.subscription.deleted': {
           const subscription = event.data.object;
-          await Location.findOneAndUpdate(
-            { 'subscription.stripeSubscriptionId': subscription.id },
-            { businessTier: 'none', 'subscription.status': 'canceled' }
-          );
+          const location = await Location.findOne({ 'subscription.stripeSubscriptionId': subscription.id });
+          if (location) {
+            location.businessTier = 'none';
+            location.subscription.status = 'canceled';
+            location.subscription.cancelAtPeriodEnd = false;
+            revokePremiumAdvantages(location);
+            await location.save();
+          }
           break;
         }
         case 'invoice.paid': {

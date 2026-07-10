@@ -1,29 +1,6 @@
 import { User } from '../models/User.js';
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const uploadsDir = path.join(__dirname, '..', '..', process.env.UPLOAD_DIR || 'uploads');
-
-function localPathFromUrl(url) {
-  if (!url) return null;
-  try {
-    const u = new URL(url, 'http://placeholder');
-    const pathname = u.pathname || '';
-    const idx = pathname.indexOf('/uploads/');
-    if (idx === -1) return null;
-    const filename = pathname.substring(idx + '/uploads/'.length);
-    if (!filename) return null;
-    const p = path.join(uploadsDir, filename);
-    // prevent path traversal
-    if (!p.startsWith(uploadsDir)) return null;
-    return p;
-  } catch {
-    return null;
-  }
-}
+import { localPathFromUrl } from '../utils/uploadPaths.js';
 
 export async function updateProfile(userId, { username, firstName, lastName, customName, bio }) {
   const user = await User.findById(userId);
