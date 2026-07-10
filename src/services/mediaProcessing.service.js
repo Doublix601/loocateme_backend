@@ -40,12 +40,16 @@ export async function processVideo(absPath, { maxHeight = 1280, videoBitrate = '
 
   await new Promise((resolve, reject) => {
     ffmpeg(absPath)
+      // Option d'entrée : force ffmpeg à "burn-in" la rotation lue dans la display
+      // matrix du conteneur source (portrait iPhone notamment) avant filtrage/encodage,
+      // au lieu de dépendre du comportement par défaut selon la version de ffmpeg.
+      .inputOptions(['-autorotate', '1'])
       .videoFilters(`scale=-2:'min(${maxHeight},ih)'`)
       .videoCodec('libx264')
       .videoBitrate(videoBitrate)
       .audioCodec('aac')
       .audioBitrate(audioBitrate)
-      .outputOptions(['-movflags +faststart', '-preset veryfast'])
+      .outputOptions(['-movflags +faststart', '-preset veryfast', '-metadata:s:v:0 rotate=0'])
       .on('end', resolve)
       .on('error', reject)
       .save(outPath);
