@@ -92,6 +92,14 @@ Conformément au RGPD (et, le cas échéant, au CCPA pour les résidents de Cali
 - Communications chiffrées (HTTPS).
 - Accès aux données limité aux personnels habilités (modération, support technique).
 
+## 7bis. Transferts de données hors Union européenne
+
+Certains de nos prestataires (notamment Google/Firebase pour les notifications push, et Stripe pour les paiements sur le site web) sont susceptibles de traiter tout ou partie des données qu'ils reçoivent depuis des pays situés hors de l'Union européenne, notamment les États-Unis.
+
+Lorsque c'est le cas, ces transferts sont encadrés par les garanties prévues par le RGPD : décision d'adéquation de la Commission européenne (par exemple le Data Privacy Framework UE-États-Unis pour les entreprises qui y adhèrent), ou à défaut clauses contractuelles types (CCT) approuvées par la Commission européenne. Notre hébergeur principal (OVH) conserve vos données en France.
+
+Vous pouvez nous contacter à **contact@loocate.me** pour obtenir plus d'informations sur les garanties applicables à un transfert donné.
+
 ## 8. Site web
 
 Le site loocate.me peut utiliser des cookies techniques strictement nécessaires à son fonctionnement (session, paiement). Aucun cookie publicitaire ou de traçage tiers n'est utilisé à ce jour.
