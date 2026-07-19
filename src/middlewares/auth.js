@@ -9,7 +9,7 @@ export async function requireAuth(req, res, next) {
     const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
     req.user = { id: payload.sub };
     const { User } = await import('../models/User.js');
-    const user = await User.findById(req.user.id).select('role moderation').lean();
+    const user = await User.findById(req.user.id).select('role moderation lastLoginAt').lean();
     if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
     req.user.role = user.role;
     const mod = user.moderation || {};
@@ -20,6 +20,9 @@ export async function requireAuth(req, res, next) {
     if (mod.bannedUntil && new Date(mod.bannedUntil).getTime() > now.getTime()) {
       return res.status(403).json({ code: 'BANNED_TEMP', message: 'Account temporarily banned', until: mod.bannedUntil });
     }
+    import('../services/cote.service.js')
+      .then(({ recordDailyActivity }) => recordDailyActivity(req.user.id, user.lastLoginAt))
+      .catch((e) => console.error('[cote] recordDailyActivity error:', e));
     next();
   } catch (err) {
     return res.status(401).json({ code: 'AUTH_INVALID', message: 'Invalid or expired access token' });

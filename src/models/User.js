@@ -101,6 +101,14 @@ const UserSchema = new mongoose.Schema(
     premiumTrialEnd: { type: Date },
     lastAllowanceAt: { type: Date },
     expoPushToken: { type: String, index: true },
+    // "Cote" : score de présence façon flammes Snapchat, utilisé pour trier
+    // les utilisateurs d'un lieu (cf. cote.service.js)
+    cotePercent: { type: Number, enum: [0, 25, 50, 75, 100], default: 100, index: true },
+    lastLoginAt: { type: Date, default: Date.now },
+    coteWarningSentAt: { type: Date, default: null },
+    // Relance "X profils t'ont vu récemment" envoyée après 4h d'inactivité
+    // (cf. engagement.service.js) : évite les envois répétés.
+    profileViewsNudgeSentAt: { type: Date, default: null },
     location: {
       type: { type: String, enum: ['Point'], default: 'Point' },
       coordinates: { type: [Number], default: [0, 0] }, // [lon, lat]

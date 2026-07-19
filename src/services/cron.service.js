@@ -6,6 +6,8 @@ import { sendPushUnified } from './push.service.js';
 import { recalculateAllCityStars } from './location.service.js';
 import { recomputeAllLocationAnalytics } from './businessStats.service.js';
 import { processPolicyEmailJobs } from './policyNotification.service.js';
+import { decayInactiveUsers, sendCoteExpiryWarnings } from './cote.service.js';
+import { sendInactiveProfileViewsNudge, sendNightModeActivatedNotification } from './engagement.service.js';
 
 /**
  * Service de tâches planifiées (Cron) pour LoocateMe.
@@ -104,6 +106,51 @@ export const CronService = {
         console.log('[cron] Weekly boost granted.');
       } catch (e) {
         console.error('[cron] Weekly boost error:', e);
+      }
+    });
+
+    // Cote : décroissance quotidienne à 0% des utilisateurs inactifs depuis
+    // au moins un jour civil complet. Tous les jours à 00:10.
+    nodeCron.schedule('10 0 * * *', async () => {
+      try {
+        const count = await decayInactiveUsers();
+        console.log(`[cron] Cote decay: ${count} users reset to 0%.`);
+      } catch (e) {
+        console.error('[cron] Cote decay error:', e);
+      }
+    });
+
+    // Cote : alerte push aux utilisateurs à 6h de l'expiration (18h-24h sans
+    // connexion). Toutes les 30 minutes.
+    nodeCron.schedule('*/30 * * * *', async () => {
+      try {
+        const count = await sendCoteExpiryWarnings();
+        if (count) console.log(`[cron] Cote expiry warnings sent to ${count} users.`);
+      } catch (e) {
+        console.error('[cron] Cote expiry warning error:', e);
+      }
+    });
+
+    // Relance "X profils t'ont vu récemment" pour les utilisateurs inactifs
+    // depuis plus de 4h. Toutes les 30 minutes.
+    nodeCron.schedule('*/30 * * * *', async () => {
+      try {
+        const count = await sendInactiveProfileViewsNudge();
+        if (count) console.log(`[cron] Inactive profile-views nudge sent to ${count} users.`);
+      } catch (e) {
+        console.error('[cron] Inactive profile-views nudge error:', e);
+      }
+    });
+
+    // Notification "Mode nuit activé" : vendredi et samedi à 19h, synchronisée
+    // avec le basculement jour/nuit de l'app (VibeContext).
+    nodeCron.schedule('0 19 * * 5,6', async () => {
+      console.log('[cron] Sending night mode activated notification...');
+      try {
+        const count = await sendNightModeActivatedNotification();
+        console.log(`[cron] Night mode notification sent to ${count} users.`);
+      } catch (e) {
+        console.error('[cron] Night mode notification error:', e);
       }
     });
 

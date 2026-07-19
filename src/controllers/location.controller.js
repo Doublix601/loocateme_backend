@@ -286,7 +286,7 @@ export const LocationController = {
         ]
       })
       .select('-password')
-      .sort({ boostUntil: -1, createdAt: 1 }); // Prioritize boosted users
+      .sort({ boostUntil: -1, cotePercent: -1, createdAt: 1 }); // Prioritize boosted, then Cote, users
 
       // Add isGhost flag for boosted users who are offline
       const usersWithGhostFlag = users.map(user => {
