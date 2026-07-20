@@ -80,6 +80,9 @@ const LocationSchema = new mongoose.Schema(
     proOffers: {
       ultraBoostBalance: { type: Number, default: 0 },
       proBoostBalance: { type: Number, default: 0 },
+      // "Event Boost" : notification push géociblée pour annoncer un événement,
+      // réservée au palier pro3. Cf. src/constants/boosts.js pour le plafond.
+      eventBoostBalance: { type: Number, default: 0 },
       lastGrantedPeriodEnd: { type: Number },
     },
     // Sponsorisation "Pro Boost" : un seul lieu actif à la fois (cf. SponsorshipSlot)
@@ -87,6 +90,21 @@ const LocationSchema = new mongoose.Schema(
       active: { type: Boolean, default: false, index: true },
       until: { type: Date },
       activatedAt: { type: Date },
+    },
+    // Dernier événement annoncé via Event Boost, affiché sur la fiche du lieu
+    // (LocationScreen côté app) jusqu'à expiresAt. Un seul événement actif à la
+    // fois : un nouvel envoi remplace intégralement le précédent.
+    activeEventBoost: {
+      title: { type: String },
+      body: { type: String },
+      mediaUrl: { type: String },
+      mediaType: { type: String, enum: ['image', 'video'] },
+      thumbnailUrl: { type: String },
+      eventDate: { type: Date },
+      sentAt: { type: Date },
+      // eventDate + 1 jour si eventDate fourni, sinon sentAt + 7 jours (cf.
+      // activateEventBoost dans businessBoost.controller.js).
+      expiresAt: { type: Date },
     },
     // Fenêtre d'offre "Ultra Boost" : période pendant laquelle la bannière "20min sur
     // place = boost de profil gratuit" doit s'afficher sur la fiche du lieu, en écho au

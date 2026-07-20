@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middlewares/auth.js';
 import { requireLocationOwner } from '../middlewares/businessTier.js';
+import { uploadBusinessMedia } from '../services/storage.service.js';
 import { BusinessBoostController } from '../controllers/businessBoost.controller.js';
 
 const router = Router();
@@ -28,6 +29,13 @@ router.post(
   requireAuth,
   requireLocationOwner,
   BusinessBoostController.activateProBoost
+);
+router.post(
+  '/locations/:locationId/event-boost/activate',
+  requireAuth,
+  requireLocationOwner,
+  uploadBusinessMedia.single('media'),
+  BusinessBoostController.activateEventBoost
 );
 
 export default router;

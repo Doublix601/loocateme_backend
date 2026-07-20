@@ -23,6 +23,8 @@ export async function recomputeAllLocationAnalytics() {
           'analytics.visitsByWeekday': stats.visitsByWeekday,
           'analytics.avgAgeVisitors': stats.avgAgeVisitors,
           'analytics.genderSplit': stats.genderSplit || { male: 0, female: 0, other: 0 },
+          'analytics.ageGroups': stats.ageGroups || { '18-24': 0, '25-34': 0, '35-44': 0, '45+': 0 },
+          'analytics.peakHours': stats.peakHours || [],
           'analytics.lastComputedAt': new Date(),
         }
       );
@@ -42,10 +44,32 @@ export async function getLocationStats(locationId) {
   const views = {};
   for (const [key, days] of Object.entries(windows)) {
     const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-    views[key] = await Event.countDocuments({ type: 'location_view', locationId: locObjectId, createdAt: { $gte: since } });
+    const previousSince = new Date(now.getTime() - 2 * days * 24 * 60 * 60 * 1000);
+    const [current, previous] = await Promise.all([
+      Event.countDocuments({ type: 'location_view', locationId: locObjectId, createdAt: { $gte: since, $lte: now } }),
+      Event.countDocuments({ type: 'location_view', locationId: locObjectId, createdAt: { $gte: previousSince, $lt: since } }),
+    ]);
+    const deltaPct = previous > 0 ? Math.round(((current - previous) / previous) * 1000) / 10 : null;
+    views[key] = { current, previous, deltaPct };
   }
 
   const weekdaySince = new Date(now.getTime() - WEEKDAY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+  const hourlyAgg = await Event.aggregate([
+    { $match: { type: 'location_visit', locationId: locObjectId, createdAt: { $gte: weekdaySince } } },
+    { $group: { _id: { $hour: '$createdAt' }, count: { $sum: 1 } } },
+  ]);
+  const hourlyDistribution = new Array(24).fill(0);
+  for (const row of hourlyAgg) {
+    if (row._id >= 0 && row._id < 24) hourlyDistribution[row._id] = row.count;
+  }
+  const peakHours = hourlyDistribution
+    .map((count, hour) => ({ hour, count }))
+    .filter((h) => h.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3)
+    .map((h) => h.hour)
+    .sort((a, b) => a - b);
   const weekdayAgg = await Event.aggregate([
     { $match: { type: 'location_visit', locationId: locObjectId, createdAt: { $gte: weekdaySince } } },
     { $group: { _id: { $dayOfWeek: '$createdAt' }, count: { $sum: 1 } } },
@@ -116,5 +140,32 @@ export async function getLocationStats(locationId) {
       }
     : null;
 
-  return { views, visitsByWeekday, avgAgeVisitors, genderSplit, sampleSize };
+  const ageBucketCounts = { '18-24': 0, '25-34': 0, '35-44': 0, '45+': 0 };
+  for (const age of ages) {
+    if (age >= 18 && age <= 24) ageBucketCounts['18-24'] += 1;
+    else if (age >= 25 && age <= 34) ageBucketCounts['25-34'] += 1;
+    else if (age >= 35 && age <= 44) ageBucketCounts['35-44'] += 1;
+    else if (age >= 45) ageBucketCounts['45+'] += 1;
+  }
+  const ageGroups = ages.length >= MIN_SAMPLE_SIZE ? ageBucketCounts : null;
+
+  const [funnelViews, funnelVisits] = await Promise.all([
+    Event.countDocuments({ type: 'location_view', locationId: locObjectId, createdAt: { $gte: weekdaySince } }),
+    Event.countDocuments({ type: 'location_visit', locationId: locObjectId, createdAt: { $gte: weekdaySince } }),
+  ]);
+  const funnelConversionRate = funnelViews >= MIN_SAMPLE_SIZE
+    ? Math.round((funnelVisits / funnelViews) * 1000) / 10
+    : null;
+
+  return {
+    views,
+    visitsByWeekday,
+    avgAgeVisitors,
+    genderSplit,
+    ageGroups,
+    peakHours,
+    hourlyDistribution,
+    funnelConversionRate,
+    sampleSize,
+  };
 }

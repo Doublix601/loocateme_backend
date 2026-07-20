@@ -4,8 +4,10 @@ import { User } from '../models/User.js';
 import { RefreshToken } from '../models/RefreshToken.js';
 import { stripe, priceIdForTier, tierForPriceId } from '../services/stripe.service.js';
 import { deleteOldMediaFile } from './businessProfile.controller.js';
+import { BOOST_CAPS, BOOST_BALANCE_FIELD, BOOST_MIN_TIER_FOR_PURCHASE } from '../constants/boosts.js';
 
 const VALID_TIERS = ['pro1', 'pro2', 'pro3'];
+const TIER_RANK = { none: 0, pro1: 1, pro2: 2, pro3: 3 };
 
 // Supprime les avantages premium liés à l'abonnement (photo de profil/couverture,
 // stories, PDF) quand un pro annule/perd son abonnement (businessTier -> 'none').
@@ -24,6 +26,49 @@ function revokePremiumAdvantages(location) {
   location.logoUrl = '';
   location.stories = [];
   location.media = [];
+}
+
+// Rembourse au prorata la portion non consommée de la période Stripe en cours,
+// avant résiliation immédiate d'un abonnement (ex : suppression de compte pro).
+// Retourne true si un remboursement a bien été émis. N'échoue jamais bruyamment :
+// une erreur Stripe ne doit pas bloquer la suppression du compte, elle est
+// seulement loggée.
+async function refundUnusedSubscriptionPeriod(subId) {
+  try {
+    const subscription = await stripe.subscriptions.retrieve(subId);
+    // Sur les versions récentes de l'API Stripe, current_period_start/end n'existe
+    // plus sur la Subscription elle-même mais sur chaque SubscriptionItem.
+    const item = subscription.items?.data?.[0];
+    const start = item?.current_period_start;
+    const end = item?.current_period_end;
+    const now = Math.floor(Date.now() / 1000);
+    if (!start || !end || now >= end) return false;
+    if (!subscription.latest_invoice) return false;
+
+    // De même, Invoice n'expose plus .charge ni .payment_intent : il faut passer
+    // par la liste des paiements de la facture pour retrouver le PaymentIntent.
+    const invoice = await stripe.invoices.retrieve(subscription.latest_invoice, {
+      expand: ['payments'],
+    });
+    const paymentIntentId = invoice.payments?.data?.[0]?.payment?.payment_intent;
+    const paidAmount = invoice.amount_paid;
+    if (!paymentIntentId || !paidAmount) return false;
+
+    const totalSeconds = end - start;
+    const remainingSeconds = end - now;
+    const refundAmount = Math.floor(paidAmount * (remainingSeconds / totalSeconds));
+    if (refundAmount <= 0) return false;
+
+    await stripe.refunds.create({
+      payment_intent: paymentIntentId,
+      amount: refundAmount,
+      reason: 'requested_by_customer',
+    });
+    return true;
+  } catch (err) {
+    console.error('[businessBilling] refundUnusedSubscriptionPeriod failed', subId, err?.message);
+    return false;
+  }
 }
 
 async function loadOwnedLocation(req, locationId) {
@@ -158,12 +203,16 @@ export const BusinessBillingController = {
     }
   },
 
-  // Supprime le compte pro (accountType === 'business') : résilie immédiatement
-  // tout abonnement Stripe actif (aucun remboursement — cf. politique
-  // affichée avant confirmation côté site), détache les lieux gérés (ils
-  // redeviennent des fiches gratuites non revendiquées) et supprime le
-  // compte. N'a aucun effet sur un éventuel compte personnel (mobile), qui
-  // est un User distinct (accountType 'individual').
+  // Supprime le compte pro (accountType === 'business') et la fiche établissement
+  // associée (photos, stories, PDF, statistiques) immédiatement, car la suppression
+  // de compte est un effacement de données à la demande du pro : on ne peut pas
+  // différer cet effacement jusqu'à la fin d'une période Stripe. En contrepartie,
+  // la part non consommée de la période déjà payée est remboursée au prorata
+  // (cf. refundUnusedSubscriptionPeriod ci-dessous) plutôt que conservée sans
+  // contrepartie — un abonnement résilié immédiatement sans aucun remboursement
+  // du temps non utilisé serait un enrichissement sans cause. N'a aucun effet
+  // sur un éventuel compte personnel (mobile), qui est un User distinct
+  // (accountType 'individual').
   deleteAccount: async (req, res, next) => {
     try {
       const { password } = req.body || {};
@@ -176,10 +225,12 @@ export const BusinessBillingController = {
       if (!ok) return res.status(401).json({ code: 'INVALID_CREDENTIALS', message: 'Mot de passe invalide' });
 
       const locations = await Location.find({ ownerId: user._id });
+      let refunded = false;
       for (const location of locations) {
         const subId = location.subscription?.stripeSubscriptionId;
         if (subId) {
           try {
+            if (await refundUnusedSubscriptionPeriod(subId)) refunded = true;
             await stripe.subscriptions.cancel(subId);
           } catch (err) {
             if (err?.code !== 'resource_missing') throw err;
@@ -196,7 +247,7 @@ export const BusinessBillingController = {
       await RefreshToken.deleteMany({ user: user._id });
       await User.deleteOne({ _id: user._id });
 
-      return res.json({ success: true });
+      return res.json({ success: true, refunded });
     } catch (err) {
       next(err);
     }
@@ -220,8 +271,15 @@ export const BusinessBillingController = {
           const session = event.data.object;
           const { locationId, tier, kind, boostType } = session.metadata || {};
           if (kind === 'boost_purchase' && locationId && boostType) {
-            const field = boostType === 'ultra' ? 'ultraBoostBalance' : 'proBoostBalance';
-            await Location.findByIdAndUpdate(locationId, { $inc: { [`proOffers.${field}`]: 1 } });
+            const field = BOOST_BALANCE_FIELD[boostType] || 'proBoostBalance';
+            const cap = BOOST_CAPS[boostType] ?? Infinity;
+            const minTier = BOOST_MIN_TIER_FOR_PURCHASE[boostType];
+            const location = await Location.findById(locationId);
+            if (location && (!minTier || TIER_RANK[location.businessTier] >= TIER_RANK[minTier])) {
+              const current = location.proOffers?.[field] || 0;
+              location.proOffers[field] = Math.min(current + 1, cap);
+              await location.save();
+            }
           } else if (locationId && tier) {
             await Location.findByIdAndUpdate(locationId, {
               businessTier: tier,
@@ -280,9 +338,10 @@ export const BusinessBillingController = {
               const periodEnd = invoice.lines?.data?.[0]?.period?.end || null;
               const alreadyGranted = periodEnd && location.proOffers?.lastGrantedPeriodEnd === periodEnd;
               if (!alreadyGranted) {
-                location.proOffers = location.proOffers || { ultraBoostBalance: 0, proBoostBalance: 0 };
-                location.proOffers.ultraBoostBalance = (location.proOffers.ultraBoostBalance || 0) + 1;
-                location.proOffers.proBoostBalance = (location.proOffers.proBoostBalance || 0) + 1;
+                location.proOffers = location.proOffers || { ultraBoostBalance: 0, proBoostBalance: 0, eventBoostBalance: 0 };
+                location.proOffers.ultraBoostBalance = Math.min((location.proOffers.ultraBoostBalance || 0) + 1, BOOST_CAPS.ultra);
+                location.proOffers.proBoostBalance = Math.min((location.proOffers.proBoostBalance || 0) + 1, BOOST_CAPS.pro);
+                location.proOffers.eventBoostBalance = Math.min((location.proOffers.eventBoostBalance || 0) + 1, BOOST_CAPS.event);
                 if (periodEnd) location.proOffers.lastGrantedPeriodEnd = periodEnd;
                 await location.save();
               }

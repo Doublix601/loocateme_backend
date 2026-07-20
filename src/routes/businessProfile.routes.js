@@ -84,4 +84,13 @@ router.get(
   BusinessStatsController.get
 );
 
+// Palier 3 : export CSV des statistiques
+router.get(
+  '/locations/:locationId/stats/export.csv',
+  requireAuth,
+  requireLocationOwner,
+  requireBusinessTier('pro3'),
+  BusinessStatsController.exportCsv
+);
+
 export default router;
