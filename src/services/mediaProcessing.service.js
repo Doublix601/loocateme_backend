@@ -30,6 +30,40 @@ export async function processImage(absPath, { maxWidth = 1600, maxHeight = 1600,
   return path.basename(outPath);
 }
 
+// Comme processImage, mais génère en plus une miniature légère à partir de la même
+// source (avant que celle-ci ne soit supprimée), pour les affichages en liste où la
+// pleine résolution est inutile (ex. bannière/logo de lieu dans LocationListScreen).
+// Retourne { filename, thumbFilename }.
+export async function processImageWithThumb(
+  absPath,
+  { maxWidth = 1600, maxHeight = 1600, quality = 82, thumb = {} } = {}
+) {
+  const { maxWidth: thumbMaxWidth = 320, maxHeight: thumbMaxHeight = 320, quality: thumbQuality = 75 } = thumb;
+  const dir = path.dirname(absPath);
+  const base = path.basename(absPath, path.extname(absPath));
+  const outPath = path.join(dir, `${base}.jpg`);
+  const thumbOutPath = path.join(dir, `${base}-thumb.jpg`);
+
+  const rotated = sharp(absPath).rotate();
+  const rotatedBuffer = await rotated.toBuffer();
+
+  await sharp(rotatedBuffer)
+    .resize({ width: maxWidth, height: maxHeight, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality, mozjpeg: true })
+    .toFile(outPath + '.tmp');
+
+  await sharp(rotatedBuffer)
+    .resize({ width: thumbMaxWidth, height: thumbMaxHeight, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: thumbQuality, mozjpeg: true })
+    .toFile(thumbOutPath + '.tmp');
+
+  fs.renameSync(outPath + '.tmp', outPath);
+  fs.renameSync(thumbOutPath + '.tmp', thumbOutPath);
+  if (outPath !== absPath && fs.existsSync(absPath)) fs.unlinkSync(absPath);
+
+  return { filename: path.basename(outPath), thumbFilename: path.basename(thumbOutPath) };
+}
+
 // Transcode une vidéo story en H.264/AAC mp4 raisonnablement compressé (limite la
 // résolution et le bitrate) afin qu'une vidéo brute de téléphone ne surcharge pas
 // le stockage/la diffusion. Retourne le nouveau nom de fichier.
