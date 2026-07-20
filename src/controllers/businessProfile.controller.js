@@ -9,6 +9,7 @@ const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_MEDIA_PDF = 3;
 const MEDIA_ICONS = ['document', 'menu', 'drinks', 'events', 'pricing', 'info'];
 const EVENT_DATE_GRACE_MS = 24 * 60 * 60 * 1000; // eventDate + 1 jour
+const MAX_EVENTS_PER_LOCATION = 2;
 
 export function deleteOldMediaFile(oldUrl) {
   if (!oldUrl) return;
@@ -204,6 +205,13 @@ export const BusinessProfileController = {
       if (!title) {
         if (req.file) fs.unlink(req.file.path, () => {});
         return res.status(400).json({ code: 'TITLE_REQUIRED', message: 'Titre requis' });
+      }
+      if ((req.location.events?.length || 0) >= MAX_EVENTS_PER_LOCATION) {
+        if (req.file) fs.unlink(req.file.path, () => {});
+        return res.status(400).json({
+          code: 'EVENTS_LIMIT_REACHED',
+          message: `Limite de ${MAX_EVENTS_PER_LOCATION} événements par lieu atteinte. Supprimez un événement existant avant d'en ajouter un nouveau.`,
+        });
       }
       const body = String(req.body?.body || '').trim();
       const eventDate = req.body?.eventDate ? new Date(req.body.eventDate) : null;
