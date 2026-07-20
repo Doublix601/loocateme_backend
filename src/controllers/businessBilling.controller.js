@@ -5,27 +5,50 @@ import { RefreshToken } from '../models/RefreshToken.js';
 import { stripe, priceIdForTier, tierForPriceId } from '../services/stripe.service.js';
 import { deleteOldMediaFile } from './businessProfile.controller.js';
 import { BOOST_CAPS, BOOST_BALANCE_FIELD, BOOST_MIN_TIER_FOR_PURCHASE } from '../constants/boosts.js';
+import { stripeWebhookQueue } from '../config/queue.js';
 
 const VALID_TIERS = ['pro1', 'pro2', 'pro3'];
 const TIER_RANK = { none: 0, pro1: 1, pro2: 2, pro3: 3 };
 
-// Supprime les avantages premium liés à l'abonnement (photo de profil/couverture,
-// stories, PDF) quand un pro annule/perd son abonnement (businessTier -> 'none').
-// Ne touche volontairement PAS à proOffers/sponsorship/ultraBoost : les crédits de
-// boost sont conservés et un boost en cours reste actif jusqu'à sa propre expiration
-// (gérée séparément par cron.service.js), qu'il y ait ou non un abonnement actif.
-function revokePremiumAdvantages(location) {
+// Supprime DÉFINITIVEMENT les avantages premium liés à l'abonnement (photo de
+// profil/couverture, stories, PDF) : soit immédiatement (suppression de compte),
+// soit à l'issue du délai de grâce de 7 jours (cf. schedulePremiumDataPurge et le
+// cron de purge dans cron.service.js). Ne touche volontairement PAS à
+// proOffers/sponsorship/ultraBoost : les crédits de boost sont conservés et un
+// boost en cours reste actif jusqu'à sa propre expiration (gérée séparément par
+// cron.service.js), qu'il y ait ou non un abonnement actif.
+export function revokePremiumAdvantages(location) {
   deleteOldMediaFile(location.bannerUrl);
+  deleteOldMediaFile(location.bannerThumbUrl);
   deleteOldMediaFile(location.logoUrl);
+  deleteOldMediaFile(location.logoThumbUrl);
   location.stories.forEach((story) => {
     deleteOldMediaFile(story.url);
     deleteOldMediaFile(story.thumbnailUrl);
   });
   location.media.forEach((item) => deleteOldMediaFile(item.url));
   location.bannerUrl = '';
+  location.bannerThumbUrl = '';
   location.logoUrl = '';
+  location.logoThumbUrl = '';
   location.stories = [];
   location.media = [];
+  location.premiumDataPurgeAt = undefined;
+}
+
+const PREMIUM_DATA_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Programme la suppression définitive des données premium dans 7 jours au lieu de
+// les effacer immédiatement, pour permettre au pro de tout récupérer automatiquement
+// s'il se réabonne dans ce délai (ex : incident de paiement). L'affichage public
+// bascule déjà en gratuit dès que businessTier === 'none' (filtré côté API dans
+// location.controller.js), indépendamment de cette date : ceci ne fait que différer
+// l'effacement physique des fichiers/champs. Idempotent : n'écrase pas une purge déjà
+// programmée si l'événement webhook est reçu plusieurs fois.
+function schedulePremiumDataPurge(location) {
+  if (!location.premiumDataPurgeAt) {
+    location.premiumDataPurgeAt = new Date(Date.now() + PREMIUM_DATA_GRACE_MS);
+  }
 }
 
 // Rembourse au prorata la portion non consommée de la période Stripe en cours,
@@ -196,6 +219,7 @@ export const BusinessBillingController = {
       }
       await stripe.subscriptions.update(subId, { cancel_at_period_end: false });
       location.subscription.cancelAtPeriodEnd = false;
+      location.premiumDataPurgeAt = undefined;
       await location.save();
       return res.json({ ok: true });
     } catch (err) {
@@ -255,6 +279,15 @@ export const BusinessBillingController = {
 
   // Route publique (signature Stripe vérifiée), body brut (express.raw), montée
   // avant express.json() dans server.js.
+  //
+  // On acquitte Stripe dès la signature validée, puis on traite l'événement en
+  // tâche de fond (processStripeEvent, via stripeWebhookQueue). Avant ce
+  // changement, la cascade de lectures/écritures Mongo ci-dessous s'exécutait
+  // avant de répondre : sous charge, ça pouvait dépasser le délai que Stripe
+  // tolère avant de considérer le webhook en échec et de le renvoyer en retry
+  // (risque de traitement en double / incohérence de facturation). Les retries
+  // BullMQ (5 tentatives, backoff exponentiel) prennent le relais de la
+  // fiabilité que Stripe assurait auparavant par ses propres retries.
   stripeWebhook: async (req, res) => {
     const sig = req.headers['stripe-signature'];
     let event;
@@ -266,6 +299,24 @@ export const BusinessBillingController = {
     }
 
     try {
+      await stripeWebhookQueue.add('process', { event });
+    } catch (err) {
+      // Si on ne peut même pas mettre en queue (Redis down), on refuse l'ack
+      // pour que Stripe retente plus tard plutôt que de perdre l'événement.
+      console.error('[stripe] Failed to enqueue webhook event:', err.message);
+      return res.status(500).json({ received: false });
+    }
+    return res.json({ received: true });
+  },
+};
+
+// Traitement effectif d'un événement Stripe (exécuté par le worker de
+// stripeWebhookQueue, cf. src/config/queue.js / server.js). Chaque case reste
+// idempotente (vérifications déjà en place : lastGrantedPeriodEnd, tier
+// actuel, etc.) pour rester safe si BullMQ retente un job après un échec
+// partiel.
+export async function processStripeEvent(event) {
+  try {
       switch (event.type) {
         case 'checkout.session.completed': {
           const session = event.data.object;
@@ -285,6 +336,7 @@ export const BusinessBillingController = {
               businessTier: tier,
               'subscription.stripeSubscriptionId': session.subscription,
               'subscription.status': 'active',
+              $unset: { premiumDataPurgeAt: '' },
             });
           }
           break;
@@ -305,7 +357,12 @@ export const BusinessBillingController = {
               const wasSubscribed = location.businessTier !== 'none';
               location.businessTier = ['active', 'trialing'].includes(subscription.status) ? tier : 'none';
               if (wasSubscribed && location.businessTier === 'none') {
-                revokePremiumAdvantages(location);
+                schedulePremiumDataPurge(location);
+              } else if (location.businessTier !== 'none') {
+                // Tier redevenu actif (ex : Stripe Smart Retries a fini par débiter
+                // la carte après un past_due) : annule une purge éventuellement
+                // programmée entre-temps.
+                location.premiumDataPurgeAt = undefined;
               }
             }
             await location.save();
@@ -319,7 +376,7 @@ export const BusinessBillingController = {
             location.businessTier = 'none';
             location.subscription.status = 'canceled';
             location.subscription.cancelAtPeriodEnd = false;
-            revokePremiumAdvantages(location);
+            schedulePremiumDataPurge(location);
             await location.save();
           }
           break;
@@ -352,10 +409,8 @@ export const BusinessBillingController = {
         default:
           break;
       }
-      return res.json({ received: true });
-    } catch (err) {
-      console.error('[stripe] Webhook handling error:', err);
-      return res.status(500).json({ received: false });
-    }
-  },
-};
+  } catch (err) {
+    console.error(`[stripe] Webhook handling error (event=${event.id}, type=${event.type}):`, err);
+    throw err; // laisse BullMQ retenter le job (attempts: 5, backoff exponentiel)
+  }
+}

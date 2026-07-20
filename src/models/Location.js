@@ -65,7 +65,11 @@ const LocationSchema = new mongoose.Schema(
       mediaType: { type: String, enum: ['image', 'video'], default: 'image' },
       thumbnailUrl: { type: String }, // frame extraite pour les vidéos, absent pour les images
       expiresAt: { type: Date },
-      createdAt: { type: Date, default: Date.now }
+      createdAt: { type: Date, default: Date.now },
+      // 'ready' pour les images (traitées en synchrone) ; les vidéos passent par
+      // 'processing' le temps du transcodage ffmpeg en tâche de fond (cf. queue.js),
+      // puis 'ready' ou 'failed' une fois le worker terminé.
+      status: { type: String, enum: ['processing', 'ready', 'failed'], default: 'ready' },
     }],
     // Palier d'abonnement business ('none' = pas d'abonnement payant actif)
     businessTier: { type: String, enum: ['none', 'pro1', 'pro2', 'pro3'], default: 'none', index: true },
@@ -80,6 +84,12 @@ const LocationSchema = new mongoose.Schema(
       // Stripe termine l'abonnement sans le renouveler.
       cancelAtPeriodEnd: { type: Boolean, default: false },
     },
+    // Date à laquelle les données premium (banner/logo/stories/media) doivent être
+    // définitivement supprimées par le cron de purge (cf. cron.service.js), après un
+    // délai de grâce de 7 jours suivant la perte de l'abonnement. undefined = aucune
+    // purge programmée. Ce délai permet au pro de tout récupérer automatiquement s'il
+    // se réabonne dans ce laps de temps (ex : incident de paiement).
+    premiumDataPurgeAt: { type: Date, index: true },
     // Crédits consommables réservés au palier Pro3, recrédités à chaque cycle Stripe.
     // lastGrantedPeriodEnd (fin de période Stripe, timestamp unix) rend le crédit
     // idempotent : une seule attribution par période de facturation, que le lieu
@@ -117,6 +127,9 @@ const LocationSchema = new mongoose.Schema(
       // eventDate + 1 jour si eventDate fourni à la création, sinon null :
       // l'événement reste affiché jusqu'à suppression manuelle par le pro.
       expiresAt: { type: Date },
+      // Cf. stories.status : 'ready' pour image/pas de média, 'processing' pendant
+      // le transcodage vidéo en tâche de fond, 'failed' si le worker a échoué.
+      status: { type: String, enum: ['processing', 'ready', 'failed'], default: 'ready' },
     }],
     // Fenêtre d'offre "Ultra Boost" : période pendant laquelle la bannière "20min sur
     // place = boost de profil gratuit" doit s'afficher sur la fiche du lieu, en écho au

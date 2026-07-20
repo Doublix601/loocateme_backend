@@ -34,6 +34,11 @@ import { BusinessBillingController } from './controllers/businessBilling.control
 import { errorHandler, notFound } from './middlewares/error.js';
 import { verifyMailTransport } from './services/email.service.js';
 import { CronService } from './services/cron.service.js';
+import { startCityStarsWorker, startStripeWebhookWorker, startEmailWorker, startVideoProcessingWorker } from './config/queue.js';
+import { recalculateCityStars } from './services/location.service.js';
+import { processVideoJob } from './services/mediaProcessing.service.js';
+import { processStripeEvent } from './controllers/businessBilling.controller.js';
+import { sendMail } from './services/email.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -186,7 +191,22 @@ app.use(errorHandler);
   } catch (e) {
     console.warn('[email] SMTP verification threw:', e?.message || e);
   }
-  CronService.init();
+  // En mode cluster (pm2 -i N), chaque worker importerait ce module et
+  // planifierait les mêmes cron jobs N fois (emails en double, cleanup en
+  // double...). NODE_APP_INSTANCE n'est défini que par pm2 en cluster mode ;
+  // on ne garde les cron que sur l'instance 0 (absent en dev/nodemon, donc
+  // toujours actif hors cluster).
+  const pm2InstanceId = process.env.NODE_APP_INSTANCE;
+  if (pm2InstanceId === undefined || pm2InstanceId === '0') {
+    CronService.init();
+  }
+  // Contrairement aux cron jobs, BullMQ distribue nativement les jobs entre
+  // workers : chaque instance du cluster peut démarrer son propre worker sans
+  // risque de double-traitement.
+  startCityStarsWorker(recalculateCityStars);
+  startStripeWebhookWorker(processStripeEvent);
+  startEmailWorker(sendMail);
+  startVideoProcessingWorker(processVideoJob);
     app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT} (listening on 0.0.0.0)`);
     // Log all registered routes

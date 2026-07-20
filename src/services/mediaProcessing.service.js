@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from '@ffmpeg-installer/ffmpeg';
 import ffprobePath from '@ffprobe-installer/ffprobe';
+import { Location } from '../models/Location.js';
 
 ffmpeg.setFfmpegPath(ffmpegPath.path);
 // Requis par fluent-ffmpeg pour .screenshots() (calcule les timestamps en %,
@@ -115,4 +116,41 @@ export async function extractVideoThumbnail(absPath, { maxWidth = 480 } = {}) {
   });
 
   return processImage(path.join(dir, thumbName), { maxWidth, maxHeight: maxWidth, quality: 75 });
+}
+
+// Même construction d'URL que businessMediaPublicUrl (storage.service.js), mais sans
+// `req` : le worker BullMQ tourne hors requête HTTP, donc on retombe sur la même variable
+// d'env déjà utilisée ailleurs en fallback (auth.service.js) pour l'URL publique de l'API.
+function businessMediaPublicUrlFromEnv(filename) {
+  const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'http://api.loocate.me';
+  return `${baseUrl}/uploads/business-media/${path.basename(String(filename || ''))}`;
+}
+
+// Traite en tâche de fond (worker BullMQ, cf. config/queue.js) une vidéo déjà uploadée
+// pour une story ou un événement : transcodage + extraction de miniature, puis mise à
+// jour du sous-document correspondant sur le Location (status processing -> ready/failed).
+// C'est la fonction injectée à startVideoProcessingWorker dans server.js.
+export async function processVideoJob({ locationId, kind, subDocId, absPath, maxHeight }) {
+  try {
+    const finalFilename = await processVideo(absPath, { maxHeight });
+    const finalAbsPath = path.join(path.dirname(absPath), finalFilename);
+    const thumbFilename = await extractVideoThumbnail(finalAbsPath);
+
+    const mediaUrl = businessMediaPublicUrlFromEnv(finalFilename);
+    const thumbnailUrl = businessMediaPublicUrlFromEnv(thumbFilename);
+    const list = kind === 'story' ? 'stories' : 'events';
+    const urlField = kind === 'story' ? 'url' : 'mediaUrl';
+
+    await Location.updateOne(
+      { _id: locationId, [`${list}._id`]: subDocId },
+      { $set: { [`${list}.$.${urlField}`]: mediaUrl, [`${list}.$.thumbnailUrl`]: thumbnailUrl, [`${list}.$.status`]: 'ready' } },
+    );
+  } catch (err) {
+    await Location.updateOne(
+      { _id: locationId, [`${kind === 'story' ? 'stories' : 'events'}._id`]: subDocId },
+      { $set: { [`${kind === 'story' ? 'stories' : 'events'}.$.status`]: 'failed' } },
+    );
+    if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+    throw err;
+  }
 }

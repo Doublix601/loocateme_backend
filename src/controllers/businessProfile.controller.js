@@ -1,9 +1,9 @@
 import fs from 'fs';
-import path from 'path';
 import { Location } from '../models/Location.js';
 import { businessMediaPublicUrl } from '../services/storage.service.js';
-import { processImage, processImageWithThumb, processVideo, extractVideoThumbnail } from '../services/mediaProcessing.service.js';
+import { processImage, processImageWithThumb } from '../services/mediaProcessing.service.js';
 import { localPathFromUrl } from '../utils/uploadPaths.js';
+import { videoProcessingQueue } from '../config/queue.js';
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_MEDIA_PDF = 3;
@@ -121,24 +121,32 @@ export const BusinessProfileController = {
       }
 
       const isVideo = req.file.mimetype.startsWith('video/');
-      let mediaType = 'image';
-      let thumbnailUrl;
-      let finalFilename;
 
       if (isVideo) {
-        mediaType = 'video';
-        finalFilename = await processVideo(req.file.path, { maxHeight: 1280 });
-        const finalAbsPath = path.join(path.dirname(req.file.path), finalFilename);
-        const thumbFilename = await extractVideoThumbnail(finalAbsPath);
-        thumbnailUrl = businessMediaPublicUrl(req, thumbFilename);
-      } else {
-        finalFilename = await processImage(req.file.path, { maxWidth: 1080, maxHeight: 1920 });
+        // Le transcodage ffmpeg est trop lourd pour rester dans le cycle requête/réponse :
+        // on enregistre la story en statut 'processing' et on la complète en tâche de fond
+        // (cf. videoProcessingQueue / processVideoJob dans mediaProcessing.service.js).
+        req.location.stories.push({
+          mediaType: 'video',
+          expiresAt: new Date(Date.now() + STORY_TTL_MS),
+          status: 'processing',
+        });
+        await req.location.save();
+        const story = req.location.stories[req.location.stories.length - 1];
+        await videoProcessingQueue.add('story', {
+          locationId: req.location._id,
+          kind: 'story',
+          subDocId: story._id,
+          absPath: req.file.path,
+          maxHeight: 1280,
+        });
+        return res.status(201).json({ location: req.location });
       }
 
+      const finalFilename = await processImage(req.file.path, { maxWidth: 1080, maxHeight: 1920 });
       req.location.stories.push({
         url: businessMediaPublicUrl(req, finalFilename),
-        mediaType,
-        thumbnailUrl,
+        mediaType: 'image',
         expiresAt: new Date(Date.now() + STORY_TTL_MS),
       });
       await req.location.save();
@@ -217,20 +225,15 @@ export const BusinessProfileController = {
       const eventDate = req.body?.eventDate ? new Date(req.body.eventDate) : null;
       const validEventDate = eventDate && !Number.isNaN(eventDate.getTime()) ? eventDate : null;
 
-      let mediaUrl, mediaType, thumbnailUrl;
+      let mediaUrl, mediaType, isVideo = false;
       if (req.file) {
-        const isVideo = req.file.mimetype.startsWith('video/');
-        if (isVideo) {
-          mediaType = 'video';
-          const finalFilename = await processVideo(req.file.path, { maxHeight: 1280 });
-          const finalAbsPath = path.join(path.dirname(req.file.path), finalFilename);
-          const thumbFilename = await extractVideoThumbnail(finalAbsPath);
-          mediaUrl = businessMediaPublicUrl(req, finalFilename);
-          thumbnailUrl = businessMediaPublicUrl(req, thumbFilename);
-        } else {
+        isVideo = req.file.mimetype.startsWith('video/');
+        if (!isVideo) {
           mediaType = 'image';
           const finalFilename = await processImage(req.file.path, { maxWidth: 1080, maxHeight: 1920 });
           mediaUrl = businessMediaPublicUrl(req, finalFilename);
+        } else {
+          mediaType = 'video';
         }
       }
 
@@ -239,11 +242,23 @@ export const BusinessProfileController = {
         body,
         mediaUrl,
         mediaType,
-        thumbnailUrl,
         eventDate: validEventDate,
         expiresAt: validEventDate ? new Date(validEventDate.getTime() + EVENT_DATE_GRACE_MS) : null,
+        status: isVideo ? 'processing' : 'ready',
       });
       await req.location.save();
+
+      if (isVideo) {
+        const event = req.location.events[req.location.events.length - 1];
+        await videoProcessingQueue.add('event', {
+          locationId: req.location._id,
+          kind: 'event',
+          subDocId: event._id,
+          absPath: req.file.path,
+          maxHeight: 1280,
+        });
+      }
+
       return res.status(201).json({ location: req.location });
     } catch (err) {
       next(err);
