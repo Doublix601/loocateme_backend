@@ -75,6 +75,24 @@ router.delete(
   BusinessProfileController.removeMedia
 );
 
+// Palier 2 : événements (création de contenu, indépendante de l'Event Boost
+// qui reste réservé pro3 — cf. businessBoost.routes.js)
+router.post(
+  '/locations/:locationId/events',
+  requireAuth,
+  requireLocationOwner,
+  requireBusinessTier('pro2'),
+  uploadBusinessMedia.single('media'),
+  BusinessProfileController.addEvent
+);
+router.delete(
+  '/locations/:locationId/events/:eventId',
+  requireAuth,
+  requireLocationOwner,
+  requireBusinessTier('pro2'),
+  BusinessProfileController.removeEvent
+);
+
 // Palier 2 : statistiques de fréquentation
 router.get(
   '/locations/:locationId/stats',

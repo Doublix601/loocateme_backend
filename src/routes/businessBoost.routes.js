@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../middlewares/auth.js';
 import { requireLocationOwner } from '../middlewares/businessTier.js';
-import { uploadBusinessMedia } from '../services/storage.service.js';
 import { BusinessBoostController } from '../controllers/businessBoost.controller.js';
 
 const router = Router();
@@ -31,10 +30,9 @@ router.post(
   BusinessBoostController.activateProBoost
 );
 router.post(
-  '/locations/:locationId/event-boost/activate',
+  '/locations/:locationId/events/:eventId/boost',
   requireAuth,
   requireLocationOwner,
-  uploadBusinessMedia.single('media'),
   BusinessBoostController.activateEventBoost
 );
 

@@ -32,7 +32,15 @@ const LocationSchema = new mongoose.Schema(
     status: { type: String, enum: ['pending', 'verified', 'rejected'], default: 'verified' }, // Par défaut verified pour l'instant
     description: { type: String },
     bannerUrl: { type: String },
+    // Miniatures légères générées en même temps que bannerUrl/logoUrl (cf.
+    // processImageWithThumb dans mediaProcessing.service.js), utilisées pour les
+    // vignettes en liste (LocationListScreen côté app) afin d'éviter de télécharger
+    // la pleine résolution. Absentes pour les lieux dont la photo n'a pas été
+    // remise à jour depuis l'ajout de cette fonctionnalité : fallback côté client
+    // vers bannerUrl/logoUrl dans ce cas.
+    bannerThumbUrl: { type: String },
     logoUrl: { type: String },
+    logoThumbUrl: { type: String },
     template: { type: String, default: 'default' },
     documents: [{
       type: { type: String }, // 'KBIS', 'ID'
@@ -91,21 +99,25 @@ const LocationSchema = new mongoose.Schema(
       until: { type: Date },
       activatedAt: { type: Date },
     },
-    // Dernier événement annoncé via Event Boost, affiché sur la fiche du lieu
-    // (LocationScreen côté app) jusqu'à expiresAt. Un seul événement actif à la
-    // fois : un nouvel envoi remplace intégralement le précédent.
-    activeEventBoost: {
-      title: { type: String },
+    // Événements créés par le pro (palier pro2+), affichés sur la fiche du lieu
+    // (LocationScreen côté app) tant que non expirés. Plusieurs événements
+    // peuvent coexister. L'Event Boost (palier pro3+, cf. businessBoost.controller.js)
+    // ne fait qu'envoyer une notification pour un événement de cette liste,
+    // il ne crée pas de contenu.
+    events: [{
+      title: { type: String, required: true },
       body: { type: String },
       mediaUrl: { type: String },
       mediaType: { type: String, enum: ['image', 'video'] },
       thumbnailUrl: { type: String },
       eventDate: { type: Date },
-      sentAt: { type: Date },
-      // eventDate + 1 jour si eventDate fourni, sinon sentAt + 7 jours (cf.
-      // activateEventBoost dans businessBoost.controller.js).
+      createdAt: { type: Date, default: Date.now },
+      // Dernier envoi d'Event Boost pour cet événement, null si jamais boosté.
+      boostedAt: { type: Date },
+      // eventDate + 1 jour si eventDate fourni à la création, sinon null :
+      // l'événement reste affiché jusqu'à suppression manuelle par le pro.
       expiresAt: { type: Date },
-    },
+    }],
     // Fenêtre d'offre "Ultra Boost" : période pendant laquelle la bannière "20min sur
     // place = boost de profil gratuit" doit s'afficher sur la fiche du lieu, en écho au
     // texte de la notification push envoyée par broadcastUltraBoost (ultraBoost.service.js).

@@ -2,12 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { Location } from '../models/Location.js';
 import { businessMediaPublicUrl } from '../services/storage.service.js';
-import { processImage, processVideo, extractVideoThumbnail } from '../services/mediaProcessing.service.js';
+import { processImage, processImageWithThumb, processVideo, extractVideoThumbnail } from '../services/mediaProcessing.service.js';
 import { localPathFromUrl } from '../utils/uploadPaths.js';
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_MEDIA_PDF = 3;
 const MEDIA_ICONS = ['document', 'menu', 'drinks', 'events', 'pricing', 'info'];
+const EVENT_DATE_GRACE_MS = 24 * 60 * 60 * 1000; // eventDate + 1 jour
 
 export function deleteOldMediaFile(oldUrl) {
   if (!oldUrl) return;
@@ -39,10 +40,17 @@ export const BusinessProfileController = {
     try {
       if (!req.file) return res.status(400).json({ code: 'FILE_REQUIRED', message: 'Fichier requis' });
       const oldUrl = req.location.bannerUrl;
-      const processedFilename = await processImage(req.file.path, { maxWidth: 1600, maxHeight: 1600 });
-      req.location.bannerUrl = businessMediaPublicUrl(req, processedFilename);
+      const oldThumbUrl = req.location.bannerThumbUrl;
+      const { filename, thumbFilename } = await processImageWithThumb(req.file.path, {
+        maxWidth: 1600,
+        maxHeight: 1600,
+        thumb: { maxWidth: 320, maxHeight: 320 },
+      });
+      req.location.bannerUrl = businessMediaPublicUrl(req, filename);
+      req.location.bannerThumbUrl = businessMediaPublicUrl(req, thumbFilename);
       await req.location.save();
       deleteOldMediaFile(oldUrl);
+      deleteOldMediaFile(oldThumbUrl);
       return res.json({ location: req.location });
     } catch (err) {
       next(err);
@@ -53,10 +61,17 @@ export const BusinessProfileController = {
     try {
       if (!req.file) return res.status(400).json({ code: 'FILE_REQUIRED', message: 'Fichier requis' });
       const oldUrl = req.location.logoUrl;
-      const processedFilename = await processImage(req.file.path, { maxWidth: 800, maxHeight: 800 });
-      req.location.logoUrl = businessMediaPublicUrl(req, processedFilename);
+      const oldThumbUrl = req.location.logoThumbUrl;
+      const { filename, thumbFilename } = await processImageWithThumb(req.file.path, {
+        maxWidth: 800,
+        maxHeight: 800,
+        thumb: { maxWidth: 200, maxHeight: 200 },
+      });
+      req.location.logoUrl = businessMediaPublicUrl(req, filename);
+      req.location.logoThumbUrl = businessMediaPublicUrl(req, thumbFilename);
       await req.location.save();
       deleteOldMediaFile(oldUrl);
+      deleteOldMediaFile(oldThumbUrl);
       return res.json({ location: req.location });
     } catch (err) {
       next(err);
@@ -66,9 +81,12 @@ export const BusinessProfileController = {
   removeCover: async (req, res, next) => {
     try {
       const oldUrl = req.location.bannerUrl;
+      const oldThumbUrl = req.location.bannerThumbUrl;
       req.location.bannerUrl = '';
+      req.location.bannerThumbUrl = '';
       await req.location.save();
       deleteOldMediaFile(oldUrl);
+      deleteOldMediaFile(oldThumbUrl);
       return res.json({ location: req.location });
     } catch (err) {
       next(err);
@@ -78,9 +96,12 @@ export const BusinessProfileController = {
   removeLogo: async (req, res, next) => {
     try {
       const oldUrl = req.location.logoUrl;
+      const oldThumbUrl = req.location.logoThumbUrl;
       req.location.logoUrl = '';
+      req.location.logoThumbUrl = '';
       await req.location.save();
       deleteOldMediaFile(oldUrl);
+      deleteOldMediaFile(oldThumbUrl);
       return res.json({ location: req.location });
     } catch (err) {
       next(err);
@@ -168,6 +189,68 @@ export const BusinessProfileController = {
     try {
       req.location.media = req.location.media.filter((m) => String(m._id) !== req.params.mediaId);
       await req.location.save();
+      return res.json({ location: req.location });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // Création d'événement, indépendante de l'Event Boost (qui ne fait
+  // qu'envoyer une notification pour un événement de cette liste, cf.
+  // businessBoost.controller.js). Média optionnel.
+  addEvent: async (req, res, next) => {
+    try {
+      const title = String(req.body?.title || '').trim();
+      if (!title) {
+        if (req.file) fs.unlink(req.file.path, () => {});
+        return res.status(400).json({ code: 'TITLE_REQUIRED', message: 'Titre requis' });
+      }
+      const body = String(req.body?.body || '').trim();
+      const eventDate = req.body?.eventDate ? new Date(req.body.eventDate) : null;
+      const validEventDate = eventDate && !Number.isNaN(eventDate.getTime()) ? eventDate : null;
+
+      let mediaUrl, mediaType, thumbnailUrl;
+      if (req.file) {
+        const isVideo = req.file.mimetype.startsWith('video/');
+        if (isVideo) {
+          mediaType = 'video';
+          const finalFilename = await processVideo(req.file.path, { maxHeight: 1280 });
+          const finalAbsPath = path.join(path.dirname(req.file.path), finalFilename);
+          const thumbFilename = await extractVideoThumbnail(finalAbsPath);
+          mediaUrl = businessMediaPublicUrl(req, finalFilename);
+          thumbnailUrl = businessMediaPublicUrl(req, thumbFilename);
+        } else {
+          mediaType = 'image';
+          const finalFilename = await processImage(req.file.path, { maxWidth: 1080, maxHeight: 1920 });
+          mediaUrl = businessMediaPublicUrl(req, finalFilename);
+        }
+      }
+
+      req.location.events.push({
+        title,
+        body,
+        mediaUrl,
+        mediaType,
+        thumbnailUrl,
+        eventDate: validEventDate,
+        expiresAt: validEventDate ? new Date(validEventDate.getTime() + EVENT_DATE_GRACE_MS) : null,
+      });
+      await req.location.save();
+      return res.status(201).json({ location: req.location });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  removeEvent: async (req, res, next) => {
+    try {
+      const event = req.location.events.find((e) => String(e._id) === req.params.eventId);
+      req.location.events = req.location.events.filter((e) => String(e._id) !== req.params.eventId);
+      await req.location.save();
+      if (event) {
+        deleteOldMediaFile(event.mediaUrl);
+        deleteOldMediaFile(event.thumbnailUrl);
+      }
       return res.json({ location: req.location });
     } catch (err) {
       next(err);
