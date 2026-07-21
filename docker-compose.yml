@@ -14,7 +14,7 @@ services:
       # 'max' par défaut) affame Mongo pendant les pics. 3 workers API laisse
       # de la place au scheduler pour servir Mongo correctement.
       - PM2_INSTANCES=3
-      - CORS_ORIGIN=http://localhost:19006,http://localhost:3000,http://pro.loocate.me,${BUSINESS_SITE_PUBLIC_URL:-https://pro.loocate.me}
+      - CORS_ORIGIN=http://localhost:19006,http://localhost:3000,http://localhost:3001,http://pro.loocate.me,${BUSINESS_SITE_PUBLIC_URL:-https://pro.loocate.me},${PUBLIC_SITE_PUBLIC_URL:-https://loocate.me}
       - MONGODB_URI=mongodb://appuser:${MONGO_APP_PASSWORD:-change-me-app}@mongo:27017/loocateme
       - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET must be set in .env}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set in .env}
@@ -39,6 +39,8 @@ services:
       - EMAIL_VERIF_TOKEN_TTL=24h
       - PWD_RESET_TOKEN_TTL=1h
       - BUSINESS_SITE_PUBLIC_URL=${BUSINESS_SITE_PUBLIC_URL:-https://pro.loocate.me}
+      - PUBLIC_SITE_PUBLIC_URL=${PUBLIC_SITE_PUBLIC_URL:-https://loocate.me}
+      - SUPPORT_INBOX=${SUPPORT_INBOX:-support@loocate.me}
       - BUSINESS_ACTIVATION_TOKEN_TTL=7d
       - BUSINESS_DOCS_DIR=data/business-docs
       - MONGO_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-change-me-root}

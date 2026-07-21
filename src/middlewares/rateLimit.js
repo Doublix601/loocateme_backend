@@ -22,3 +22,14 @@ export const locationsListLimiter = rateLimit({
   keyGenerator: (req) => req.user?.id || req.ip,
   message: { code: 'RATE_LIMITED', message: 'Too many requests' },
 });
+
+// Endpoint public (sans auth) exposé par le site loocate.me : limite large
+// mais suffisante pour contrer le spam par IP sans gêner un usage normal.
+export const supportContactLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
+  message: { code: 'RATE_LIMITED', message: 'Trop de messages envoyés, réessayez plus tard.' },
+});

@@ -30,6 +30,7 @@ import businessClaimRoutes from './routes/businessClaim.routes.js';
 import businessProfileRoutes from './routes/businessProfile.routes.js';
 import businessBillingRoutes from './routes/businessBilling.routes.js';
 import businessBoostRoutes from './routes/businessBoost.routes.js';
+import supportRoutes from './routes/support.routes.js';
 import { BusinessBillingController } from './controllers/businessBilling.controller.js';
 import { errorHandler, notFound } from './middlewares/error.js';
 import { verifyMailTransport } from './services/email.service.js';
@@ -139,6 +140,7 @@ app.use('/api/business-claims', businessClaimRoutes);
 app.use('/api/business', businessProfileRoutes);
 app.use('/api/business/billing', businessBillingRoutes);
 app.use('/api/business', businessBoostRoutes);
+app.use('/api/support', supportRoutes);
 
 // 404 and error
 app.use(notFound);

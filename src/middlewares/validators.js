@@ -269,4 +269,16 @@ export const validators = {
   gdprDelete: [
     body('password').isString().isLength({ min: 6 }),
   ],
+  supportContact: [
+    body('name').exists().bail().isString().trim().isLength({ min: 1, max: 100 }),
+    body('email').isEmail().normalizeEmail({
+      gmail_remove_dots: false,
+      gmail_remove_subaddress: false,
+      outlookdotcom_remove_subaddress: false,
+      yahoo_remove_subaddress: false,
+      icloud_remove_subaddress: false,
+    }),
+    body('subject').exists().bail().isString().trim().isLength({ min: 1, max: 150 }),
+    body('message').exists().bail().isString().trim().isLength({ min: 1, max: 5000 }),
+  ],
 };
