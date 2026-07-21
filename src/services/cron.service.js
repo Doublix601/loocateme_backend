@@ -8,6 +8,7 @@ import { recomputeAllLocationAnalytics } from './businessStats.service.js';
 import { processPolicyEmailJobs } from './policyNotification.service.js';
 import { decayInactiveUsers, sendCoteExpiryWarnings } from './cote.service.js';
 import { sendInactiveProfileViewsNudge, sendNightModeActivatedNotification } from './engagement.service.js';
+import { revokePremiumAdvantages } from '../controllers/businessBilling.controller.js';
 
 /**
  * Service de tâches planifiées (Cron) pour LoocateMe.
@@ -72,6 +73,22 @@ export const CronService = {
         if (res.modifiedCount) console.log(`[cron] Expired stories removed from ${res.modifiedCount} locations.`);
       } catch (e) {
         console.error('[cron] Story expiration error:', e);
+      }
+    });
+
+    // Purge définitive des données premium (banner/logo/stories/media) après le
+    // délai de grâce de 7 jours (cf. premiumDataPurgeAt sur Location, programmé par
+    // les webhooks Stripe dans businessBilling.controller.js) : toutes les heures.
+    nodeCron.schedule('0 * * * *', async () => {
+      try {
+        const locations = await Location.find({ premiumDataPurgeAt: { $lte: new Date() } });
+        for (const location of locations) {
+          revokePremiumAdvantages(location);
+          await location.save();
+        }
+        if (locations.length) console.log(`[cron] Premium data purged for ${locations.length} locations.`);
+      } catch (e) {
+        console.error('[cron] Premium data purge error:', e);
       }
     });
 
