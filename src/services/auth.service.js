@@ -4,8 +4,8 @@ import { RefreshToken } from '../models/RefreshToken.js';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { sendMail } from './email.service.js';
 import { isAtLeast18 } from '../utils/age.js';
+import { emailQueue } from '../config/queue.js';
 
 function signAccessToken(userId) {
   // Issue a non-expiring access token. It will remain valid until the user logs out or changes password.
@@ -143,7 +143,7 @@ export async function requestPasswordReset(email) {
     const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'http://api.loocate.me';
     const resetUrl = `${baseUrl}/api/auth/reset-password?token=${encodeURIComponent(token)}`;
     try {
-      await sendMail({
+      await emailQueue.add('send', {
         to: user.email,
         subject: 'Réinitialisation de votre mot de passe',
         text: `Bonjour,
@@ -153,7 +153,7 @@ Cliquez sur ce lien pour définir un nouveau mot de passe (valide 1 heure): ${re
       });
     } catch (e) {
       // Log but do not reveal; continue to avoid user enumeration
-      console.error('Failed to send reset email:', e?.message || e);
+      console.error('Failed to enqueue reset email:', e?.message || e);
     }
   }
   // Always return success to avoid leaking whether the email exists
@@ -188,7 +188,7 @@ async function createAndSendEmailVerification(user) {
   const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'http://api.loocate.me';
   const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
   try {
-    await sendMail({
+    await emailQueue.add('send', {
       to: user.email,
       subject: 'Vérifiez votre adresse email',
       text: `Bienvenue sur LoocateMe !
@@ -196,7 +196,7 @@ Merci de confirmer votre adresse en cliquant sur ce lien: ${verifyUrl}`,
       html: `<p>Bienvenue sur <strong>LoocateMe</strong> !</p><p>Merci de confirmer votre adresse email en cliquant ici: <a href="${verifyUrl}">Vérifier mon email</a></p>`,
     });
   } catch (e) {
-    console.error('Failed to send verification email:', e?.message || e);
+    console.error('Failed to enqueue verification email:', e?.message || e);
   }
 }
 
@@ -257,7 +257,7 @@ export async function requestBusinessActivationEmail(user) {
   const siteUrl = process.env.BUSINESS_SITE_PUBLIC_URL || 'https://pro.loocate.me';
   const activateUrl = `${siteUrl}/activate?token=${encodeURIComponent(token)}`;
   try {
-    await sendMail({
+    await emailQueue.add('send', {
       to: user.email,
       subject: 'Votre compte professionnel LoocateMe est validé 🎉',
       text: `Bonjour,
@@ -266,7 +266,7 @@ Cliquez sur ce lien pour activer votre compte et définir votre mot de passe (va
       html: `<p>Bonjour,</p><p>Votre demande de compte professionnel <strong>LoocateMe</strong> a été validée par notre équipe.</p><p><a href="${activateUrl}">Cliquez ici pour activer votre compte et définir votre mot de passe</a> (valide 7 jours).</p>`,
     });
   } catch (e) {
-    console.error('Failed to send business activation email:', e?.message || e);
+    console.error('Failed to enqueue business activation email:', e?.message || e);
   }
 }
 

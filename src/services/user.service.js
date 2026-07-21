@@ -4,7 +4,44 @@ import { Event } from '../models/Event.js';
 import { redisClient } from '../config/redis.js';
 import { sendPushUnified } from './push.service.js';
 import { NotificationDedup } from '../models/NotificationDedup.js';
-import { recalculateCityStars } from './location.service.js';
+import { cityStarsQueue } from '../config/queue.js';
+import { singleflight } from '../utils/singleflight.js';
+
+// Cache très court des candidats POI proches (geoNear 200m) pour le heartbeat.
+// TTL volontairement court (3s, pas 10s comme /api/locations) : cette liste
+// sert à détecter l'entrée/sortie d'un lieu en temps réel, la précision prime
+// sur le taux de cache hit ici. Rounding à 4 décimales (~11m) reste dans le
+// même ordre de grandeur que le bruit GPS (±15m) déjà toléré par la logique
+// d'hystérésis plus bas (MIN_LEAD_M), donc n'introduit pas d'imprécision
+// nouvelle significative — mais absorbe les rafales de heartbeats simultanés
+// dans un lieu dense (ex: tout le monde dans le même bar).
+const POI_CANDIDATES_CACHE_TTL_SECONDS = 3;
+
+async function getNearbyPoiCandidates(lat, lon) {
+  const cacheKey = `poi-candidates:v1:${lat.toFixed(4)}:${lon.toFixed(4)}`;
+  try {
+    const cached = await redisClient.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch {}
+
+  return singleflight(cacheKey, async () => {
+    const geoNearResult = await Location.aggregate([
+      {
+        $geoNear: {
+          near: { type: 'Point', coordinates: [lon, lat] },
+          distanceField: 'dist',
+          maxDistance: 200,
+          spherical: true,
+        },
+      },
+      { $limit: 5 },
+    ]);
+    try {
+      await redisClient.set(cacheKey, JSON.stringify(geoNearResult), { EX: POI_CANDIDATES_CACHE_TTL_SECONDS });
+    } catch {}
+    return geoNearResult;
+  });
+}
 
 const MIN_STAY_MS = 5 * 60 * 1000; // 5 minutes minimum pour être comptabilisé
 const ULTRA_BOOST_CLAIM_MS = 20 * 60 * 1000; // 20 minutes, cf. texte du push dans ultraBoost.service.js
@@ -85,17 +122,7 @@ export async function updateLocation(userId, { lat, lon }) {
   const oldLocation = userToUpdate.location || { type: 'Point', coordinates: [0, 0] };
 
   // Utilisation de l'agrégation pour obtenir les distances exactes et gérer le rayon par lieu
-  const geoNearResult = await Location.aggregate([
-    {
-      $geoNear: {
-        near: { type: 'Point', coordinates: [lon, lat] },
-        distanceField: 'dist',
-        maxDistance: 200, // On cherche un peu plus large pour l'hystérésis
-        spherical: true,
-      },
-    },
-    { $limit: 5 }
-  ]);
+  const geoNearResult = await getNearbyPoiCandidates(lat, lon);
 
   const MAX_RADIUS = 50; // Cap global — overrides stale DB entries with larger values
   // Avantage minimal (en mètres) que le lieu le plus proche doit avoir sur le
@@ -193,7 +220,12 @@ export async function updateLocation(userId, { lat, lon }) {
 
           // Recalcule popularity + étoiles par tertiles de ville
           const loc = await Location.findById(currentLocationId, 'city').lean();
-          await recalculateCityStars(loc?.city || null);
+          // Décalé en tâche de fond : cette agrégation (tous les Events 30j d'une
+          // ville) n'a aucune raison de bloquer la réponse du heartbeat qui vient
+          // de la déclencher.
+          await cityStarsQueue.add('recalc', { city: loc?.city || null }).catch((e) => {
+            console.warn('[user.service] Failed to enqueue city stars recalc:', e.message);
+          });
           console.log(`[Presence] Visit recorded for user ${userId} at POI ${currentLocationId} after ${Math.round(elapsedMs / 60000)}min`);
         }
       } catch (e) {

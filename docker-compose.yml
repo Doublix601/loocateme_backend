@@ -8,7 +8,12 @@ services:
     environment:
       - DOCKER_CONTAINER=true
       - PORT=4000
-      - NODE_ENV=development
+      - NODE_ENV=production
+      # Sur ce VPS à 4 vCPU, Mongo (le vrai goulot d'étranglement mesuré en test
+      # de charge) a besoin de marge CPU. Laisser PM2 prendre les 4 coeurs (mode
+      # 'max' par défaut) affame Mongo pendant les pics. 3 workers API laisse
+      # de la place au scheduler pour servir Mongo correctement.
+      - PM2_INSTANCES=3
       - CORS_ORIGIN=http://localhost:19006,http://localhost:3000,http://pro.loocate.me,${BUSINESS_SITE_PUBLIC_URL:-https://pro.loocate.me}
       - MONGODB_URI=mongodb://appuser:${MONGO_APP_PASSWORD:-change-me-app}@mongo:27017/loocateme
       - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET must be set in .env}
@@ -44,12 +49,15 @@ services:
       - STRIPE_PRICE_PRO2=${STRIPE_PRICE_PRO2:?STRIPE_PRICE_PRO2 must be set in .env}
       - STRIPE_PRICE_PRO3=${STRIPE_PRICE_PRO3:?STRIPE_PRICE_PRO3 must be set in .env}
     volumes:
-      - ./:/app
       - ./data/uploads:/app/uploads
     depends_on:
       - mongo
       - redis
-    command: sh -c "if [ -f package-lock.json ]; then npm ci || npm install; else npm install; fi && npm run dev"
+    # Plus de bind-mount du code source ni de `npm run dev` : en prod on fait
+    # tourner l'image buildée (Dockerfile -> pm2-runtime en cluster sur tous
+    # les vCPU). Un changement de code nécessite désormais un rebuild
+    # (`docker-compose build api && docker-compose up -d api`), pas juste
+    # sauvegarder un fichier.
   nginx:
     image: nginx:alpine
     container_name: loocateme-nginx
@@ -61,6 +69,7 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - certbot_webroot:/var/www/certbot
       - certbot_certs:/etc/letsencrypt
+      - ./data/uploads:/var/www/uploads:ro
     depends_on:
       - api
     networks:

@@ -13,4 +13,6 @@ COPY . .
 
 EXPOSE 4000
 
-CMD ["node", "src/server.js"]
+# pm2-runtime en cluster mode : exploite tous les vCPU disponibles au lieu
+# d'un seul process Node mono-thread, sans changer le code applicatif.
+CMD ["npx", "pm2-runtime", "start", "ecosystem.config.cjs"]

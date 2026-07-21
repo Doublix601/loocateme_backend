@@ -25,12 +25,20 @@
       admin.createUser({
         user: appUser,
         pwd: appPass,
+        // dbAdmin en plus de readWrite : requis pour activer le slow query
+        // profiling (db.command({ profile: 1, ... })) au démarrage de l'API.
         roles: [
           { role: 'readWrite', db: dbName },
+          { role: 'dbAdmin', db: dbName },
         ],
       });
     } else {
       print(`[mongo-init] Application user "${appUser}" already exists, skipping.`);
+      try {
+        admin.grantRolesToUser(appUser, [{ role: 'dbAdmin', db: dbName }]);
+      } catch (e3) {
+        print(`[mongo-init] Could not grant dbAdmin to existing user: ${e3}`);
+      }
     }
   } catch (e) {
     print(`[mongo-init] Error while creating application user: ${e}`);

@@ -46,7 +46,7 @@ try {
 
 const appdb = db.getSiblingDB('${APP_DB}');
 try {
-  appdb.createUser({ user: 'appuser', pwd: '${APP_PWD}', roles: [{ role: 'readWrite', db: '${APP_DB}' }] });
+  appdb.createUser({ user: 'appuser', pwd: '${APP_PWD}', roles: [{ role: 'readWrite', db: '${APP_DB}' }, { role: 'dbAdmin', db: '${APP_DB}' }] });
   print('[mongo-entrypoint] App user created.');
 } catch (e) { print('[mongo-entrypoint] App user create error: ' + e); }
 

@@ -68,9 +68,26 @@ export async function connectMongo() {
         autoIndex: true,
         dbName: undefined,
         serverSelectionTimeoutMS: 5000,
-        maxPoolSize: 50,
+        // 50 était dimensionné pour un seul process. En cluster PM2 (4 workers),
+        // ça donnait jusqu'à 200 connexions simultanées vers un mongod unique
+        // (confirmé en test de charge : sous contention CPU, un pool aussi large
+        // fait plus de mal que de bien — Mongo passe son temps à faire du context
+        // switching entre centaines d'opérations en attente au lieu d'avancer).
+        // 15 par worker (60 au total) laisse une file d'attente plus courte et
+        // plus gérable pour un mongod mono-instance.
+        maxPoolSize: 15,
       });
       console.log('MongoDB connected');
+      // Slow query log : sans ça, on ne sait jamais quelle requête devient le
+      // prochain goulot d'étranglement avant qu'elle ne fasse mal en prod.
+      // Non-bloquant : appuser peut ne pas avoir le rôle nécessaire (dbAdmin),
+      // auquel cas on log un warning et on continue sans casser le démarrage.
+      try {
+        await mongoose.connection.db.command({ profile: 1, slowms: 100 });
+        console.log('[mongo] Slow query profiling enabled (>100ms -> system.profile)');
+      } catch (e) {
+        console.warn('[mongo] Could not enable slow query profiling (non-fatal):', e?.message || e);
+      }
       return;
     } catch (err) {
       // One-time attempt to auto-create the application user if auth fails and root creds are available

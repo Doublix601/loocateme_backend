@@ -1,5 +1,18 @@
 import { Location } from '../models/Location.js';
 import { User } from '../models/User.js';
+import { redisClient } from '../config/redis.js';
+import { singleflight } from '../utils/singleflight.js';
+
+// Cache de la liste des lieux à proximité : la position d'un utilisateur ne
+// change pas de zone assez souvent pour justifier une agrégation Mongo
+// ($geoNear + 2x $lookup) à chaque appel. Le client ne refetch de toute façon
+// que lors d'un déplacement de ~111m (arrondi à 3 décimales), donc un TTL
+// court est invisible pour l'utilisateur mais absorbe les appels simultanés
+// de plusieurs utilisateurs dans la même zone.
+const LOCATIONS_CACHE_TTL_SECONDS = 10;
+// Fiche lieu : TTL plus court que la liste car un utilisateur regarde souvent
+// une fiche juste après y être entré (précision perçue plus importante).
+const LOCATION_DETAIL_CACHE_TTL_SECONDS = 8;
 
 // Filtrage des lieux par vibe (jour/nuit). Séparation stricte : chaque type
 // appartient à un seul mode.
@@ -26,6 +39,26 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Les champs premium restent en base jusqu'à 7 jours après la perte de
+// l'abonnement (cf. premiumDataPurgeAt sur Location / businessBilling.controller.js),
+// pour permettre une restauration automatique en cas de réabonnement rapide. Mais
+// ni l'app ni le site web ne filtrent leur affichage par businessTier : c'est donc
+// ici, à la sérialisation des réponses publiques, qu'un lieu en tier 'none' doit
+// apparaître comme n'importe quel lieu gratuit (pas de banner/logo/stories/PDF),
+// que ces champs soient déjà vidés ou encore en attente de purge définitive.
+function sanitizePublicLocation(location) {
+  const obj = typeof location.toObject === 'function' ? location.toObject() : { ...location };
+  if (obj.businessTier === 'none') {
+    obj.bannerUrl = '';
+    obj.bannerThumbUrl = '';
+    obj.logoUrl = '';
+    obj.logoThumbUrl = '';
+    obj.stories = [];
+    obj.media = [];
+  }
+  return obj;
 }
 
 function normalizeVibe(v) {
@@ -59,6 +92,20 @@ export const LocationController = {
         return res.status(400).json({ code: 'INVALID_COORDINATES', message: 'Invalid coordinates' });
       }
 
+      const vibeParam = normalizeVibe(req.query.vibe);
+      const cacheKey = `locations:v1:${lat.toFixed(3)}:${lon.toFixed(3)}:${vibeParam}:${req.query.limit || ''}`;
+      try {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) return res.json(JSON.parse(cached));
+      } catch (e) {
+        console.warn('[getLocations] Redis cache read failed:', e.message);
+      }
+
+      // Coalescence des requêtes concurrentes sur la même clé de cache : sans
+      // ça, quand le TTL expire pendant qu'une centaine d'utilisateurs de la
+      // même zone arrivent en même temps, chacun déclenche sa propre
+      // agrégation Mongo en parallèle au lieu qu'une seule serve tout le monde.
+      const payload = await singleflight(cacheKey, async () => {
       // Pagination simple par "limit" (min 40, max 80).
       // Le client demande au minimum 40 lieux et peut en charger plus jusqu'à 80
       // en faisant défiler la liste (cf. LocationListScreen onEndReached).
@@ -226,7 +273,16 @@ export const LocationController = {
         locations = locations.map((l) => (String(l._id) === String(sponsor._id) ? { ...l, isSponsored: true } : l));
       }
 
-      return res.json({ locations });
+        const result = { locations: locations.map(sanitizePublicLocation) };
+        try {
+          await redisClient.set(cacheKey, JSON.stringify(result), { EX: LOCATIONS_CACHE_TTL_SECONDS });
+        } catch (e) {
+          console.warn('[getLocations] Redis cache write failed:', e.message);
+        }
+        return result;
+      });
+
+      return res.json(payload);
     } catch (err) {
       next(err);
     }
@@ -257,48 +313,77 @@ export const LocationController = {
   getLocationById: async (req, res, next) => {
     try {
       const { id } = req.params;
-      // Support des identifiants OSM côté client (`osm:<osmId>`). Ces lieux sont
-      // synchronisés en base via `/locations/sync-osm` et indexés par `osmId`.
-      // On résout vers le document Mongo correspondant pour éviter un cast
-      // ObjectId qui ferait planter la requête.
-      let location = null;
-      if (typeof id === 'string' && id.startsWith('osm:')) {
-        const osmId = Number(id.slice(4));
-        if (Number.isFinite(osmId)) {
-          location = await Location.findOne({ osmId });
+
+      // Cache court : protège les lieux à forte affluence (ex: plusieurs
+      // dizaines d'utilisateurs qui ouvrent la même fiche en quelques secondes
+      // un samedi soir) sans décaler perceptiblement la liste de présences.
+      const cacheKey = `location:v1:${id}`;
+      try {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) return res.json(JSON.parse(cached));
+      } catch (e) {
+        console.warn('[getLocationById] Redis cache read failed:', e.message);
+      }
+
+      const result = await singleflight(cacheKey, async () => {
+        // Support des identifiants OSM côté client (`osm:<osmId>`). Ces lieux sont
+        // synchronisés en base via `/locations/sync-osm` et indexés par `osmId`.
+        // On résout vers le document Mongo correspondant pour éviter un cast
+        // ObjectId qui ferait planter la requête.
+        let location = null;
+        if (typeof id === 'string' && id.startsWith('osm:')) {
+          const osmId = Number(id.slice(4));
+          if (Number.isFinite(osmId)) {
+            location = await Location.findOne({ osmId });
+          }
+        } else {
+          location = await Location.findById(id);
         }
-      } else {
-        location = await Location.findById(id);
-      }
-      if (!location) {
-        return res.status(404).json({ code: 'LOCATION_NOT_FOUND', message: 'Location not found' });
-      }
+        if (!location) {
+          return { notFound: true };
+        }
 
-      // Fetch users checked-in at this location, excluding 'red' status and respecting GDPR
-      const threshold = new Date(Date.now() - 5 * 60 * 1000);
-      const now = new Date();
-      const users = await User.find({
-        currentLocation: location._id,
-        status: { $ne: 'red' },
-        $or: [
-          { 'location.updatedAt': { $gte: threshold } },
-          { boostUntil: { $gte: now } }
-        ]
-      })
-      .select('-password')
-      .sort({ boostUntil: -1, cotePercent: -1, createdAt: 1 }); // Prioritize boosted, then Cote, users
+        // Fetch users checked-in at this location, excluding 'red' status and respecting GDPR
+        const threshold = new Date(Date.now() - 5 * 60 * 1000);
+        const now = new Date();
+        const users = await User.find({
+          currentLocation: location._id,
+          status: { $ne: 'red' },
+          $or: [
+            { 'location.updatedAt': { $gte: threshold } },
+            { boostUntil: { $gte: now } }
+          ]
+        })
+        .select('-password')
+        .sort({ boostUntil: -1, cotePercent: -1, createdAt: 1 }); // Prioritize boosted, then Cote, users
 
-      // Add isGhost flag for boosted users who are offline
-      const usersWithGhostFlag = users.map(user => {
-        const isOffline = user.location && user.location.updatedAt < threshold;
-        const isBoosted = user.boostUntil && user.boostUntil >= now;
-        return {
-          ...user.toObject(),
-          isGhost: isOffline && isBoosted
+        // Add isGhost flag for boosted users who are offline
+        const usersWithGhostFlag = users.map(user => {
+          const isOffline = user.location && user.location.updatedAt < threshold;
+          const isBoosted = user.boostUntil && user.boostUntil >= now;
+          return {
+            ...user.toObject(),
+            isGhost: isOffline && isBoosted
+          };
+        });
+
+        const payload = {
+          location: sanitizePublicLocation(location),
+          users: usersWithGhostFlag,
+          monthlyUsers: location.popularity || 0,
         };
+        try {
+          await redisClient.set(cacheKey, JSON.stringify(payload), { EX: LOCATION_DETAIL_CACHE_TTL_SECONDS });
+        } catch (e) {
+          console.warn('[getLocationById] Redis cache write failed:', e.message);
+        }
+        return payload;
       });
 
-      return res.json({ location, users: usersWithGhostFlag, monthlyUsers: location.popularity || 0 });
+      if (result.notFound) {
+        return res.status(404).json({ code: 'LOCATION_NOT_FOUND', message: 'Location not found' });
+      }
+      return res.json(result);
     } catch (err) {
       next(err);
     }
