@@ -2,6 +2,14 @@ import { Location } from '../models/Location.js';
 import { User } from '../models/User.js';
 import { redisClient } from '../config/redis.js';
 import { singleflight } from '../utils/singleflight.js';
+import {
+  DISTANCE_REF_METERS,
+  USERCOUNT_CAP,
+  WEIGHT_DISTANCE,
+  WEIGHT_STARS,
+  WEIGHT_USERS,
+  SCORING_ALGO,
+} from '../config/locationScoring.js';
 
 // Cache de la liste des lieux à proximité : la position d'un utilisateur ne
 // change pas de zone assez souvent pour justifier une agrégation Mongo
@@ -182,11 +190,28 @@ export const LocationController = {
               userCount: { $ifNull: [{ $arrayElemAt: ['$userCount.count', 0] }, 0] },
             },
           },
+          // Score composite de pertinence : mêle distance, popularité (stars,
+          // déjà calculée par tertiles/ville, cf. location.service.js) et
+          // présence live (userCount), plutôt qu'un tri lexicographique où la
+          // distance n'intervenait qu'en tout dernier départage. Constantes
+          // dans config/locationScoring.js (dupliquées côté client pour le
+          // score de secours des POI OSM, cf. LocationListScreen.js).
           {
-            $sort: {
-              stars: -1,
-              distance: 1,
+            $addFields: {
+              score: {
+                $add: [
+                  { $multiply: [WEIGHT_DISTANCE, { $exp: { $multiply: [-1, { $divide: ['$distance', DISTANCE_REF_METERS] }] } }] },
+                  { $multiply: [WEIGHT_STARS, { $divide: [{ $ifNull: ['$stars', 0] }, 3] }] },
+                  { $multiply: [WEIGHT_USERS, { $divide: [{ $min: ['$userCount', USERCOUNT_CAP] }, USERCOUNT_CAP] }] },
+                ],
+              },
             },
+          },
+          {
+            $sort:
+              SCORING_ALGO === 'legacy'
+                ? { stars: -1, distance: 1 }
+                : { score: -1 },
           },
         ]);
       };
