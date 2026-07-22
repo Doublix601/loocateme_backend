@@ -131,6 +131,7 @@ export async function updateLocation(userId, { lat, lon }) {
   // séparés de moins de 40–50 m (ex : Nevermind vs Bakin Donuts côte à côte).
   const MIN_LEAD_M = 12;
   let matchedLocationId = null;
+  let pendingLocationId = null;
   if (geoNearResult.length > 0) {
     // 1. Logique d'hystérésis : si l'utilisateur était déjà dans un lieu, on vérifie s'il y est encore
     const oldLocationInList = oldLocationId ? geoNearResult.find(p => String(p._id) === String(oldLocationId)) : null;
@@ -149,8 +150,18 @@ export async function updateLocation(userId, { lat, lon }) {
         const hasMinLead = !second || (second.dist - nearest.dist) >= MIN_LEAD_M;
         if (hasMinLead) {
           matchedLocationId = nearest._id;
+        } else if (oldPendingLocationId && String(oldPendingLocationId) === String(nearest._id)) {
+          // Ambiguïté persistante (lieux trop proches, ex: deux POIs à 7 m l'un de
+          // l'autre) mais ce même lieu ressort déjà comme le plus proche au heartbeat
+          // précédent : ça n'est pas du bruit GPS ponctuel, on confirme l'entrée.
+          // Coûte un cycle de heartbeat (quelques secondes à ~1 min), au lieu de
+          // bloquer indéfiniment le check-in tant que les deux lieux restent voisins.
+          matchedLocationId = nearest._id;
+        } else {
+          // Premier heartbeat ambigu pour ce candidat : on le mémorise sans encore
+          // matcher, pour confirmer au heartbeat suivant s'il reste le plus proche.
+          pendingLocationId = nearest._id;
         }
-        // Sinon : ambiguïté entre lieux trop proches → on garde l'ancien lieu (ou null)
       }
     }
   }
@@ -168,13 +179,14 @@ export async function updateLocation(userId, { lat, lon }) {
     update.location = { ...oldLocation, updatedAt: new Date() };
   }
 
-  // Mise à jour instantanée de la présence : dès que l'utilisateur est physiquement
-  // dans le rayon d'un POI il est compté, et dès qu'il en sort il est retiré.
-  // Les champs `pendingLocation` / `pendingLocationSince` (ancienne logique d'hystérésis
-  // temporelle de 2 minutes) sont conservés au schéma pour rétrocompatibilité mais
-  // toujours remis à null.
-  update.pendingLocation = null;
-  update.pendingLocationSince = null;
+  // Mise à jour quasi-instantanée de la présence : dès que l'utilisateur est
+  // physiquement dans le rayon d'un POI il est compté, et dès qu'il en sort il
+  // est retiré. Les champs `pendingLocation` / `pendingLocationSince` ne servent
+  // plus à l'ancienne hystérésis temporelle de 2 minutes : ils mémorisent
+  // seulement un candidat ambigu (deux POIs trop proches) le temps d'un
+  // heartbeat, pour le confirmer au suivant (cf. boucle de matching plus haut).
+  update.pendingLocation = pendingLocationId;
+  update.pendingLocationSince = pendingLocationId ? new Date() : null;
 
   if (!matchedLocationId) {
     // L'utilisateur n'est dans aucun POI → retrait immédiat
@@ -192,7 +204,7 @@ export async function updateLocation(userId, { lat, lon }) {
     update.boostUntil = null;
     console.log(`[Presence] User ${userId} entered POI ${matchedLocationId} (instant)`);
   }
-  void oldPendingLocationId; void oldPendingSince; // kept for backward-compat reads
+  void oldPendingSince; // plus utilisé : la confirmation ne dépend que de l'identité du candidat, pas d'un délai
 
   const user = await User.findByIdAndUpdate(userId, { $set: update }, { new: true });
 
