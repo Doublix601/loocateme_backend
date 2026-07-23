@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "start:cluster": "pm2-runtime start ecosystem.config.cjs",
-    "db:init": "node scripts/db-init.js"
+    "db:init": "node scripts/db-init.js",
+    "test": "node --test tests/"
   },
   "engines": {
     "node": ">=18.18.0"

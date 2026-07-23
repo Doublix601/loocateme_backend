@@ -26,7 +26,9 @@ export async function recordDailyActivity(userId, lastLoginAt) {
   if (gap === 1) {
     update = [{ $set: { cotePercent: { $min: [100, { $add: ['$cotePercent', 25] }] }, lastLoginAt: now, coteWarningSentAt: null } }];
   } else {
-    update = { $set: { cotePercent: 25, lastLoginAt: now, coteWarningSentAt: null } };
+    // Au moins un jour civil complet sauté : la Cote tombe à 0% et n'y reste
+    // qu'un jour civil (~24h) avant de pouvoir remonter à la reconnexion suivante.
+    update = { $set: { cotePercent: 0, lastLoginAt: now, coteWarningSentAt: null } };
   }
   await User.updateOne({ _id: userId }, update);
 }
