@@ -1,5 +1,10 @@
 import { User } from '../models/User.js';
+import { Superlike } from '../models/Superlike.js';
 import { sendPushUnified } from '../services/push.service.js';
+import { computeMutualConnection } from '../services/user.service.js';
+
+const SUPERLIKE_PROFILE_FIELDS =
+  'customName username firstName lastName bio profileImageUrl birthdate gender socialNetworks isPremium role status updatedAt';
 
 export const PremiumController = {
   startTrial: async (req, res, next) => {
@@ -60,6 +65,11 @@ export const PremiumController = {
         return res.status(400).json({ code: 'SELF_SUPERLIKE' });
       }
 
+      const existing = await Superlike.findOne({ sender: senderId, target: targetUserId });
+      if (existing) {
+        return res.status(400).json({ code: 'ALREADY_SUPERLIKED', message: 'Superlike déjà envoyé à cet utilisateur' });
+      }
+
       const sender = await User.findById(senderId);
       if (!sender) return res.status(404).json({ code: 'USER_NOT_FOUND' });
 
@@ -74,6 +84,13 @@ export const PremiumController = {
         await sender.save();
       }
 
+      // Persist the superlike event so it can be listed in the recipient's history
+      try {
+        await Superlike.create({ sender: senderId, target: targetUserId });
+      } catch (err) {
+        console.error('[PremiumController] Failed to persist superlike event', err);
+      }
+
       // Push notification to target
       try {
         const senderName = sender.customName || sender.username || 'Quelqu\'un';
@@ -83,9 +100,114 @@ export const PremiumController = {
           body: `${senderName} te remarque dans cet endroit.`,
           data: { kind: 'superlike', senderId: String(senderId) },
         });
-      } catch (_) {}
+      } catch (err) {
+        console.error('[PremiumController] Failed to send superlike push notification', err);
+      }
 
       return res.json({ success: true, superlikeBalance: sender.superlikeBalance });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  getReceivedSuperlikes: async (req, res, next) => {
+    try {
+      const userId = req.user?.id;
+      const items = await Superlike.find({ target: userId })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .populate('sender', SUPERLIKE_PROFILE_FIELDS)
+        .lean();
+
+      const superlikes = await Promise.all(
+        items.map(async (item) => ({
+          id: String(item._id),
+          status: item.status,
+          createdAt: item.createdAt,
+          sender: item.sender
+            ? {
+                ...item.sender,
+                id: String(item.sender._id),
+                name: item.sender.customName || item.sender.username || null,
+                mutualConnection: await computeMutualConnection(userId, item.sender._id),
+              }
+            : null,
+        }))
+      );
+
+      return res.json({ success: true, superlikes });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  getSentSuperlikes: async (req, res, next) => {
+    try {
+      const userId = req.user?.id;
+      const items = await Superlike.find({ sender: userId })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .populate('target', SUPERLIKE_PROFILE_FIELDS)
+        .lean();
+
+      const superlikes = await Promise.all(
+        items.map(async (item) => ({
+          id: String(item._id),
+          status: item.status,
+          createdAt: item.createdAt,
+          respondedAt: item.respondedAt,
+          target: item.target
+            ? {
+                ...item.target,
+                id: String(item.target._id),
+                name: item.target.customName || item.target.username || null,
+                mutualConnection: await computeMutualConnection(userId, item.target._id),
+              }
+            : null,
+        }))
+      );
+
+      return res.json({ success: true, superlikes });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  acceptSuperlike: async (req, res, next) => {
+    try {
+      const userId = req.user?.id;
+      const superlike = await Superlike.findById(req.params.id);
+      if (!superlike) return res.status(404).json({ code: 'SUPERLIKE_NOT_FOUND' });
+      if (String(superlike.target) !== String(userId)) {
+        return res.status(403).json({ code: 'FORBIDDEN' });
+      }
+
+      if (superlike.status === 'accepted') {
+        return res.json({ success: true, id: String(superlike._id), status: 'accepted' });
+      }
+
+      superlike.status = 'accepted';
+      superlike.respondedAt = new Date();
+      await superlike.save();
+
+      try {
+        const accepter = await User.findById(userId);
+        const accepterName = accepter?.customName || accepter?.username || 'Quelqu\'un';
+        await sendPushUnified({
+          userIds: [String(superlike.sender)],
+          title: '✨ Connexion mutuelle !',
+          body: `${accepterName} a vu ton superlike et souhaite se connecter avec toi !`,
+          data: {
+            kind: 'superlike_accepted',
+            accepterId: String(userId),
+            superlikeId: String(superlike._id),
+          },
+        });
+      } catch (err) {
+        console.error('[PremiumController] Failed to send superlike-accepted push notification', err);
+      }
+
+      return res.json({ success: true, id: String(superlike._id), status: 'accepted' });
     } catch (err) {
       next(err);
     }
@@ -106,7 +228,8 @@ export const PremiumController = {
       const needsReset = !me.lastAllowanceAt || (now.getTime() - new Date(me.lastAllowanceAt).getTime()) >= oneWeekMs;
 
       if (needsReset) {
-        me.superlikeBalance = 3;
+        // Top up to the weekly floor without wiping out a larger balance from purchased packs
+        me.superlikeBalance = Math.max(me.superlikeBalance || 0, 3);
         me.lastAllowanceAt = now;
         await me.save();
         return res.json({ granted: true, superlikeBalance: me.superlikeBalance });

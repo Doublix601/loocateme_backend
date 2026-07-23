@@ -1,4 +1,5 @@
 import { User } from '../models/User.js';
+import { Superlike } from '../models/Superlike.js';
 import { Location } from '../models/Location.js';
 import { Event } from '../models/Event.js';
 import { redisClient } from '../config/redis.js';
@@ -87,6 +88,21 @@ export async function getBlockedIds(userId) {
   }
 }
 
+// A mutual connection exists once one side has superliked the other and the
+// recipient has validated it (see PremiumController.acceptSuperlike). It
+// overrides the normal orange/red status gating on social network visibility.
+export async function computeMutualConnection(userId, otherId) {
+  if (!userId || !otherId || String(userId) === String(otherId)) return false;
+  const exists = await Superlike.exists({
+    status: 'accepted',
+    $or: [
+      { sender: userId, target: otherId },
+      { sender: otherId, target: userId },
+    ],
+  });
+  return !!exists;
+}
+
 export async function getUserByIdForViewer({ userId, targetId }) {
   if (!targetId) return null;
   const target = await User.findById(targetId).select('-password').lean();
@@ -95,6 +111,7 @@ export async function getUserByIdForViewer({ userId, targetId }) {
     if (target.status === 'red' || target.emailVerified === false) return null;
     const blockedIds = await getBlockedIds(userId);
     if (blockedIds.includes(String(targetId))) return null;
+    target.mutualConnection = await computeMutualConnection(userId, targetId);
   }
   return target;
 }
