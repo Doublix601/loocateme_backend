@@ -133,9 +133,16 @@ export const uploadBusinessMedia = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
+// Force HTTPS pour toute URL publique construite depuis une requête : nginx sert aussi
+// le port 80 en clair (compat anciens clients), et req.protocol refléterait alors "http",
+// ce qui fait échouer le chargement des images sous ATS iOS en build production.
+export function getPublicBaseUrl(req) {
+  return process.env.API_PUBLIC_URL || process.env.BASE_URL || `https://${req.get('host')}`;
+}
+
 // Construit l'URL publique absolue d'un média pro, alignée sur le pattern
 // utilisé pour les photos de profil (profile.controller.js:uploadPhoto).
 export function businessMediaPublicUrl(req, filename) {
-  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const baseUrl = getPublicBaseUrl(req);
   return `${baseUrl}/uploads/business-media/${path.basename(String(filename || ''))}`;
 }

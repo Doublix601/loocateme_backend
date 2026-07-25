@@ -122,7 +122,7 @@ export async function extractVideoThumbnail(absPath, { maxWidth = 480 } = {}) {
 // `req` : le worker BullMQ tourne hors requête HTTP, donc on retombe sur la même variable
 // d'env déjà utilisée ailleurs en fallback (auth.service.js) pour l'URL publique de l'API.
 function businessMediaPublicUrlFromEnv(filename) {
-  const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'http://api.loocate.me';
+  const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'https://api.loocate.me';
   return `${baseUrl}/uploads/business-media/${path.basename(String(filename || ''))}`;
 }
 

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middlewares/auth.js';
 import { ChatController } from '../controllers/chat.controller.js';
-import { uploadChatMedia } from '../services/storage.service.js';
+import { uploadChatMedia, getPublicBaseUrl } from '../services/storage.service.js';
 
 const router = Router();
 
@@ -14,7 +14,7 @@ router.post('/media', requireAuth, uploadChatMedia.fields([
   { name: 'media', maxCount: 1 },
   { name: 'thumbnail', maxCount: 1 },
 ]), async (req, res) => {
-  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const baseUrl = getPublicBaseUrl(req);
   const mediaFile = req.files?.media?.[0];
   if (!mediaFile) return res.status(400).json({ code: 'MEDIA_REQUIRED', message: 'Media requis' });
   const thumbnailFile = req.files?.thumbnail?.[0];
