@@ -128,6 +128,50 @@ export async function getUsersByEmails(emails) {
   return users;
 }
 
+const FORCE_CHECKIN_MAX_M = 50;
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Force le check-in de l'utilisateur sur un lieu précis, en bypassant le
+// matching/hystérésis normal. Utilisé quand l'utilisateur constate que le
+// lieu auto-détecté est erroné et en choisit un autre à proximité (≤ 50 m).
+export async function forceCheckIn(userId, { locationId, lat, lon }) {
+  const location = await Location.findById(locationId).select('location');
+  if (!location) throw Object.assign(new Error('Location not found'), { status: 404 });
+
+  const [locLon, locLat] = location.location.coordinates;
+  const distance = haversineMeters(lat, lon, locLat, locLon);
+  if (distance > FORCE_CHECKIN_MAX_M) {
+    throw Object.assign(new Error('Trop loin du lieu sélectionné'), { status: 400 });
+  }
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    {
+      $set: {
+        location: { type: 'Point', coordinates: [lon, lat], updatedAt: new Date() },
+        currentLocation: locationId,
+        currentLocationSince: new Date(),
+        pendingLocation: null,
+        pendingLocationSince: null,
+        boostUntil: null,
+      },
+    },
+    { new: true }
+  );
+  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+  return user;
+}
+
 export async function updateLocation(userId, { lat, lon }) {
   const userToUpdate = await User.findById(userId).select('currentLocation pendingLocation pendingLocationSince currentLocationSince location');
   if (!userToUpdate) throw Object.assign(new Error('User not found'), { status: 404 });

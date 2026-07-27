@@ -49,30 +49,56 @@ export async function decayInactiveUsers() {
 }
 
 /**
- * Envoie une alerte push aux utilisateurs à 6h de l'expiration de leur Cote
- * (18h à 24h sans connexion), une seule fois par jour.
+ * Instant exact où la Cote d'un utilisateur tombera à 0% s'il ne se
+ * reconnecte pas : minuit UTC, deux jours civils après le jour de
+ * `lastLoginAt`. Reflète exactement la condition utilisée par
+ * `decayInactiveUsers` (gap >= 2 jours civils), contrairement à un simple
+ * "+24h" qui ne correspond pas à l'instant réel de la décroissance.
  */
-export async function sendCoteExpiryWarnings() {
-  const now = new Date();
-  const from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const to = new Date(now.getTime() - 18 * 60 * 60 * 1000);
+function getDecayDeadline(lastLoginAt) {
+  const d = new Date(lastLoginAt);
+  const loginDay = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return new Date(loginDay + 2 * DAY_MS);
+}
+
+/**
+ * Envoie une alerte push aux utilisateurs dont la Cote va expirer dans les
+ * 6 prochaines heures. Le seuil est calculé à partir de l'instant réel de
+ * décroissance (minuit UTC, cf. getDecayDeadline) plutôt que d'un délai fixe
+ * depuis la dernière connexion : selon l'heure de connexion, l'ancienne
+ * fenêtre "18h-24h depuis lastLoginAt" pouvait se déclencher bien trop tôt ou
+ * complètement rater la vraie échéance (celle-ci peut survenir entre ~24h et
+ * ~48h après la connexion). Une seule alerte par cycle de connexion.
+ */
+export async function sendCoteExpiryWarnings(now = new Date()) {
+  const WARNING_WINDOW_MS = 6 * DAY_MS / 24; // 6h
+  // Bornes larges pour rester indexable : toute connexion des ~2 derniers
+  // jours peut potentiellement arriver à échéance dans les 6h à venir.
+  const lastLoginFloor = new Date(now.getTime() - 2 * DAY_MS);
 
   const users = await User.find({
     cotePercent: { $gt: 0 },
-    lastLoginAt: { $gte: from, $lt: to },
-    $or: [{ coteWarningSentAt: null }, { coteWarningSentAt: { $lt: to } }],
+    lastLoginAt: { $gte: lastLoginFloor, $lte: now },
   })
-    .select('_id cotePercent')
+    .select('_id cotePercent lastLoginAt coteWarningSentAt')
     .lean();
 
   let sent = 0;
   for (const user of users) {
+    const deadline = getDecayDeadline(user.lastLoginAt);
+    const msLeft = deadline.getTime() - now.getTime();
+    const withinWarningWindow = msLeft > 0 && msLeft <= WARNING_WINDOW_MS;
+    const alreadyWarnedThisCycle =
+      user.coteWarningSentAt && new Date(user.coteWarningSentAt) >= new Date(user.lastLoginAt);
+
+    if (!withinWarningWindow || alreadyWarnedThisCycle) continue;
+
     try {
-      const title = 'Ta cote va expirer';
+      const title = 'Ta cote va bientôt expirer';
       const body =
         user.cotePercent === 100
-          ? 'Ta cote de 100% va expirer, garde là en te connectant maintenant'
-          : `Ta cote de ${user.cotePercent}% va expirer, ne la pers pas et fais là grimper en te connectant maintenant`;
+          ? 'Il te reste 6h avant que ta cote de 100% ne retombe à 0%, connecte-toi maintenant pour la garder'
+          : `Il te reste 6h avant que ta cote de ${user.cotePercent}% ne retombe à 0%, connecte-toi maintenant pour la faire grimper`;
 
       await sendPushUnified({
         userIds: [user._id],

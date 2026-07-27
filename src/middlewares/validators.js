@@ -73,6 +73,11 @@ export const validators = {
   login: [body('email').isEmail(), body('password').isString()],
   forgot: [body('email').isEmail()],
   updateLocation: [body('lat').isFloat({ min: -90, max: 90 }), body('lon').isFloat({ min: -180, max: 180 })],
+  forceCheckIn: [
+    body('locationId').isString().isLength({ min: 1 }),
+    body('lat').isFloat({ min: -90, max: 90 }),
+    body('lon').isFloat({ min: -180, max: 180 }),
+  ],
   nearby: [
     query('lat').isFloat({ min: -90, max: 90 }),
     query('lon').isFloat({ min: -180, max: 180 }),

@@ -9,6 +9,16 @@ const CONSUMABLE_GRANTS = {
 
 export const handleWebhook = async (req, res) => {
   try {
+    const authHeader = req.headers.authorization;
+    const secret = process.env.REVENUECAT_WEBHOOK_SECRET;
+    if (!secret) {
+      console.error('[RevenueCat Webhook] REVENUECAT_WEBHOOK_SECRET is not set — rejecting webhook');
+      return res.status(500).json({ error: 'Webhook secret not configured' });
+    }
+    if (authHeader !== `Bearer ${secret}`) {
+      return res.status(401).json({ error: 'Unauthorized webhook' });
+    }
+
     const { event } = req.body;
     if (!event) {
       return res.status(400).json({ error: 'Invalid webhook payload' });

@@ -8,6 +8,7 @@ const router = Router();
 
 router.get('/me', requireAuth, UserController.me);
 router.post('/location', requireAuth, heartbeatLimiter, validate(validators.updateLocation), UserController.updateLocation);
+router.post('/location/force', requireAuth, heartbeatLimiter, validate(validators.forceCheckIn), UserController.forceCheckIn);
 router.post('/heartbeat', requireAuth, heartbeatLimiter, validate(validators.updateLocation), UserController.heartbeat);
 router.get('/nearby', requireAuth, validate(validators.nearby), UserController.nearby);
 router.get('/popular', requireAuth, validate(validators.popular), UserController.popular);

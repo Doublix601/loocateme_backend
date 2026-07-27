@@ -1,4 +1,4 @@
-import { getNearbyUsers, updateLocation, getUsersByEmails, getPopularUsers, searchUsers, getUserByIdForViewer } from '../services/user.service.js';
+import { getNearbyUsers, updateLocation, forceCheckIn, getUsersByEmails, getPopularUsers, searchUsers, getUserByIdForViewer } from '../services/user.service.js';
 
 export const UserController = {
   me: async (req, res, next) => {
@@ -69,6 +69,15 @@ export const UserController = {
     try {
       const { lat, lon } = req.body;
       const user = await updateLocation(req.user.id, { lat, lon });
+      return res.json({ user });
+    } catch (err) {
+      next(err);
+    }
+  },
+  forceCheckIn: async (req, res, next) => {
+    try {
+      const { locationId, lat, lon } = req.body;
+      const user = await forceCheckIn(req.user.id, { locationId, lat, lon });
       return res.json({ user });
     } catch (err) {
       next(err);
