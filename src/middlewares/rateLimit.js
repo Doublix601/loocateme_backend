@@ -33,3 +33,37 @@ export const supportContactLimiter = rateLimit({
   keyGenerator: (req) => req.ip,
   message: { code: 'RATE_LIMITED', message: 'Trop de messages envoyés, réessayez plus tard.' },
 });
+
+// Anti-bruteforce sur la connexion : par IP (un attaquant peut cibler des
+// emails différents) et volontairement strict, un utilisateur légitime ne
+// se trompe pas 10 fois de mot de passe en une minute.
+export const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
+  message: { code: 'RATE_LIMITED', message: 'Trop de tentatives de connexion, réessayez plus tard.' },
+});
+
+// Anti-abus sur la création de compte (énumération d'emails via EMAIL_TAKEN,
+// spam de comptes) : par IP, plus permissif que le login.
+export const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
+  message: { code: 'RATE_LIMITED', message: 'Trop de tentatives de création de compte, réessayez plus tard.' },
+});
+
+// Anti-spam sur la demande de reset password (déclenche un envoi d'email à
+// chaque appel) : par IP, fenêtre plus large.
+export const forgotPasswordLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
+  message: { code: 'RATE_LIMITED', message: 'Trop de demandes de réinitialisation, réessayez plus tard.' },
+});

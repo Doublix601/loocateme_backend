@@ -7,10 +7,10 @@ import crypto from 'crypto';
 import { isAtLeast18 } from '../utils/age.js';
 import { emailQueue } from '../config/queue.js';
 
-function signAccessToken(userId) {
-  // Issue a non-expiring access token. It will remain valid until the user logs out or changes password.
+export function signAccessToken(userId) {
   return jwt.sign({}, process.env.JWT_ACCESS_SECRET, {
     subject: userId.toString(),
+    expiresIn: process.env.JWT_ACCESS_EXPIRES || '24h',
   });
 }
 
@@ -160,9 +160,19 @@ Cliquez sur ce lien pour définir un nouveau mot de passe (valide 1 heure): ${re
   return { success: true };
 }
 
+const SENSITIVE_USER_FIELDS = [
+  'password',
+  'emailVerifyTokenHash',
+  'emailVerifyExpiresAt',
+  'pwdResetTokenHash',
+  'pwdResetExpiresAt',
+  'businessActivationTokenHash',
+  'businessActivationExpiresAt',
+];
+
 export function sanitize(userDoc) {
   const user = userDoc.toObject ? userDoc.toObject() : userDoc;
-  delete user.password;
+  for (const field of SENSITIVE_USER_FIELDS) delete user[field];
   return user;
 }
 
@@ -203,7 +213,7 @@ Merci de confirmer votre adresse en cliquant sur ce lien: ${verifyUrl}`,
 export async function verifyEmailByToken(token) {
   const hash = sha256(token);
   const now = new Date();
-  const user = await User.findOne({ emailVerifyTokenHash: hash });
+  const user = await User.findOne({ emailVerifyTokenHash: hash }).select('+emailVerifyExpiresAt');
   if (!user) {
     const err = new Error('Token de vérification invalide');
     err.status = 400;
@@ -273,7 +283,7 @@ Cliquez sur ce lien pour activer votre compte et définir votre mot de passe (va
 export async function activateBusinessAccount(token, password) {
   const hash = sha256(token);
   const now = new Date();
-  const user = await User.findOne({ businessActivationTokenHash: hash }).select('+password');
+  const user = await User.findOne({ businessActivationTokenHash: hash }).select('+password +businessActivationExpiresAt');
   if (!user) {
     const err = new Error("Lien d'activation invalide");
     err.status = 400;
@@ -297,7 +307,7 @@ export async function activateBusinessAccount(token, password) {
 export async function resetPasswordByToken(token, newPassword) {
   const hash = sha256(token);
   const now = new Date();
-  const user = await User.findOne({ pwdResetTokenHash: hash }).select('+password');
+  const user = await User.findOne({ pwdResetTokenHash: hash }).select('+password +pwdResetExpiresAt');
   if (!user) {
     const err = new Error('Token de réinitialisation invalide');
     err.status = 400;

@@ -1,5 +1,4 @@
-import { login, signup, logout, requestPasswordReset, verifyEmailByToken, resetPasswordByToken, businessLogin, activateBusinessAccount } from '../services/auth.service.js';
-import jwt from 'jsonwebtoken';
+import { login, signup, logout, requestPasswordReset, verifyEmailByToken, resetPasswordByToken, businessLogin, activateBusinessAccount, signAccessToken } from '../services/auth.service.js';
 import { RefreshToken } from '../models/RefreshToken.js';
 
 function setRefreshCookie(res, token) {
@@ -20,7 +19,7 @@ export const AuthController = {
       const data = await signup({ email, password, username, firstName, lastName, customName, birthdate, gender });
       // Only set cookie if a refresh token was issued (i.e., for verified accounts)
       if (data.refreshToken) setRefreshCookie(res, data.refreshToken);
-      return res.status(201).json({ user: data.user, accessToken: data.accessToken });
+      return res.status(201).json({ user: data.user, accessToken: data.accessToken, refreshToken: data.refreshToken });
     } catch (err) {
       next(err);
     }
@@ -30,7 +29,7 @@ export const AuthController = {
       const { email, password } = req.body;
       const data = await login({ email, password });
       setRefreshCookie(res, data.refreshToken);
-      return res.json({ user: data.user, accessToken: data.accessToken });
+      return res.json({ user: data.user, accessToken: data.accessToken, refreshToken: data.refreshToken });
     } catch (err) {
       next(err);
     }
@@ -101,14 +100,14 @@ export const AuthController = {
   },
   refresh: async (req, res) => {
     try {
-      const token = req.cookies?.refreshToken;
+      // Web (RN cookies are unreliable) uses the httpOnly cookie; native mobile
+      // sends the refresh token explicitly in the body (returned at login/signup).
+      const token = req.cookies?.refreshToken || req.body?.refreshToken;
       if (!token) return res.status(401).json({ code: 'REFRESH_MISSING', message: 'Missing refresh token' });
-      const payload = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+      // Refresh tokens are opaque random strings (see createRefreshToken), not JWTs.
       const doc = await RefreshToken.findOne({ token, revoked: false });
       if (!doc || doc.expiresAt < new Date()) return res.status(401).json({ code: 'REFRESH_INVALID', message: 'Invalid refresh token' });
-      const accessToken = jwt.sign({}, process.env.JWT_ACCESS_SECRET, {
-        subject: payload.sub,
-      });
+      const accessToken = signAccessToken(doc.user);
       return res.json({ accessToken });
     } catch (err) {
       return res.status(401).json({ code: 'REFRESH_INVALID', message: 'Invalid or expired refresh token' });
@@ -116,7 +115,7 @@ export const AuthController = {
   },
   logout: async (req, res, next) => {
     try {
-      const token = req.cookies?.refreshToken;
+      const token = req.cookies?.refreshToken || req.body?.refreshToken;
       await logout(req.user?.id, token);
       res.clearCookie('refreshToken', { path: '/api/auth' });
       return res.json({ success: true });

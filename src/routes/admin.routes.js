@@ -5,12 +5,29 @@ import { FeatureFlag } from '../models/FeatureFlag.js';
 import { CronService } from '../services/cron.service.js';
 import { sendMail, verifyMailTransport } from '../services/email.service.js';
 import { sendUnifiedNotification } from '../services/fcm.service.js';
+import { sanitize } from '../services/auth.service.js';
 
 const router = Router();
 
+// Middleware to check if user is admin
+const requireAdmin = async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Authentification requise' });
+    }
+    const user = await User.findById(req.user.id).lean();
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ code: 'FORBIDDEN', message: 'Accès réservé aux administrateurs' });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
 // GET /api/admin/users
 // Returns all users, paginated, without password field
-router.get('/users', requireAuth, async (req, res, next) => {
+router.get('/users', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
@@ -63,7 +80,7 @@ router.get('/smtp-status', async (req, res) => {
 // POST /api/admin/push/send
 // Envoie une notification configurable via FCM aux userIds ou tokens fournis
 // Body: { userIds?: string[]|string(csv), tokens?: string[]|string(csv), title?, body?, data?, imageUrl?, sound?, badge?, androidChannelId?, priority?, collapseKey?, mutableContent?, contentAvailable? }
-router.post('/push/send', requireAuth, async (req, res, next) => {
+router.post('/push/send', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const b = req.body || {};
     const toArray = (v) => {
@@ -103,7 +120,7 @@ router.post('/push/send', requireAuth, async (req, res, next) => {
 
 // PUT /api/admin/users/:id/role
 // Body: { role: 'Premium'|'Free' } OR { isPremium: boolean }
-router.put('/users/:id/role', requireAuth, async (req, res, next) => {
+router.put('/users/:id/role', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const id = String(req.params.id || '').trim();
     if (!id) return res.status(400).json({ code: 'ID_REQUIRED', message: 'ID utilisateur requis' });
@@ -124,29 +141,11 @@ router.put('/users/:id/role', requireAuth, async (req, res, next) => {
     if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'Utilisateur introuvable' });
     user.isPremium = isPremium;
     await user.save();
-    const safe = user.toObject();
-    delete safe.password;
-    return res.json({ success: true, user: safe });
+    return res.json({ success: true, user: sanitize(user) });
   } catch (err) {
     next(err);
   }
 });
-
-// Middleware to check if user is admin
-const requireAdmin = async (req, res, next) => {
-  try {
-    if (!req.user?.id) {
-      return res.status(401).json({ code: 'UNAUTHORIZED', message: 'Authentification requise' });
-    }
-    const user = await User.findById(req.user.id).lean();
-    if (!user || user.role !== 'admin') {
-      return res.status(403).json({ code: 'FORBIDDEN', message: 'Accès réservé aux administrateurs' });
-    }
-    next();
-  } catch (err) {
-    next(err);
-  }
-};
 
 // GET /api/admin/flags - Get all feature flags (admin only)
 router.get('/flags', requireAuth, requireAdmin, async (req, res, next) => {
@@ -199,9 +198,7 @@ router.put('/users/:id/user-role', requireAuth, requireAdmin, async (req, res, n
     }
     user.role = role;
     await user.save();
-    const safe = user.toObject();
-    delete safe.password;
-    return res.json({ success: true, user: safe });
+    return res.json({ success: true, user: sanitize(user) });
   } catch (err) {
     next(err);
   }
@@ -221,9 +218,7 @@ router.put('/users/:id/unban', requireAuth, requireAdmin, async (req, res, next)
     user.moderation.bannedBy = null;
     user.moderation.banReason = '';
     await user.save();
-    const safe = user.toObject();
-    delete safe.password;
-    return res.json({ success: true, user: safe });
+    return res.json({ success: true, user: sanitize(user) });
   } catch (err) {
     next(err);
   }
@@ -231,7 +226,7 @@ router.put('/users/:id/unban', requireAuth, requireAdmin, async (req, res, next)
 
 // POST /api/admin/cleanup-presence
 // Sets all expired users (last_seen_at < 15min) to status: 'inactive' (currentLocation: null)
-router.post('/cleanup-presence', requireAuth, async (req, res, next) => {
+router.post('/cleanup-presence', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const threshold = new Date(Date.now() - 15 * 60 * 1000);
     

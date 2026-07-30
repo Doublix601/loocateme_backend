@@ -124,9 +124,15 @@ export async function updateProfileImage(userId, imageUrl) {
     const oldUrl = current.profileImageUrl;
     if (oldUrl && oldUrl !== imageUrl) {
       const p = localPathFromUrl(oldUrl);
-      if (p && fs.existsSync(p)) fs.unlink(p, () => {});
+      if (p && fs.existsSync(p)) {
+        fs.unlink(p, (err) => {
+          if (err) console.warn('[profile.service] Failed to delete old profile image', p, err.message);
+        });
+      }
     }
-  } catch {}
+  } catch (err) {
+    console.warn('[profile.service] Error while deleting old profile image', err?.message || err);
+  }
 
   return user;
 }
@@ -144,8 +150,14 @@ export async function removeProfileImage(userId) {
   try {
     const oldUrl = current.profileImageUrl;
     const p = localPathFromUrl(oldUrl);
-    if (p && fs.existsSync(p)) fs.unlink(p, () => {});
-  } catch {}
+    if (p && fs.existsSync(p)) {
+      fs.unlink(p, (err) => {
+        if (err) console.warn('[profile.service] Failed to delete old profile image', p, err.message);
+      });
+    }
+  } catch (err) {
+    console.warn('[profile.service] Error while deleting old profile image', err?.message || err);
+  }
 
   return user;
 }

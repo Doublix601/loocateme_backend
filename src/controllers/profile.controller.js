@@ -1,12 +1,13 @@
 import { updateProfile, updateProfileImage, removeProfileImage } from '../services/profile.service.js';
 import { getPublicBaseUrl } from '../services/storage.service.js';
+import { sanitize } from '../services/auth.service.js';
 
 export const ProfileController = {
   update: async (req, res, next) => {
     try {
       const { username, firstName, lastName, customName, bio } = req.body;
       const user = await updateProfile(req.user.id, { username, firstName, lastName, customName, bio });
-      return res.json({ user });
+      return res.json({ user: sanitize(user) });
     } catch (err) {
       next(err);
     }
@@ -23,13 +24,11 @@ export const ProfileController = {
         return res.status(403).json({ code: 'PREMIUM_REQUIRED', message: 'Le mode invisible est réservé aux abonnés Premium.' });
       }
       if (userDoc.status === status) {
-        return res.json({ user: userDoc });
+        return res.json({ user: sanitize(userDoc) });
       }
       userDoc.status = status;
       await userDoc.save();
-      const user = userDoc.toObject();
-      delete user.password;
-      return res.json({ user });
+      return res.json({ user: sanitize(userDoc) });
     } catch (err) {
       next(err);
     }
@@ -41,7 +40,7 @@ export const ProfileController = {
       const baseUrl = getPublicBaseUrl(req);
       const url = `${baseUrl}/uploads/${req.file.filename}`;
       const user = await updateProfileImage(req.user.id, url);
-      return res.json({ user });
+      return res.json({ user: sanitize(user) });
     } catch (err) {
       next(err);
     }
@@ -49,7 +48,7 @@ export const ProfileController = {
   deletePhoto: async (req, res, next) => {
     try {
       const user = await removeProfileImage(req.user.id);
-      return res.json({ user });
+      return res.json({ user: sanitize(user) });
     } catch (err) {
       next(err);
     }
@@ -74,7 +73,7 @@ export const ProfileController = {
         update.gender = gender;
       }
       const user = await User.findByIdAndUpdate(req.user.id, update, { new: true }).select('-password');
-      return res.json({ user });
+      return res.json({ user: sanitize(user) });
     } catch (err) {
       next(err);
     }

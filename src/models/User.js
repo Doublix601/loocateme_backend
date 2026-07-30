@@ -65,8 +65,8 @@ const UserSchema = new mongoose.Schema(
     // Account type: 'individual' (default, mobile app) vs 'business' (web-only, pro dashboard)
     accountType: { type: String, enum: ['individual', 'business'], default: 'individual', index: true },
     // Activation link for business accounts (set password + verify email in one step)
-    businessActivationTokenHash: { type: String, index: true },
-    businessActivationExpiresAt: { type: Date },
+    businessActivationTokenHash: { type: String, index: true, select: false },
+    businessActivationExpiresAt: { type: Date, select: false },
     // Optional demographics, opt-in via privacyPreferences.analytics, used for business location stats
     birthdate: { type: Date },
     gender: { type: String, enum: ['male', 'female', 'other', 'prefer_not_to_say'] },
@@ -118,10 +118,10 @@ const UserSchema = new mongoose.Schema(
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     // Email verification and password reset
     emailVerified: { type: Boolean, default: false, index: true },
-    emailVerifyTokenHash: { type: String, index: true },
-    emailVerifyExpiresAt: { type: Date },
-    pwdResetTokenHash: { type: String, index: true },
-    pwdResetExpiresAt: { type: Date },
+    emailVerifyTokenHash: { type: String, index: true, select: false },
+    emailVerifyExpiresAt: { type: Date, select: false },
+    pwdResetTokenHash: { type: String, index: true, select: false },
+    pwdResetExpiresAt: { type: Date, select: false },
   },
   { timestamps: true }
 );

@@ -67,7 +67,7 @@ export const validators = {
       .withMessage('Vous devez avoir au moins 18 ans pour créer un compte.'),
     body('gender')
       .optional({ checkFalsy: true })
-      .isIn(['male', 'female', 'prefer_not_to_say'])
+      .isIn(['male', 'female', 'other', 'prefer_not_to_say'])
       .withMessage('Genre invalide'),
   ],
   login: [body('email').isEmail(), body('password').isString()],
