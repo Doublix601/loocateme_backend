@@ -5,6 +5,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from '@ffmpeg-installer/ffmpeg';
 import ffprobePath from '@ffprobe-installer/ffprobe';
 import { Location } from '../models/Location.js';
+import { invalidateLocationDetailCache } from '../controllers/location.controller.js';
 
 ffmpeg.setFfmpegPath(ffmpegPath.path);
 // Requis par fluent-ffmpeg pour .screenshots() (calcule les timestamps en %,
@@ -145,11 +146,13 @@ export async function processVideoJob({ locationId, kind, subDocId, absPath, max
       { _id: locationId, [`${list}._id`]: subDocId },
       { $set: { [`${list}.$.${urlField}`]: mediaUrl, [`${list}.$.thumbnailUrl`]: thumbnailUrl, [`${list}.$.status`]: 'ready' } },
     );
+    await invalidateLocationDetailCache(locationId);
   } catch (err) {
     await Location.updateOne(
       { _id: locationId, [`${kind === 'story' ? 'stories' : 'events'}._id`]: subDocId },
       { $set: { [`${kind === 'story' ? 'stories' : 'events'}.$.status`]: 'failed' } },
     );
+    await invalidateLocationDetailCache(locationId);
     if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
     throw err;
   }

@@ -3,6 +3,7 @@ import { Location } from '../models/Location.js';
 import { User } from '../models/User.js';
 import { RefreshToken } from '../models/RefreshToken.js';
 import { stripe, priceIdForTier, tierForPriceId } from '../services/stripe.service.js';
+import { resolvePromoCode } from './promoCode.controller.js';
 import { deleteOldMediaFile } from './businessProfile.controller.js';
 import { BOOST_CAPS, BOOST_BALANCE_FIELD, BOOST_MIN_TIER_FOR_PURCHASE } from '../constants/boosts.js';
 import { stripeWebhookQueue } from '../config/queue.js';
@@ -119,9 +120,16 @@ export async function ensureStripeCustomer(location) {
 export const BusinessBillingController = {
   checkoutSession: async (req, res, next) => {
     try {
-      const { locationId, tier } = req.body || {};
+      const { locationId, tier, promoCode: promoCodeInput } = req.body || {};
       if (!VALID_TIERS.includes(tier)) {
         return res.status(400).json({ code: 'INVALID_TIER', message: 'Palier invalide' });
+      }
+      let promoCode = null;
+      if (promoCodeInput) {
+        promoCode = await resolvePromoCode(promoCodeInput);
+        if (!promoCode) {
+          return res.status(400).json({ code: 'INVALID_PROMO_CODE', message: 'Code promo invalide' });
+        }
       }
       const location = await loadOwnedLocation(req, locationId);
       const customerId = await ensureStripeCustomer(location);
@@ -156,8 +164,16 @@ export const BusinessBillingController = {
         success_url: `${siteUrl}/dashboard?checkout=success`,
         cancel_url: `${siteUrl}/paywall?checkout=cancelled`,
         metadata: { locationId: String(location._id), tier },
-        subscription_data: { metadata: { locationId: String(location._id), tier } },
+        subscription_data: {
+          metadata: { locationId: String(location._id), tier },
+          ...(promoCode?.trialDays ? { trial_period_days: promoCode.trialDays } : {}),
+        },
+        ...(promoCode?.stripeCouponId ? { discounts: [{ coupon: promoCode.stripeCouponId }] } : {}),
       });
+      if (promoCode) {
+        promoCode.timesRedeemed += 1;
+        await promoCode.save();
+      }
       return res.json({ url: session.url });
     } catch (err) {
       next(err);

@@ -77,6 +77,7 @@ export const validators = {
     body('locationId').isString().isLength({ min: 1 }),
     body('lat').isFloat({ min: -90, max: 90 }),
     body('lon').isFloat({ min: -180, max: 180 }),
+    body('bypassDistance').optional().isBoolean(),
   ],
   nearby: [
     query('lat').isFloat({ min: -90, max: 90 }),

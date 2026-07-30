@@ -17,10 +17,22 @@ import {
 // que lors d'un déplacement de ~111m (arrondi à 3 décimales), donc un TTL
 // court est invisible pour l'utilisateur mais absorbe les appels simultanés
 // de plusieurs utilisateurs dans la même zone.
-const LOCATIONS_CACHE_TTL_SECONDS = 10;
+const LOCATIONS_CACHE_TTL_SECONDS = 60;
 // Fiche lieu : TTL plus court que la liste car un utilisateur regarde souvent
 // une fiche juste après y être entré (précision perçue plus importante).
-const LOCATION_DETAIL_CACHE_TTL_SECONDS = 8;
+const LOCATION_DETAIL_CACHE_TTL_SECONDS = 60;
+
+// Utilisé par les endpoints qui mutent un lieu (dashboard pro : events, stories,
+// media, cover, logo) pour ne pas laisser le client voir une fiche périmée
+// jusqu'à expiration du TTL ci-dessus.
+export async function invalidateLocationDetailCache(locationId) {
+  if (!locationId) return;
+  try {
+    await redisClient.del(`location:v1:${locationId}`);
+  } catch (e) {
+    console.warn('[invalidateLocationDetailCache] Redis cache delete failed:', e.message);
+  }
+}
 
 // Filtrage des lieux par vibe (jour/nuit). Séparation stricte : chaque type
 // appartient à un seul mode.
@@ -439,7 +451,7 @@ export const LocationController = {
         library: 'Bibliothèque 📚',
         sports_centre: 'Centre sportif 🏟️', stadium: 'Centre sportif 🏟️', pitch: 'Centre sportif 🏟️',
         bowling_alley: 'Bowling 🎳',
-        university: 'Éducation 🎓', college: 'Éducation 🎓', school: 'Éducation 🎓',
+        university: 'Éducation 🎓', college: 'Éducation 🎓',
         coworking_space: 'Coworking 🧑‍💻',
         cinema: 'Cinéma 🎬',
         ice_cream: 'Glacier 🍦',

@@ -76,6 +76,32 @@ export const CronService = {
       }
     });
 
+    // Expiration des événements pro (eventDate + 2 jours, cf. EVENT_DATE_GRACE_MS
+    // dans businessProfile.controller.js) : toutes les 15 minutes.
+    nodeCron.schedule('*/15 * * * *', async () => {
+      try {
+        const { deleteOldMediaFile } = await import('../controllers/businessProfile.controller.js');
+        const locations = await Location.find({
+          'events.expiresAt': { $lt: new Date() },
+        });
+        let removedCount = 0;
+        for (const location of locations) {
+          const expired = location.events.filter((e) => e.expiresAt && e.expiresAt < new Date());
+          if (!expired.length) continue;
+          location.events = location.events.filter((e) => !e.expiresAt || e.expiresAt >= new Date());
+          await location.save();
+          for (const event of expired) {
+            deleteOldMediaFile(event.mediaUrl);
+            deleteOldMediaFile(event.thumbnailUrl);
+          }
+          removedCount += expired.length;
+        }
+        if (removedCount) console.log(`[cron] Expired events removed: ${removedCount}.`);
+      } catch (e) {
+        console.error('[cron] Event expiration error:', e);
+      }
+    });
+
     // Purge définitive des données premium (banner/logo/stories/media) après le
     // délai de grâce de 7 jours (cf. premiumDataPurgeAt sur Location, programmé par
     // les webhooks Stripe dans businessBilling.controller.js) : toutes les heures.

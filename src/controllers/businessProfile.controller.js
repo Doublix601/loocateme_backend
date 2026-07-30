@@ -4,11 +4,12 @@ import { businessMediaPublicUrl } from '../services/storage.service.js';
 import { processImage, processImageWithThumb } from '../services/mediaProcessing.service.js';
 import { localPathFromUrl } from '../utils/uploadPaths.js';
 import { videoProcessingQueue } from '../config/queue.js';
+import { invalidateLocationDetailCache } from './location.controller.js';
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_MEDIA_PDF = 3;
 const MEDIA_ICONS = ['document', 'menu', 'drinks', 'events', 'pricing', 'info'];
-const EVENT_DATE_GRACE_MS = 24 * 60 * 60 * 1000; // eventDate + 1 jour
+const EVENT_DATE_GRACE_MS = 2 * 24 * 60 * 60 * 1000; // eventDate + 2 jours
 const MAX_EVENTS_PER_LOCATION = 2;
 
 export function deleteOldMediaFile(oldUrl) {
@@ -50,6 +51,7 @@ export const BusinessProfileController = {
       req.location.bannerUrl = businessMediaPublicUrl(req, filename);
       req.location.bannerThumbUrl = businessMediaPublicUrl(req, thumbFilename);
       await req.location.save();
+      await invalidateLocationDetailCache(req.location._id);
       deleteOldMediaFile(oldUrl);
       deleteOldMediaFile(oldThumbUrl);
       return res.json({ location: req.location });
@@ -71,6 +73,7 @@ export const BusinessProfileController = {
       req.location.logoUrl = businessMediaPublicUrl(req, filename);
       req.location.logoThumbUrl = businessMediaPublicUrl(req, thumbFilename);
       await req.location.save();
+      await invalidateLocationDetailCache(req.location._id);
       deleteOldMediaFile(oldUrl);
       deleteOldMediaFile(oldThumbUrl);
       return res.json({ location: req.location });
@@ -86,6 +89,7 @@ export const BusinessProfileController = {
       req.location.bannerUrl = '';
       req.location.bannerThumbUrl = '';
       await req.location.save();
+      await invalidateLocationDetailCache(req.location._id);
       deleteOldMediaFile(oldUrl);
       deleteOldMediaFile(oldThumbUrl);
       return res.json({ location: req.location });
@@ -101,6 +105,7 @@ export const BusinessProfileController = {
       req.location.logoUrl = '';
       req.location.logoThumbUrl = '';
       await req.location.save();
+      await invalidateLocationDetailCache(req.location._id);
       deleteOldMediaFile(oldUrl);
       deleteOldMediaFile(oldThumbUrl);
       return res.json({ location: req.location });
@@ -132,6 +137,7 @@ export const BusinessProfileController = {
           status: 'processing',
         });
         await req.location.save();
+        await invalidateLocationDetailCache(req.location._id);
         const story = req.location.stories[req.location.stories.length - 1];
         await videoProcessingQueue.add('story', {
           locationId: req.location._id,
@@ -150,6 +156,7 @@ export const BusinessProfileController = {
         expiresAt: new Date(Date.now() + STORY_TTL_MS),
       });
       await req.location.save();
+      await invalidateLocationDetailCache(req.location._id);
       return res.status(201).json({ location: req.location });
     } catch (err) {
       next(err);
@@ -161,6 +168,7 @@ export const BusinessProfileController = {
       const story = req.location.stories.find((s) => String(s._id) === req.params.storyId);
       req.location.stories = req.location.stories.filter((s) => String(s._id) !== req.params.storyId);
       await req.location.save();
+      await invalidateLocationDetailCache(req.location._id);
       if (story) {
         deleteOldMediaFile(story.url);
         deleteOldMediaFile(story.thumbnailUrl);
@@ -188,6 +196,7 @@ export const BusinessProfileController = {
         icon,
       });
       await req.location.save();
+      await invalidateLocationDetailCache(req.location._id);
       return res.status(201).json({ location: req.location });
     } catch (err) {
       next(err);
@@ -198,6 +207,7 @@ export const BusinessProfileController = {
     try {
       req.location.media = req.location.media.filter((m) => String(m._id) !== req.params.mediaId);
       await req.location.save();
+      await invalidateLocationDetailCache(req.location._id);
       return res.json({ location: req.location });
     } catch (err) {
       next(err);
@@ -214,6 +224,17 @@ export const BusinessProfileController = {
         if (req.file) fs.unlink(req.file.path, () => {});
         return res.status(400).json({ code: 'TITLE_REQUIRED', message: 'Titre requis' });
       }
+      const body = String(req.body?.body || '').trim();
+      if (!body) {
+        if (req.file) fs.unlink(req.file.path, () => {});
+        return res.status(400).json({ code: 'DESCRIPTION_REQUIRED', message: 'Description requise' });
+      }
+      const eventDate = req.body?.eventDate ? new Date(req.body.eventDate) : null;
+      const validEventDate = eventDate && !Number.isNaN(eventDate.getTime()) ? eventDate : null;
+      if (!validEventDate) {
+        if (req.file) fs.unlink(req.file.path, () => {});
+        return res.status(400).json({ code: 'DATE_REQUIRED', message: 'Date requise' });
+      }
       if ((req.location.events?.length || 0) >= MAX_EVENTS_PER_LOCATION) {
         if (req.file) fs.unlink(req.file.path, () => {});
         return res.status(400).json({
@@ -221,9 +242,6 @@ export const BusinessProfileController = {
           message: `Limite de ${MAX_EVENTS_PER_LOCATION} événements par lieu atteinte. Supprimez un événement existant avant d'en ajouter un nouveau.`,
         });
       }
-      const body = String(req.body?.body || '').trim();
-      const eventDate = req.body?.eventDate ? new Date(req.body.eventDate) : null;
-      const validEventDate = eventDate && !Number.isNaN(eventDate.getTime()) ? eventDate : null;
 
       let mediaUrl, mediaType, isVideo = false;
       if (req.file) {
@@ -247,6 +265,7 @@ export const BusinessProfileController = {
         status: isVideo ? 'processing' : 'ready',
       });
       await req.location.save();
+      await invalidateLocationDetailCache(req.location._id);
 
       if (isVideo) {
         const event = req.location.events[req.location.events.length - 1];
@@ -270,6 +289,7 @@ export const BusinessProfileController = {
       const event = req.location.events.find((e) => String(e._id) === req.params.eventId);
       req.location.events = req.location.events.filter((e) => String(e._id) !== req.params.eventId);
       await req.location.save();
+      await invalidateLocationDetailCache(req.location._id);
       if (event) {
         deleteOldMediaFile(event.mediaUrl);
         deleteOldMediaFile(event.thumbnailUrl);

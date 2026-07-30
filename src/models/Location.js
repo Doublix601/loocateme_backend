@@ -116,11 +116,11 @@ const LocationSchema = new mongoose.Schema(
     // il ne crée pas de contenu.
     events: [{
       title: { type: String, required: true },
-      body: { type: String },
+      body: { type: String, required: true },
       mediaUrl: { type: String },
       mediaType: { type: String, enum: ['image', 'video'] },
       thumbnailUrl: { type: String },
-      eventDate: { type: Date },
+      eventDate: { type: Date, required: true },
       createdAt: { type: Date, default: Date.now },
       // Dernier envoi d'Event Boost pour cet événement, null si jamais boosté.
       boostedAt: { type: Date },

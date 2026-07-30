@@ -144,13 +144,25 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 // Force le check-in de l'utilisateur sur un lieu précis, en bypassant le
 // matching/hystérésis normal. Utilisé quand l'utilisateur constate que le
 // lieu auto-détecté est erroné et en choisit un autre à proximité (≤ 50 m).
-export async function forceCheckIn(userId, { locationId, lat, lon }) {
+//
+// `bypassDistance` lève la contrainte des 50 m. Ce flag n'est envoyé que par
+// les builds de dev de l'app (gating fait côté client via __DEV__) — il n'y a
+// pas de notion dev/prod côté serveur pour l'instant (un seul environnement).
+export async function forceCheckIn(userId, { locationId, lat, lon, bypassDistance }) {
+  const existingUser = await User.findById(userId).select('boostUntil');
+  if (existingUser?.boostUntil && existingUser.boostUntil > new Date()) {
+    throw Object.assign(new Error('Boost actif : impossible de changer de lieu tant que le boost est en cours.'), {
+      status: 409,
+      code: 'BOOST_ACTIVE',
+    });
+  }
+
   const location = await Location.findById(locationId).select('location');
   if (!location) throw Object.assign(new Error('Location not found'), { status: 404 });
 
   const [locLon, locLat] = location.location.coordinates;
   const distance = haversineMeters(lat, lon, locLat, locLon);
-  if (distance > FORCE_CHECKIN_MAX_M) {
+  if (distance > FORCE_CHECKIN_MAX_M && bypassDistance !== true) {
     throw Object.assign(new Error('Trop loin du lieu sélectionné'), { status: 400 });
   }
 
@@ -172,8 +184,35 @@ export async function forceCheckIn(userId, { locationId, lat, lon }) {
   return user;
 }
 
+// Force le check-out de l'utilisateur, sans passer par le heartbeat GPS.
+// Appelé uniquement par les builds de dev de l'app (gating côté client).
+export async function forceCheckOut(userId) {
+  const existingUser = await User.findById(userId).select('boostUntil');
+  if (existingUser?.boostUntil && existingUser.boostUntil > new Date()) {
+    throw Object.assign(new Error('Boost actif : impossible de se check-out tant que le boost est en cours.'), {
+      status: 409,
+      code: 'BOOST_ACTIVE',
+    });
+  }
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    {
+      $set: {
+        currentLocation: null,
+        currentLocationSince: null,
+        pendingLocation: null,
+        pendingLocationSince: null,
+      },
+    },
+    { new: true }
+  );
+  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+  return user;
+}
+
 export async function updateLocation(userId, { lat, lon }) {
-  const userToUpdate = await User.findById(userId).select('currentLocation pendingLocation pendingLocationSince currentLocationSince location');
+  const userToUpdate = await User.findById(userId).select('currentLocation pendingLocation pendingLocationSince currentLocationSince location boostUntil');
   if (!userToUpdate) throw Object.assign(new Error('User not found'), { status: 404 });
 
   const oldLocationId = userToUpdate.currentLocation;
@@ -181,6 +220,7 @@ export async function updateLocation(userId, { lat, lon }) {
   const oldPendingSince = userToUpdate.pendingLocationSince;
   const oldCurrentLocationSince = userToUpdate.currentLocationSince;
   const oldLocation = userToUpdate.location || { type: 'Point', coordinates: [0, 0] };
+  const hasActiveBoost = userToUpdate.boostUntil && userToUpdate.boostUntil > new Date();
 
   // Utilisation de l'agrégation pour obtenir les distances exactes et gérer le rayon par lieu
   const geoNearResult = await getNearbyPoiCandidates(lat, lon);
@@ -250,12 +290,27 @@ export async function updateLocation(userId, { lat, lon }) {
   update.pendingLocationSince = pendingLocationId ? new Date() : null;
 
   if (!matchedLocationId) {
-    // L'utilisateur n'est dans aucun POI → retrait immédiat
-    update.currentLocation = null;
-    update.currentLocationSince = null;
+    if (oldLocationId && hasActiveBoost) {
+      // L'utilisateur a quitté le POI mais un boost est en cours : on le
+      // considère toujours présent tant que le boost n'est pas expiré, pour
+      // ne pas couper un boost payant en plein milieu à cause d'un départ.
+      // `currentLocation`/`currentLocationSince` restent donc inchangés ici ;
+      // ils seront nettoyés naturellement à l'expiration du boost (prochain
+      // heartbeat une fois `hasActiveBoost` redevenu false) ou si l'utilisateur
+      // entre dans un autre POI (cf. branche ci-dessous, safety check anti-ghost).
+    } else {
+      // L'utilisateur n'est dans aucun POI → retrait immédiat
+      update.currentLocation = null;
+      update.currentLocationSince = null;
+    }
   } else if (String(matchedLocationId) === String(oldLocationId)) {
     // L'utilisateur est déjà dans ce POI, rien à changer côté présence
     // (currentLocationSince reste inchangé)
+  } else if (hasActiveBoost && oldLocationId) {
+    // Un boost n'est utilisable que dans un seul lieu à la fois : tant qu'il
+    // tourne, on reste verrouillé sur l'ancien lieu et on ignore le nouveau
+    // match (currentLocation/currentLocationSince inchangés). L'utilisateur
+    // doit laisser son boost expirer avant de "changer de lieu" côté app.
   } else {
     // Entrée immédiate dans le POI matché (nouveau ou différent de l'ancien)
     update.currentLocation = matchedLocationId;
