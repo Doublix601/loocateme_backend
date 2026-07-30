@@ -128,7 +128,7 @@ export async function getUsersByEmails(emails) {
   return users;
 }
 
-const FORCE_CHECKIN_MAX_M = 50;
+const FORCE_CHECKIN_MAX_M = 100;
 
 function haversineMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -143,9 +143,9 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 
 // Force le check-in de l'utilisateur sur un lieu précis, en bypassant le
 // matching/hystérésis normal. Utilisé quand l'utilisateur constate que le
-// lieu auto-détecté est erroné et en choisit un autre à proximité (≤ 50 m).
+// lieu auto-détecté est erroné et en choisit un autre à proximité (≤ 100 m).
 //
-// `bypassDistance` lève la contrainte des 50 m. Ce flag n'est envoyé que par
+// `bypassDistance` lève la contrainte des 100 m. Ce flag n'est envoyé que par
 // les builds de dev de l'app (gating fait côté client via __DEV__) — il n'y a
 // pas de notion dev/prod côté serveur pour l'instant (un seul environnement).
 export async function forceCheckIn(userId, { locationId, lat, lon, bypassDistance }) {
