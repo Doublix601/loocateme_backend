@@ -1,6 +1,6 @@
 import { Location } from '../models/Location.js';
 import { User } from '../models/User.js';
-import { applyNotBannedFilter } from '../services/user.service.js';
+import { applyNotBannedFilter, getBlockedIds } from '../services/user.service.js';
 import { redisClient } from '../config/redis.js';
 import { singleflight } from '../utils/singleflight.js';
 import {
@@ -103,6 +103,28 @@ function getExcludedTypesForVibe(vibe) {
   return Array.from(TYPES_BY_VIBE[other]).filter((t) => !allowed.has(t));
 }
 
+// La liste des lieux et la fiche détail sont mises en cache Redis partagé
+// entre tous les viewers (par position/lieu, pas par utilisateur), donc le
+// filtrage des utilisateurs bloqués (relation propre à chaque viewer) ne peut
+// pas se faire dans la requête Mongo mise en cache : on le fait ici, après
+// lecture (cache ou frais), juste avant l'envoi de la réponse.
+function stripBlockedFromLocations(locations, blockedIds) {
+  if (!blockedIds || blockedIds.length === 0) return locations;
+  const blockedSet = new Set(blockedIds.map(String));
+  return locations.map((loc) => {
+    if (!Array.isArray(loc.activeUsers) || loc.activeUsers.length === 0) return loc;
+    const activeUsers = loc.activeUsers.filter((u) => !blockedSet.has(String(u._id)));
+    if (activeUsers.length === loc.activeUsers.length) return loc;
+    return { ...loc, activeUsers };
+  });
+}
+
+function stripBlockedFromUsers(users, blockedIds) {
+  if (!blockedIds || blockedIds.length === 0) return users;
+  const blockedSet = new Set(blockedIds.map(String));
+  return users.filter((u) => !blockedSet.has(String(u._id)));
+}
+
 export const LocationController = {
   getLocations: async (req, res, next) => {
     try {
@@ -115,9 +137,13 @@ export const LocationController = {
 
       const vibeParam = normalizeVibe(req.query.vibe);
       const cacheKey = `locations:v1:${lat.toFixed(3)}:${lon.toFixed(3)}:${vibeParam}:${req.query.limit || ''}`;
+      const blockedIds = await getBlockedIds(req.user?.id);
       try {
         const cached = await redisClient.get(cacheKey);
-        if (cached) return res.json(JSON.parse(cached));
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          return res.json({ ...parsed, locations: stripBlockedFromLocations(parsed.locations, blockedIds) });
+        }
       } catch (e) {
         console.warn('[getLocations] Redis cache read failed:', e.message);
       }
@@ -323,7 +349,7 @@ export const LocationController = {
         return result;
       });
 
-      return res.json(payload);
+      return res.json({ ...payload, locations: stripBlockedFromLocations(payload.locations, blockedIds) });
     } catch (err) {
       next(err);
     }
@@ -359,9 +385,13 @@ export const LocationController = {
       // dizaines d'utilisateurs qui ouvrent la même fiche en quelques secondes
       // un samedi soir) sans décaler perceptiblement la liste de présences.
       const cacheKey = `location:v1:${id}`;
+      const blockedIds = await getBlockedIds(req.user?.id);
       try {
         const cached = await redisClient.get(cacheKey);
-        if (cached) return res.json(JSON.parse(cached));
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          return res.json({ ...parsed, users: stripBlockedFromUsers(parsed.users, blockedIds) });
+        }
       } catch (e) {
         console.warn('[getLocationById] Redis cache read failed:', e.message);
       }
@@ -424,7 +454,7 @@ export const LocationController = {
       if (result.notFound) {
         return res.status(404).json({ code: 'LOCATION_NOT_FOUND', message: 'Location not found' });
       }
-      return res.json(result);
+      return res.json({ ...result, users: stripBlockedFromUsers(result.users, blockedIds) });
     } catch (err) {
       next(err);
     }
