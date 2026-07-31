@@ -149,7 +149,10 @@ export const LocationController = {
               distanceField: 'distance',
               maxDistance: maxDistance,
               spherical: true,
-              query: { type: { $in: allowedTypes } },
+              // Exclut les lieux OSM seedés sans nom (fallback historique
+              // "Lieu OSM" côté osmSeedOne) : pas de vrai libellé à afficher,
+              // ne doivent jamais remonter dans l'app.
+              query: { type: { $in: allowedTypes }, name: { $ne: 'Lieu OSM' } },
             },
           },
           // Cap early so the two $lookup stages below only join the closest candidates.
@@ -248,7 +251,7 @@ export const LocationController = {
               near: { type: 'Point', coordinates: [lon, lat] },
               distanceField: 'distance',
               spherical: true,
-              query: { type: { $in: allowedTypes, $nin: ['Lieu 📍'] } },
+              query: { type: { $in: allowedTypes, $nin: ['Lieu 📍'] }, name: { $ne: 'Lieu OSM' } },
             },
           },
         ]);
@@ -272,7 +275,7 @@ export const LocationController = {
               // jamais apparaître en mode jour, même en remplissage). Les
               // types partagés (Restaurant, Café…) restent autorisés.
               // "Lieu 📍" est définitivement exclu (legacy en DB, non désiré par l'utilisateur).
-              query: { type: { $nin: [...excludedTypes, 'Lieu 📍'] } },
+              query: { type: { $nin: [...excludedTypes, 'Lieu 📍'] }, name: { $ne: 'Lieu OSM' } },
             },
           },
           { $limit: limit * 3 },
@@ -439,6 +442,14 @@ export const LocationController = {
       if (typeof lat !== 'number' || typeof lon !== 'number') {
         return res.status(400).json({ code: 'INVALID_DATA', message: 'lat/lon must be numbers' });
       }
+      // Un lieu OSM sans nom exploitable ne doit jamais être seedé : c'est
+      // l'origine du placeholder "Lieu OSM" qui pouvait apparaître dans l'app
+      // (cf. exclusion `name !== 'Lieu OSM'` dans getLocations pour les
+      // enregistrements déjà en DB). Mieux vaut un 404 côté détail que
+      // créer un lieu inutilisable.
+      if (typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ code: 'INVALID_DATA', message: 'name is required' });
+      }
 
       // Mapping clé OSM brute → libellé backend (Location.type enum).
       // Doit rester aligné avec LocationSyncService côté client.
@@ -466,7 +477,7 @@ export const LocationController = {
         {
           $set: {
             osmId: osmIdNum,
-            name: name || 'Lieu OSM',
+            name: name.trim(),
             type: mappedType,
             location: { type: 'Point', coordinates: [lon, lat] },
             lastOsmSyncAt: new Date(),
