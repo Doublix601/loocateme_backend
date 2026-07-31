@@ -85,6 +85,40 @@ function buildDiacriticRegex(input) {
 
 const GEO_CACHE_TTL = 5; // seconds
 
+// Un utilisateur banni (temporairement ou définitivement) ne doit jamais être
+// visible pour les autres : ni dans la recherche, ni dans les listes "à
+// proximité"/populaires, ni parmi les présences affichées sur un lieu. Le ban
+// bloque déjà ses propres requêtes (cf. middlewares/auth.js) mais ça ne
+// suffit pas à le cacher des autres utilisateurs.
+export function applyNotBannedFilter(query, now = new Date()) {
+  query['moderation.bannedPermanent'] = { $ne: true };
+  const banClause = {
+    $or: [
+      { 'moderation.bannedUntil': { $exists: false } },
+      { 'moderation.bannedUntil': null },
+      { 'moderation.bannedUntil': { $lte: now } },
+    ],
+  };
+  if (query.$or) {
+    query.$and = [...(query.$and || []), { $or: query.$or }, banClause];
+    delete query.$or;
+  } else if (query.$and) {
+    query.$and.push(banClause);
+  } else {
+    query.$or = banClause.$or;
+  }
+  return query;
+}
+
+export function isUserBanned(user) {
+  if (!user) return false;
+  const mod = user.moderation;
+  if (!mod) return false;
+  if (mod.bannedPermanent) return true;
+  if (mod.bannedUntil && new Date(mod.bannedUntil).getTime() > Date.now()) return true;
+  return false;
+}
+
 export async function getBlockedIds(userId) {
   if (!userId) return [];
   try {
@@ -121,6 +155,7 @@ export async function getUserByIdForViewer({ userId, targetId }) {
   if (!target) return null;
   if (String(userId) !== String(targetId)) {
     if (target.status === 'red' || target.emailVerified === false) return null;
+    if (isUserBanned(target)) return null;
     const blockedIds = await getBlockedIds(userId);
     if (blockedIds.includes(String(targetId))) return null;
     target.mutualConnection = await computeMutualConnection(userId, targetId);
@@ -434,7 +469,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
         console.log(`[getNearbyUsers] Redis: Found ${members.length} total, but 0 after exclusion. Requester=${userId}`);
         return [];
       }
-      const users = await User.find({
+      const users = await User.find(applyNotBannedFilter({
         _id: { $in: ids },
         status: { $ne: 'red' },
         emailVerified: true,
@@ -442,7 +477,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
           { 'location.updatedAt': { $gte: threshold } },
           { boostUntil: { $gte: new Date() } }
         ]
-      })
+      }))
       .select('-password')
       .sort({ boostUntil: -1, cotePercent: -1 });
 
@@ -454,7 +489,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
   }
 
   // Fallback to MongoDB geospatial query
-  const users = await User.find({
+  const users = await User.find(applyNotBannedFilter({
     _id: { $nin: excludeIds },
     status: { $ne: 'red' },
     emailVerified: true,
@@ -465,7 +500,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
         $maxDistance: radiusMeters,
       },
     },
-  })
+  }))
     .sort({ boostUntil: -1, cotePercent: -1 })
     .limit(100)
     .select('-password');
@@ -476,7 +511,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
 
 export async function getPopularUsers({ userId = null, limit = 10 } = {}) {
   const safeLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 10));
-  const query = { status: { $ne: 'red' }, emailVerified: true };
+  const query = applyNotBannedFilter({ status: { $ne: 'red' }, emailVerified: true });
   if (userId) {
     const blockedIds = await getBlockedIds(userId);
     const excludeIds = Array.from(new Set([String(userId), ...blockedIds]));
@@ -516,6 +551,7 @@ export async function searchUsers({ q = '', limit = 10, excludeUserId = null } =
       { email: { $regex: re } },
     ],
   });
+  applyNotBannedFilter(query);
 
   const users = await User.find(query)
     .limit(safeLimit)

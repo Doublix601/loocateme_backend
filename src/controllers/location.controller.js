@@ -1,5 +1,6 @@
 import { Location } from '../models/Location.js';
 import { User } from '../models/User.js';
+import { applyNotBannedFilter } from '../services/user.service.js';
 import { redisClient } from '../config/redis.js';
 import { singleflight } from '../utils/singleflight.js';
 import {
@@ -165,14 +166,14 @@ export const LocationController = {
               let: { locationId: '$_id' },
               pipeline: [
                 {
-                  $match: {
+                  $match: applyNotBannedFilter({
                     $expr: { $eq: ['$currentLocation', '$$locationId'] },
                     status: { $in: ['green', 'orange'] },
                     $or: [
                       { 'location.updatedAt': { $gte: new Date(Date.now() - 5 * 60 * 1000) } },
                       { boostUntil: { $gte: new Date() } }
                     ]
-                  },
+                  }),
                 },
                 { $project: { _id: 1, profileImageUrl: 1, status: 1, boostUntil: 1, location: 1 } },
                 { $limit: 3 },
@@ -186,14 +187,14 @@ export const LocationController = {
               let: { locationId: '$_id' },
               pipeline: [
                 {
-                  $match: {
+                  $match: applyNotBannedFilter({
                     $expr: { $eq: ['$currentLocation', '$$locationId'] },
                     status: { $ne: 'red' },
                     $or: [
                       { 'location.updatedAt': { $gte: new Date(Date.now() - 5 * 60 * 1000) } },
                       { boostUntil: { $gte: new Date() } }
                     ]
-                  },
+                  }),
                 },
                 { $count: 'count' },
               ],
@@ -386,14 +387,14 @@ export const LocationController = {
         // Fetch users checked-in at this location, excluding 'red' status and respecting GDPR
         const threshold = new Date(Date.now() - 5 * 60 * 1000);
         const now = new Date();
-        const users = await User.find({
+        const users = await User.find(applyNotBannedFilter({
           currentLocation: location._id,
           status: { $ne: 'red' },
           $or: [
             { 'location.updatedAt': { $gte: threshold } },
             { boostUntil: { $gte: now } }
           ]
-        })
+        }))
         .select('-password')
         .sort({ boostUntil: -1, cotePercent: -1, createdAt: 1 }); // Prioritize boosted, then Cote, users
 
