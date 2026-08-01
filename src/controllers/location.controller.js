@@ -1,6 +1,7 @@
 import { Location } from '../models/Location.js';
 import { User } from '../models/User.js';
-import { applyNotBannedFilter, getBlockedIds } from '../services/user.service.js';
+import { applyNotBannedFilter, getBlockedIds, isUserBanned } from '../services/user.service.js';
+import { CrossedPath } from '../models/CrossedPath.js';
 import { redisClient } from '../config/redis.js';
 import { singleflight } from '../utils/singleflight.js';
 import {
@@ -123,6 +124,17 @@ function stripBlockedFromUsers(users, blockedIds) {
   if (!blockedIds || blockedIds.length === 0) return users;
   const blockedSet = new Set(blockedIds.map(String));
   return users.filter((u) => !blockedSet.has(String(u._id)));
+}
+
+// Support des identifiants OSM côté client (`osm:<osmId>`), même résolution
+// que getLocationById.
+async function resolveLocation(id) {
+  if (typeof id === 'string' && id.startsWith('osm:')) {
+    const osmId = Number(id.slice(4));
+    if (!Number.isFinite(osmId)) return null;
+    return Location.findOne({ osmId });
+  }
+  return Location.findById(id);
 }
 
 export const LocationController = {
@@ -455,6 +467,58 @@ export const LocationController = {
         return res.status(404).json({ code: 'LOCATION_NOT_FOUND', message: 'Location not found' });
       }
       return res.json({ ...result, users: stripBlockedFromUsers(result.users, blockedIds) });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // Utilisateurs croisés à ce lieu (présence passée, pas forcément live) :
+  // fenêtre 24h en gratuit, 7 jours en Premium. Réponse spécifique au viewer,
+  // donc pas de cache Redis partagé ici (contrairement à getLocationById).
+  getCrossedPaths: async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+      const skip = (page - 1) * limit;
+
+      const location = await resolveLocation(id);
+      if (!location) {
+        return res.status(404).json({ code: 'LOCATION_NOT_FOUND', message: 'Location not found' });
+      }
+
+      const now = new Date();
+      const me = await User.findById(req.user.id).select('isPremium premiumTrialEnd').lean();
+      const isPremium = !!me?.isPremium || (me?.premiumTrialEnd && me.premiumTrialEnd > now);
+      const windowDays = isPremium ? 7 : 1;
+      const since = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
+
+      const blockedIds = await getBlockedIds(req.user.id);
+      const query = {
+        userId: req.user.id,
+        locationId: location._id,
+        lastSeenAt: { $gte: since },
+        otherUserId: { $nin: blockedIds },
+      };
+
+      const [total, rows] = await Promise.all([
+        CrossedPath.countDocuments(query),
+        CrossedPath.find(query)
+          .sort({ lastSeenAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate('otherUserId', '-password')
+          .lean(),
+      ]);
+
+      // Le statut de ban vit sur User.moderation.*, pas sur CrossedPath : on
+      // filtre après le populate (peut légèrement réduire items vs total,
+      // acceptable pour cette v1).
+      const items = rows
+        .filter((r) => r.otherUserId && !isUserBanned(r.otherUserId))
+        .map((r) => ({ user: r.otherUserId, lastSeenAt: r.lastSeenAt, crossCount: r.crossCount }));
+
+      return res.json({ page, limit, total, items, isPremium });
     } catch (err) {
       next(err);
     }

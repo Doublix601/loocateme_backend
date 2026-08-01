@@ -7,6 +7,7 @@ import { sendPushUnified } from './push.service.js';
 import { NotificationDedup } from '../models/NotificationDedup.js';
 import { cityStarsQueue } from '../config/queue.js';
 import { singleflightRedis } from '../utils/singleflight.js';
+import { recordCrossedPaths } from './crossedPaths.service.js';
 
 // Cache très court des candidats POI proches (geoNear 200m) pour le heartbeat.
 // TTL volontairement court (3s, pas 10s comme /api/locations) : cette liste
@@ -56,7 +57,7 @@ async function getNearbyPoiCandidates(lat, lon) {
   );
 }
 
-const MIN_STAY_MS = 5 * 60 * 1000; // 5 minutes minimum pour être comptabilisé
+export const MIN_STAY_MS = 5 * 60 * 1000; // 5 minutes minimum pour être comptabilisé
 const ULTRA_BOOST_CLAIM_MS = 20 * 60 * 1000; // 20 minutes, cf. texte du push dans ultraBoost.service.js
 const FREE_BOOST_DURATION_MS = 30 * 60 * 1000; // même durée que le boost payant (premium.controller.js)
 
@@ -402,6 +403,13 @@ export async function updateLocation(userId, { lat, lon }) {
             console.warn('[user.service] Failed to enqueue city stars recalc:', e.message);
           });
           console.log(`[Presence] Visit recorded for user ${userId} at POI ${currentLocationId} after ${Math.round(elapsedMs / 60000)}min`);
+
+          // Croisements : même dédup 12h que le location_visit ci-dessus, pour
+          // que "recroiser" la même personne mette juste à jour lastSeenAt/crossCount
+          // au lieu de créer des doublons.
+          recordCrossedPaths(userId, currentLocationId).catch((e) => {
+            console.warn('[user.service] Failed to record crossed paths:', e.message);
+          });
         }
       } catch (e) {
         console.warn('[user.service] Failed to record location_visit', e.message);

@@ -42,6 +42,12 @@ export const CronService = {
         const cutoffDedup = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         await NotificationDedup.deleteMany({ createdAt: { $lt: cutoffDedup } });
 
+        // Purge des croisements ("crossed paths") au-delà de la fenêtre Premium
+        // (7j) + marge, aucune tier ne les affiche plus au-delà.
+        const { CrossedPath } = await import('../models/CrossedPath.js');
+        const cutoffCrossedPaths = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+        await CrossedPath.deleteMany({ lastSeenAt: { $lt: cutoffCrossedPaths } });
+
         // RGPD: anonymise l'historique de visite et purge les coordonnées des
         // comptes invisibles (cf. scripts/cleanupPrivacyData.js, désormais scheduled ici)
         await CronService.runPrivacyCleanup();
