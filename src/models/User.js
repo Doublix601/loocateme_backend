@@ -99,6 +99,16 @@ const UserSchema = new mongoose.Schema(
     boostUntil: { type: Date, index: true },
     premiumTrialStart: { type: Date },
     premiumTrialEnd: { type: Date },
+    // Source et expiration du premium "de base" (hors trial/boost, qui ont déjà leurs dates
+    // dédiées ci-dessus) : nécessaire pour que le mois offert par le parrainage expire tout
+    // seul sans toucher au flux Stripe (Stripe gère isPremium via ses propres webhooks et
+    // laisse premiumExpiresAt à null).
+    premiumSource: { type: String, enum: ['paid', 'trial', 'referral_reward', 'promo', null], default: null },
+    premiumExpiresAt: { type: Date, default: null, index: true },
+    // Récompense de parrainage gagnée pendant qu'un abonnement payant est déjà actif : mise en
+    // attente, appliquée par le webhook Stripe d'annulation (payment.controller.js) au lieu
+    // d'être perdue silencieusement.
+    pendingReferralReward: { type: Boolean, default: false },
     lastAllowanceAt: { type: Date },
     expoPushToken: { type: String, index: true },
     // "Cote" : score de présence façon flammes Snapchat, utilisé pour trier
@@ -109,6 +119,28 @@ const UserSchema = new mongoose.Schema(
     // Relance "X profils t'ont vu récemment" envoyée après 4h d'inactivité
     // (cf. engagement.service.js) : évite les envois répétés.
     profileViewsNudgeSentAt: { type: Date, default: null },
+    // Séquence d'onboarding proactive J1/J3/J7 (cf. onboarding.service.js) :
+    // jours déjà envoyés, pour ne jamais renvoyer le même palier.
+    onboardingPushDaysSent: { type: [Number], default: [] },
+    // Statut des permissions rapporté par l'app (cf. permissions.routes.js) :
+    // sert à détecter les comptes "à risque" de désinstallation (ex: permission
+    // localisation refusée sur une app dont l'usage dépend de la localisation).
+    locationPermissionStatus: { type: String, enum: ['granted', 'denied', 'undetermined'], default: 'undetermined' },
+    notificationsPermissionStatus: { type: String, enum: ['granted', 'denied', 'undetermined'], default: 'undetermined' },
+    permissionStatusUpdatedAt: { type: Date, default: null },
+    // Relance "at-risk" (permission refusée + inactivité) : évite les envois répétés.
+    atRiskNudgeSentAt: { type: Date, default: null },
+    // Détection best-effort d'une désinstallation (cf. push.service.js : ticket Expo
+    // "DeviceNotRegistered"), avec le type de la dernière notification envoyée avant
+    // coupure — sert à corréler un type de push à un pic de désinstallation.
+    uninstalledAt: { type: Date, default: null },
+    lastNotificationKindBeforeUninstall: { type: String, default: null },
+    // Sondage de désabonnement, capté au moment où l'utilisateur désactive les
+    // notifications ou révoque la localisation dans l'app (cf. churn.routes.js),
+    // plutôt qu'après une désinstallation où il n'est plus joignable.
+    churnSurveyReason: { type: String, default: null },
+    churnSurveyContext: { type: String, default: null },
+    churnSurveyAt: { type: Date, default: null },
     location: {
       type: { type: String, enum: ['Point'], default: 'Point' },
       coordinates: { type: [Number], default: [0, 0] }, // [lon, lat]
@@ -122,6 +154,17 @@ const UserSchema = new mongoose.Schema(
     emailVerifyExpiresAt: { type: Date, select: false },
     pwdResetTokenHash: { type: String, index: true, select: false },
     pwdResetExpiresAt: { type: Date, select: false },
+    // Parrainage
+    referralCode: { type: String, unique: true, sparse: true, index: true },
+    referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    referralStats: {
+      currentMonthKey: { type: String, default: null }, // 'YYYY-MM' (UTC)
+      currentMonthValidatedCount: { type: Number, default: 0 },
+      totalValidatedCount: { type: Number, default: 0 },
+      // Garde-fou "1 mois premium offert max à la fois" : bloque un nouvel octroi tant que
+      // ce mois-ci a déjà déclenché une récompense, même si le compteur redépasse 5.
+      lastRewardGrantedMonthKey: { type: String, default: null },
+    },
   },
   { timestamps: true }
 );

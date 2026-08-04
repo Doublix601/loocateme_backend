@@ -36,7 +36,7 @@ export const BusinessBoostController = {
       const now = new Date();
       location.proOffers.ultraBoostBalance -= 1;
       location.ultraBoost = { active: true, until: new Date(now.getTime() + ULTRA_BOOST_DURATION_MS), activatedAt: now, claimedBy: [] };
-      await location.save();
+      await location.save({ validateModifiedOnly: true });
       return res.json({
         success: true,
         recipients,
@@ -80,7 +80,7 @@ export const BusinessBoostController = {
 
       location.proOffers.proBoostBalance -= 1;
       location.sponsorship = { active: true, until, activatedAt: now };
-      await location.save();
+      await location.save({ validateModifiedOnly: true });
 
       return res.json({ success: true, sponsorship: location.sponsorship, proBoostBalance: location.proOffers.proBoostBalance });
     } catch (err) {
@@ -110,7 +110,7 @@ export const BusinessBoostController = {
 
       event.boostedAt = new Date();
       location.proOffers.eventBoostBalance -= 1;
-      await location.save();
+      await location.save({ validateModifiedOnly: true });
       return res.json({
         success: true,
         recipients,

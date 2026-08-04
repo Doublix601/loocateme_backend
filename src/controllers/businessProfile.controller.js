@@ -50,7 +50,7 @@ export const BusinessProfileController = {
       });
       req.location.bannerUrl = businessMediaPublicUrl(req, filename);
       req.location.bannerThumbUrl = businessMediaPublicUrl(req, thumbFilename);
-      await req.location.save();
+      await req.location.save({ validateModifiedOnly: true });
       await invalidateLocationDetailCache(req.location._id);
       deleteOldMediaFile(oldUrl);
       deleteOldMediaFile(oldThumbUrl);
@@ -72,7 +72,7 @@ export const BusinessProfileController = {
       });
       req.location.logoUrl = businessMediaPublicUrl(req, filename);
       req.location.logoThumbUrl = businessMediaPublicUrl(req, thumbFilename);
-      await req.location.save();
+      await req.location.save({ validateModifiedOnly: true });
       await invalidateLocationDetailCache(req.location._id);
       deleteOldMediaFile(oldUrl);
       deleteOldMediaFile(oldThumbUrl);
@@ -88,7 +88,7 @@ export const BusinessProfileController = {
       const oldThumbUrl = req.location.bannerThumbUrl;
       req.location.bannerUrl = '';
       req.location.bannerThumbUrl = '';
-      await req.location.save();
+      await req.location.save({ validateModifiedOnly: true });
       await invalidateLocationDetailCache(req.location._id);
       deleteOldMediaFile(oldUrl);
       deleteOldMediaFile(oldThumbUrl);
@@ -104,7 +104,7 @@ export const BusinessProfileController = {
       const oldThumbUrl = req.location.logoThumbUrl;
       req.location.logoUrl = '';
       req.location.logoThumbUrl = '';
-      await req.location.save();
+      await req.location.save({ validateModifiedOnly: true });
       await invalidateLocationDetailCache(req.location._id);
       deleteOldMediaFile(oldUrl);
       deleteOldMediaFile(oldThumbUrl);
@@ -136,7 +136,7 @@ export const BusinessProfileController = {
           expiresAt: new Date(Date.now() + STORY_TTL_MS),
           status: 'processing',
         });
-        await req.location.save();
+        await req.location.save({ validateModifiedOnly: true });
         await invalidateLocationDetailCache(req.location._id);
         const story = req.location.stories[req.location.stories.length - 1];
         await videoProcessingQueue.add('story', {
@@ -155,7 +155,7 @@ export const BusinessProfileController = {
         mediaType: 'image',
         expiresAt: new Date(Date.now() + STORY_TTL_MS),
       });
-      await req.location.save();
+      await req.location.save({ validateModifiedOnly: true });
       await invalidateLocationDetailCache(req.location._id);
       return res.status(201).json({ location: req.location });
     } catch (err) {
@@ -167,7 +167,7 @@ export const BusinessProfileController = {
     try {
       const story = req.location.stories.find((s) => String(s._id) === req.params.storyId);
       req.location.stories = req.location.stories.filter((s) => String(s._id) !== req.params.storyId);
-      await req.location.save();
+      await req.location.save({ validateModifiedOnly: true });
       await invalidateLocationDetailCache(req.location._id);
       if (story) {
         deleteOldMediaFile(story.url);
@@ -195,7 +195,7 @@ export const BusinessProfileController = {
         title,
         icon,
       });
-      await req.location.save();
+      await req.location.save({ validateModifiedOnly: true });
       await invalidateLocationDetailCache(req.location._id);
       return res.status(201).json({ location: req.location });
     } catch (err) {
@@ -206,7 +206,7 @@ export const BusinessProfileController = {
   removeMedia: async (req, res, next) => {
     try {
       req.location.media = req.location.media.filter((m) => String(m._id) !== req.params.mediaId);
-      await req.location.save();
+      await req.location.save({ validateModifiedOnly: true });
       await invalidateLocationDetailCache(req.location._id);
       return res.json({ location: req.location });
     } catch (err) {
@@ -264,7 +264,7 @@ export const BusinessProfileController = {
         expiresAt: validEventDate ? new Date(validEventDate.getTime() + EVENT_DATE_GRACE_MS) : null,
         status: isVideo ? 'processing' : 'ready',
       });
-      await req.location.save();
+      await req.location.save({ validateModifiedOnly: true });
       await invalidateLocationDetailCache(req.location._id);
 
       if (isVideo) {
@@ -288,7 +288,7 @@ export const BusinessProfileController = {
     try {
       const event = req.location.events.find((e) => String(e._id) === req.params.eventId);
       req.location.events = req.location.events.filter((e) => String(e._id) !== req.params.eventId);
-      await req.location.save();
+      await req.location.save({ validateModifiedOnly: true });
       await invalidateLocationDetailCache(req.location._id);
       if (event) {
         deleteOldMediaFile(event.mediaUrl);

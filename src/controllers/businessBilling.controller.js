@@ -113,14 +113,67 @@ export async function ensureStripeCustomer(location) {
   });
   location.subscription = location.subscription || {};
   location.subscription.stripeCustomerId = customer.id;
-  await location.save();
+  await location.save({ validateModifiedOnly: true });
   return customer.id;
 }
 
+// Calcule le montant exact (prorata du reste de la période au nouveau prix,
+// moins le prorata non consommé de l'ancien prix) qu'un upgrade facturerait
+// immédiatement, sans rien modifier côté Stripe (aperçu pur).
+async function previewImmediateUpgradeAmount(customerId, existingSubId, itemId, priceId) {
+  const preview = await stripe.invoices.createPreview({
+    customer: customerId,
+    subscription: existingSubId,
+    subscription_details: {
+      items: [{ id: itemId, price: priceId }],
+      proration_behavior: 'always_invoice',
+      proration_date: Math.floor(Date.now() / 1000),
+    },
+  });
+  return { amountDue: preview.amount_due, currency: preview.currency };
+}
+
 export const BusinessBillingController = {
+  // Droit français (code de la consommation, art. L221-14 : le professionnel doit
+  // obtenir l'accord exprès du consommateur sur le montant avant tout paiement) /
+  // droit européen (directive 2011/83/UE, art. 8 §2 : reconnaissance expresse de
+  // l'obligation de paiement avant la commande) / droit américain (ROSCA / règles
+  // FTC "click-to-cancel" sur la clarté du montant avant prélèvement) imposent
+  // d'informer le client du montant exact AVANT tout prélèvement, plutôt que de le
+  // débiter directement. Le dashboard appelle cet endpoint pour afficher le montant
+  // du prorata immédiat d'un upgrade, avant que le pro ne confirme via
+  // checkoutSession (paramètre confirm: true, cf. ci-dessous).
+  previewPlanChange: async (req, res, next) => {
+    try {
+      const { locationId, tier } = req.body || {};
+      if (!VALID_TIERS.includes(tier)) {
+        return res.status(400).json({ code: 'INVALID_TIER', message: 'Palier invalide' });
+      }
+      const location = await loadOwnedLocation(req, locationId);
+      const priceId = priceIdForTier(tier);
+      const existingSubId = location.subscription?.stripeSubscriptionId;
+      const isDowngrade = TIER_RANK[tier] < TIER_RANK[location.businessTier];
+
+      if (!existingSubId || !['active', 'trialing'].includes(location.subscription?.status) || isDowngrade) {
+        // Pas de changement de tarif appliqué immédiatement : aucun prélèvement à
+        // annoncer (nouvel abonnement passant par Stripe Checkout, ou downgrade
+        // différé à la fin de période sans impact financier immédiat).
+        return res.json({ immediate: false });
+      }
+
+      const customerId = await ensureStripeCustomer(location);
+      const subscription = await stripe.subscriptions.retrieve(existingSubId);
+      const itemId = subscription.items.data[0]?.id;
+      const { amountDue, currency } = await previewImmediateUpgradeAmount(customerId, existingSubId, itemId, priceId);
+      return res.json({ immediate: true, amountDue, currency, tier });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   checkoutSession: async (req, res, next) => {
     try {
-      const { locationId, tier, promoCode: promoCodeInput } = req.body || {};
+      const { locationId, tier, promoCode: promoCodeInput, confirm } = req.body || {};
       if (!VALID_TIERS.includes(tier)) {
         return res.status(400).json({ code: 'INVALID_TIER', message: 'Palier invalide' });
       }
@@ -141,10 +194,63 @@ export const BusinessBillingController = {
       const existingSubId = location.subscription?.stripeSubscriptionId;
       if (existingSubId && location.subscription?.status && ['active', 'trialing'].includes(location.subscription.status)) {
         const subscription = await stripe.subscriptions.retrieve(existingSubId);
+
+        // Un éventuel schedule (downgrade précédemment programmé) est relâché : on
+        // reprend la main directement sur l'abonnement pour appliquer le nouveau choix.
+        if (subscription.schedule) {
+          await stripe.subscriptionSchedules.release(subscription.schedule);
+        }
+
+        const isDowngrade = TIER_RANK[tier] < TIER_RANK[location.businessTier];
+
+        if (isDowngrade) {
+          // Un downgrade ne doit pas priver immédiatement le pro des avantages déjà
+          // payés pour la période en cours : on programme le changement de prix via
+          // un Subscription Schedule qui ne s'appliquera qu'à currentPeriodEnd, sans
+          // toucher à businessTier ni au prix actif tant que ce n'est pas le cas.
+          const currentItem = subscription.items.data[0];
+          const periodEnd = currentItem.current_period_end;
+          const schedule = await stripe.subscriptionSchedules.create({ from_subscription: existingSubId });
+          await stripe.subscriptionSchedules.update(schedule.id, {
+            phases: [
+              {
+                items: schedule.phases[0].items.map((i) => ({ price: i.price, quantity: i.quantity })),
+                start_date: schedule.phases[0].start_date,
+                end_date: periodEnd,
+              },
+              {
+                items: [{ price: priceId }],
+                metadata: { locationId: String(location._id), tier },
+              },
+            ],
+          });
+          location.subscription.stripeScheduleId = schedule.id;
+          location.subscription.pendingTier = tier;
+          location.subscription.pendingTierEffectiveAt = new Date(periodEnd * 1000);
+          location.subscription.cancelAtPeriodEnd = false;
+          await location.save({ validateModifiedOnly: true });
+          return res.json({ url: `${siteUrl}/dashboard/billing?updated=1` });
+        }
+
         const itemId = subscription.items.data[0]?.id;
+
+        // Le prélèvement immédiat du prorata (upgrade) exige l'accord exprès du
+        // client sur le montant exact avant tout paiement (cf. commentaire sur
+        // previewPlanChange ci-dessus). Sans confirmation explicite, on renvoie le
+        // montant à faire valider par le pro au lieu de le débiter directement.
+        if (confirm !== true) {
+          const { amountDue, currency } = await previewImmediateUpgradeAmount(customerId, existingSubId, itemId, priceId);
+          return res.json({ requiresConfirmation: true, amountDue, currency, tier });
+        }
+
         await stripe.subscriptions.update(existingSubId, {
           items: [{ id: itemId, price: priceId }],
-          proration_behavior: 'create_prorations',
+          // always_invoice (et non create_prorations) : le crédit du prorata non
+          // consommé de l'ancien palier et la charge du prorata du nouveau palier
+          // sur le reste de la période sont facturés et prélevés immédiatement,
+          // au lieu d'attendre la prochaine échéance. Ce prélèvement n'intervient
+          // qu'après confirmation explicite du montant par le pro (confirm===true).
+          proration_behavior: 'always_invoice',
           // Choisir un palier annule toute résiliation programmée (cf. cancelSubscription
           // ci-dessous) : le pro reste sur un abonnement actif classique.
           cancel_at_period_end: false,
@@ -153,7 +259,10 @@ export const BusinessBillingController = {
         location.businessTier = tier;
         location.subscription.stripePriceId = priceId;
         location.subscription.cancelAtPeriodEnd = false;
-        await location.save();
+        location.subscription.stripeScheduleId = undefined;
+        location.subscription.pendingTier = undefined;
+        location.subscription.pendingTierEffectiveAt = undefined;
+        await location.save({ validateModifiedOnly: true });
         return res.json({ url: `${siteUrl}/dashboard/billing?updated=1` });
       }
 
@@ -210,13 +319,24 @@ export const BusinessBillingController = {
       if (!subId) {
         return res.status(400).json({ code: 'NO_SUBSCRIPTION', message: 'Aucun abonnement actif' });
       }
+      const scheduleId = location.subscription?.stripeScheduleId;
       try {
-        await stripe.subscriptions.update(subId, { cancel_at_period_end: true });
+        if (scheduleId) {
+          // Un downgrade programmé remplace la résiliation : on annule ce phase
+          // change et on résilie le schedule lui-même, pour que le pro conserve
+          // son palier actuel (et non le palier inférieur prévu) jusqu'à la fin
+          // de la période déjà payée.
+          await stripe.subscriptionSchedules.update(scheduleId, { end_behavior: 'cancel' });
+        } else {
+          await stripe.subscriptions.update(subId, { cancel_at_period_end: true });
+        }
       } catch (err) {
         if (err?.code !== 'resource_missing') throw err;
       }
       location.subscription.cancelAtPeriodEnd = true;
-      await location.save();
+      location.subscription.pendingTier = undefined;
+      location.subscription.pendingTierEffectiveAt = undefined;
+      await location.save({ validateModifiedOnly: true });
       return res.json({ ok: true, currentPeriodEnd: location.subscription.currentPeriodEnd || null });
     } catch (err) {
       next(err);
@@ -233,10 +353,21 @@ export const BusinessBillingController = {
       if (!subId || !location.subscription?.cancelAtPeriodEnd) {
         return res.status(400).json({ code: 'NO_PENDING_CANCELLATION', message: 'Aucune résiliation à annuler' });
       }
-      await stripe.subscriptions.update(subId, { cancel_at_period_end: false });
+      const scheduleId = location.subscription?.stripeScheduleId;
+      if (scheduleId) {
+        // La résiliation avait remplacé un downgrade programmé (cf. cancelSubscription
+        // ci-dessus) : on relâche simplement le schedule, ce qui remet l'abonnement
+        // sur son prix actuel avec renouvellement normal (le downgrade programmé
+        // n'est volontairement pas restauré, le pro devra le re-sélectionner s'il
+        // le souhaite toujours).
+        await stripe.subscriptionSchedules.release(scheduleId);
+        location.subscription.stripeScheduleId = undefined;
+      } else {
+        await stripe.subscriptions.update(subId, { cancel_at_period_end: false });
+      }
       location.subscription.cancelAtPeriodEnd = false;
       location.premiumDataPurgeAt = undefined;
-      await location.save();
+      await location.save({ validateModifiedOnly: true });
       return res.json({ ok: true });
     } catch (err) {
       next(err);
@@ -281,7 +412,7 @@ export const BusinessBillingController = {
         location.businessTier = 'none';
         location.subscription = { status: 'canceled' };
         revokePremiumAdvantages(location);
-        await location.save();
+        await location.save({ validateModifiedOnly: true });
       }
 
       await RefreshToken.deleteMany({ user: user._id });
@@ -345,7 +476,7 @@ export async function processStripeEvent(event) {
             if (location && (!minTier || TIER_RANK[location.businessTier] >= TIER_RANK[minTier])) {
               const current = location.proOffers?.[field] || 0;
               location.proOffers[field] = Math.min(current + 1, cap);
-              await location.save();
+              await location.save({ validateModifiedOnly: true });
             }
           } else if (locationId && tier) {
             await Location.findByIdAndUpdate(locationId, {
@@ -368,6 +499,14 @@ export async function processStripeEvent(event) {
               ? new Date(subscription.current_period_end * 1000)
               : undefined;
             location.subscription.cancelAtPeriodEnd = !!subscription.cancel_at_period_end;
+            // Sans schedule Stripe actif, il ne peut plus y avoir de downgrade en
+            // attente (schedule relâché/terminé) : on nettoie les champs "pending"
+            // et le prix courant reflète alors directement le palier appliqué.
+            if (!subscription.schedule) {
+              location.subscription.stripeScheduleId = undefined;
+              location.subscription.pendingTier = undefined;
+              location.subscription.pendingTierEffectiveAt = undefined;
+            }
             if (tier) {
               location.subscription.stripePriceId = priceId;
               const wasSubscribed = location.businessTier !== 'none';
@@ -381,7 +520,7 @@ export async function processStripeEvent(event) {
                 location.premiumDataPurgeAt = undefined;
               }
             }
-            await location.save();
+            await location.save({ validateModifiedOnly: true });
           }
           break;
         }
@@ -393,7 +532,7 @@ export async function processStripeEvent(event) {
             location.subscription.status = 'canceled';
             location.subscription.cancelAtPeriodEnd = false;
             schedulePremiumDataPurge(location);
-            await location.save();
+            await location.save({ validateModifiedOnly: true });
           }
           break;
         }
@@ -416,7 +555,7 @@ export async function processStripeEvent(event) {
                 location.proOffers.proBoostBalance = Math.min((location.proOffers.proBoostBalance || 0) + 1, BOOST_CAPS.pro);
                 location.proOffers.eventBoostBalance = Math.min((location.proOffers.eventBoostBalance || 0) + 1, BOOST_CAPS.event);
                 if (periodEnd) location.proOffers.lastGrantedPeriodEnd = periodEnd;
-                await location.save();
+                await location.save({ validateModifiedOnly: true });
               }
             }
           }

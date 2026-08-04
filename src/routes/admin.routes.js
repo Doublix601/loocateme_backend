@@ -6,8 +6,23 @@ import { CronService } from '../services/cron.service.js';
 import { sendMail, verifyMailTransport } from '../services/email.service.js';
 import { sendUnifiedNotification } from '../services/fcm.service.js';
 import { sanitize } from '../services/auth.service.js';
+import { getUninstallCorrelationReport } from '../services/churnRisk.service.js';
 
 const router = Router();
+
+// GET /api/admin/uninstall-correlation?windowDays=30
+// Corrèle chaque type de notification au nombre de désinstallations qui l'ont
+// suivi (best-effort, cf. push.service.js). Sert à calibrer les plafonds de
+// fréquence de nudge avec de la donnée réelle plutôt qu'une estimation.
+router.get('/uninstall-correlation', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const windowDays = Number(req.query.windowDays) || 30;
+    const report = await getUninstallCorrelationReport(windowDays);
+    return res.json({ windowDays, report });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Middleware to check if user is admin
 const requireAdmin = async (req, res, next) => {

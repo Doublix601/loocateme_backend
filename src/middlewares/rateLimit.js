@@ -95,6 +95,18 @@ export const signupLimiter = rateLimit({
   message: { code: 'RATE_LIMITED', message: 'Trop de tentatives de création de compte, réessayez plus tard.' },
 });
 
+// Anti-bruteforce sur la saisie d'un code de parrainage (8 caractères, éviter
+// le guessing en masse d'un code appartenant à quelqu'un d'autre) : par user.
+export const referralRedeemLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+  store: lazyRedisStore(),
+  message: { code: 'RATE_LIMITED', message: 'Trop de tentatives, réessayez plus tard.' },
+});
+
 // Anti-spam sur la demande de reset password (déclenche un envoi d'email à
 // chaque appel) : par IP, fenêtre plus large.
 export const forgotPasswordLimiter = rateLimit({

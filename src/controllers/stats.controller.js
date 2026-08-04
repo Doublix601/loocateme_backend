@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Event } from '../models/Event.js';
 import { User } from '../models/User.js';
 import { FeatureFlag } from '../models/FeatureFlag.js';
@@ -50,10 +51,11 @@ export const StatsController = {
       const range = String(req.query.range || '30d');
       const { from, to } = getDateRange(range);
 
+      const userObjectId = new mongoose.Types.ObjectId(userId);
       const [viewsCount, clicksAgg] = await Promise.all([
         Event.countDocuments({ type: 'profile_view', targetUser: userId, createdAt: { $gte: from, $lte: to } }),
         Event.aggregate([
-          { $match: { type: 'social_click', targetUser: userId, createdAt: { $gte: from, $lte: to }, socialNetwork: { $exists: true, $ne: null } } },
+          { $match: { type: 'social_click', targetUser: userObjectId, createdAt: { $gte: from, $lte: to }, socialNetwork: { $exists: true, $ne: null } } },
           {
             // Normaliser côté agrégation également (twitter -> x, alias courts, domaines)
             $addFields: {

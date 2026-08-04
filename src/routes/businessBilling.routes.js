@@ -4,6 +4,7 @@ import { BusinessBillingController } from '../controllers/businessBilling.contro
 
 const router = Router();
 
+router.post('/preview-plan-change', requireAuth, BusinessBillingController.previewPlanChange);
 router.post('/checkout-session', requireAuth, BusinessBillingController.checkoutSession);
 router.post('/portal-session', requireAuth, BusinessBillingController.portalSession);
 router.post('/cancel-subscription', requireAuth, BusinessBillingController.cancelSubscription);

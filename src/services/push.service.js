@@ -1,6 +1,8 @@
 import { Expo } from 'expo-server-sdk';
 import { FcmToken } from '../models/FcmToken.js';
 import { sendUnifiedNotification as sendFcmUnified } from './fcm.service.js';
+import { NotificationLog } from '../models/NotificationLog.js';
+import { User } from '../models/User.js';
 
 const EXPO_PROJECT_ID = 'da2f75d4-ab23-4073-8db9-1ab186cc22d6';
 
@@ -38,17 +40,36 @@ export async function resolveUserTokens(userIds = [], extraTokens = []) {
   return tokens;
 }
 
+// À réception d'un ticket Expo "DeviceNotRegistered" (app désinstallée ou push
+// révoqué), retire le token mort et pose un signal best-effort de désinstallation
+// sur l'utilisateur, avec le type de notification qui a précédé la coupure — sert
+// à corréler un type de push à un pic de désinstallation (cf. churnRisk.service.js).
+async function _handleDeadToken(token, kind) {
+  try {
+    const doc = await FcmToken.findOneAndDelete({ token }).select('user').lean();
+    if (doc?.user) {
+      await User.updateOne(
+        { _id: doc.user },
+        { $set: { uninstalledAt: new Date(), lastNotificationKindBeforeUninstall: kind || null } }
+      );
+    }
+  } catch (e) {
+    console.error('[push] Dead token handling error:', e);
+  }
+}
+
 export async function sendPushUnified({ userIds = [], tokens = [], title, body, data = {}, sound = 'default', androidChannelId, badge, collapseKey }) {
   const resolved = await resolveUserTokens(userIds, tokens);
   if (!resolved.length) return { ok: false, skipped: true, reason: 'NO_TOKENS' };
   const { expoTokens, fcmTokens } = splitTokens(resolved);
   const channelId = androidChannelId || 'default';
+  const kind = data?.kind;
 
   const results = { expo: null, fcm: null };
 
   // Send via Expo
   if (expoTokens.length) {
-    const chunks = expo.chunkPushNotifications(expoTokens.map((to) => ({
+    const messages = expoTokens.map((to) => ({
       to,
       sound,
       title,
@@ -59,7 +80,8 @@ export async function sendPushUnified({ userIds = [], tokens = [], title, body, 
       ...(collapseKey ? { collapseId: String(collapseKey) } : {}),
       // Required for EAS/Production builds
       ...(EXPO_PROJECT_ID ? { projectId: EXPO_PROJECT_ID } : {}),
-    })));
+    }));
+    const chunks = expo.chunkPushNotifications(messages);
     const receipts = [];
     for (const chunk of chunks) {
       try {
@@ -67,6 +89,12 @@ export async function sendPushUnified({ userIds = [], tokens = [], title, body, 
         receipts.push(ticketChunk);
         // Log details about tickets (success or errors)
         console.log('[push] Expo tickets result:', JSON.stringify(ticketChunk));
+        ticketChunk.forEach((ticket, i) => {
+          if (ticket?.status === 'error' && ticket?.details?.error === 'DeviceNotRegistered') {
+            const deadToken = chunk[i]?.to;
+            if (deadToken) _handleDeadToken(deadToken, kind);
+          }
+        });
       } catch (e) {
         console.error('[push] Expo send error:', e);
         receipts.push({ error: e?.message || String(e) });
@@ -78,6 +106,14 @@ export async function sendPushUnified({ userIds = [], tokens = [], title, body, 
   // Send via FCM for any remaining tokens
   if (fcmTokens.length) {
     results.fcm = await sendFcmUnified({ tokens: fcmTokens, title, body, data, androidChannelId: channelId, badge, collapseKey });
+  }
+
+  // Journal léger pour le rapport de corrélation notification -> désinstallation
+  // (cf. churnRisk.service.js). Fire-and-forget : ne doit jamais bloquer l'envoi.
+  if (kind && Array.isArray(userIds) && userIds.length) {
+    NotificationLog.insertMany(userIds.map((user) => ({ user, kind })), { ordered: false }).catch((e) => {
+      console.error('[push] NotificationLog insert error:', e);
+    });
   }
 
   return { ok: true, results, counts: { expo: expoTokens.length, fcm: fcmTokens.length } };

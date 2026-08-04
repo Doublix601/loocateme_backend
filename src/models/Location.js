@@ -83,6 +83,15 @@ const LocationSchema = new mongoose.Schema(
       // l'abonnement (et donc businessTier) reste actif jusqu'à currentPeriodEnd, puis
       // Stripe termine l'abonnement sans le renouveler.
       cancelAtPeriodEnd: { type: Boolean, default: false },
+      // Id du Stripe Subscription Schedule piloté par un changement de palier vers
+      // le bas (cf. businessBilling.controller.js) : présent uniquement tant qu'un
+      // palier inférieur est programmé pour la fin de la période en cours.
+      stripeScheduleId: { type: String },
+      // Palier vers lequel l'abonnement basculera à currentPeriodEnd (downgrade
+      // demandé par le pro). businessTier reste inchangé jusque-là : le pro garde
+      // les avantages de son palier actuel jusqu'à l'échéance.
+      pendingTier: { type: String, enum: ['none', 'pro1', 'pro2', 'pro3'] },
+      pendingTierEffectiveAt: { type: Date },
     },
     // Date à laquelle les données premium (banner/logo/stories/media) doivent être
     // définitivement supprimées par le cron de purge (cf. cron.service.js), après un

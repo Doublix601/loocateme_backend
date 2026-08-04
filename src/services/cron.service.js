@@ -9,6 +9,9 @@ import { processPolicyEmailJobs } from './policyNotification.service.js';
 import { decayInactiveUsers, sendCoteExpiryWarnings } from './cote.service.js';
 import { sendInactiveProfileViewsNudge, sendNightModeActivatedNotification } from './engagement.service.js';
 import { revokePremiumAdvantages } from '../controllers/businessBilling.controller.js';
+import { expireReferralRewardsAndApplyBanked } from './referral.service.js';
+import { sendOnboardingSequence } from './onboarding.service.js';
+import { sendAtRiskReactivationNudge } from './churnRisk.service.js';
 
 /**
  * Service de tâches planifiées (Cron) pour LoocateMe.
@@ -66,6 +69,18 @@ export const CronService = {
         console.log('[cron] Cleanup and stats update finished.');
       } catch (e) {
         console.error('[cron] Cleanup/Stats error:', e);
+      }
+    });
+
+    // Expiration du premium offert par parrainage : quotidien à 03:30, décalé du
+    // nettoyage nocturne de 03:00 pour éviter toute collision. Distinct du reset
+    // mensuel du *compteur* de parrainage, géré paresseusement à la validation
+    // (cf. referral.service.js), qui n'a pas besoin de cron.
+    nodeCron.schedule('30 3 * * *', async () => {
+      try {
+        await expireReferralRewardsAndApplyBanked();
+      } catch (e) {
+        console.error('[cron] Referral reward expiry error:', e);
       }
     });
 
@@ -200,6 +215,29 @@ export const CronService = {
         console.log(`[cron] Night mode notification sent to ${count} users.`);
       } catch (e) {
         console.error('[cron] Night mode notification error:', e);
+      }
+    });
+
+    // Onboarding proactif J1/J3/J7 : tous les jours à 10h (heure diurne, pour
+    // maximiser la chance d'ouverture, contrairement aux relances nocturnes de
+    // nettoyage/decay).
+    nodeCron.schedule('0 10 * * *', async () => {
+      try {
+        const count = await sendOnboardingSequence();
+        if (count) console.log(`[cron] Onboarding sequence sent to ${count} users.`);
+      } catch (e) {
+        console.error('[cron] Onboarding sequence error:', e);
+      }
+    });
+
+    // Relance des comptes "à risque" (permission refusée + inactivité 3-14j) :
+    // une fois par jour à 11h.
+    nodeCron.schedule('0 11 * * *', async () => {
+      try {
+        const count = await sendAtRiskReactivationNudge();
+        if (count) console.log(`[cron] At-risk reactivation nudge sent to ${count} users.`);
+      } catch (e) {
+        console.error('[cron] At-risk reactivation nudge error:', e);
       }
     });
 

@@ -32,6 +32,8 @@ import businessBillingRoutes from './routes/businessBilling.routes.js';
 import businessBoostRoutes from './routes/businessBoost.routes.js';
 import promoCodeRoutes from './routes/promoCode.routes.js';
 import supportRoutes from './routes/support.routes.js';
+import referralRoutes from './routes/referral.routes.js';
+import engagementRoutes from './routes/engagement.routes.js';
 import { BusinessBillingController } from './controllers/businessBilling.controller.js';
 import { errorHandler, notFound } from './middlewares/error.js';
 import { verifyMailTransport } from './services/email.service.js';
@@ -79,12 +81,6 @@ app.use(cookieParser());
 const uploadsDir = process.env.UPLOAD_DIR || 'uploads';
 app.use('/uploads', express.static(path.join(__dirname, '..', uploadsDir)));
 
-// Diagnostic Middleware: Log every incoming request
-app.use((req, res, next) => {
-  console.log(`[Request] ${req.method} ${req.originalUrl}`);
-  next();
-});
-
 // Health
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -118,6 +114,45 @@ app.get(['/assetlinks.json', '/.well-known/assetlinks.json'], (req, res) => {
   ]);
 });
 
+// Page de fallback pour les liens de parrainage (https://api.loocate.me/invite/:code).
+// Ouverts depuis l'app, l'OS intercepte normalement ce lien en Universal/App Link
+// et n'atteint jamais le serveur. Mais tant que l'app n'est pas installée en standalone
+// (test via Expo Go, vérification App Links pas encore propagée, app pas encore publiée),
+// le lien atterrit ici tel quel : on tente le custom scheme puis on retombe sur le store.
+app.get('/invite/:code', (req, res) => {
+  const code = String(req.params.code || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 32);
+  const deepLink = `loocateme://invite/${encodeURIComponent(code)}`;
+  const androidStoreUrl = 'https://play.google.com/store/apps/details?id=com.loocateme.app';
+  const iosStoreUrl = 'https://apps.apple.com/app/id0000000000';
+  res.send(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rejoins LoocateMe</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; background: #0A0617; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; padding: 24px; box-sizing: border-box; }
+    h1 { font-size: 22px; margin-bottom: 12px; }
+    p { color: rgba(255,255,255,0.7); margin-bottom: 24px; }
+    a { display: inline-block; background: #00c2cb; color: #fff; text-decoration: none; padding: 14px 28px; border-radius: 24px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Rejoins LoocateMe 👋</h1>
+  <p>Ouverture de l'app...</p>
+  <a id="storeLink" href="${androidStoreUrl}">Installer l'app</a>
+  <script>
+    var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    document.getElementById('storeLink').href = isIOS ? ${JSON.stringify(iosStoreUrl)} : ${JSON.stringify(androidStoreUrl)};
+    window.location.href = ${JSON.stringify(deepLink)};
+    setTimeout(function () {
+      window.location.href = isIOS ? ${JSON.stringify(iosStoreUrl)} : ${JSON.stringify(androidStoreUrl)};
+    }, 1500);
+  </script>
+</body>
+</html>`);
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
@@ -143,6 +178,8 @@ app.use('/api/business/billing', businessBillingRoutes);
 app.use('/api/business', businessBoostRoutes);
 app.use('/api/promo-codes', promoCodeRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/referrals', referralRoutes);
+app.use('/api/engagement', engagementRoutes);
 
 // 404 and error
 app.use(notFound);
@@ -204,13 +241,17 @@ app.use(errorHandler);
   if (pm2InstanceId === undefined || pm2InstanceId === '0') {
     CronService.init();
   }
-  // Contrairement aux cron jobs, BullMQ distribue nativement les jobs entre
-  // workers : chaque instance du cluster peut démarrer son propre worker sans
-  // risque de double-traitement.
-  startCityStarsWorker(recalculateCityStars);
-  startStripeWebhookWorker(processStripeEvent);
-  startEmailWorker(sendMail);
-  startVideoProcessingWorker(processVideoJob);
+  // BullMQ distribue nativement les jobs entre workers, mais démarrer un pool
+  // de workers par instance PM2 multiplie la concurrency effective (ex: 3x le
+  // nombre de transcodages vidéo/ffmpeg simultanés, qui saturent déjà un cœur
+  // chacun). Un seul pool sur l'instance 0 suffit à consommer la queue Redis
+  // partagée par toutes les instances.
+  if (pm2InstanceId === undefined || pm2InstanceId === '0') {
+    startCityStarsWorker(recalculateCityStars);
+    startStripeWebhookWorker(processStripeEvent);
+    startEmailWorker(sendMail);
+    startVideoProcessingWorker(processVideoJob);
+  }
     app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT} (listening on 0.0.0.0)`);
     // Log all registered routes
