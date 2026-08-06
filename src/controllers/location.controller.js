@@ -599,7 +599,7 @@ export const LocationController = {
 
   syncOsmLocations: async (req, res, next) => {
     try {
-      const { locations } = req.body;
+      const { locations, activeOsmIds, lat, lon, radius } = req.body;
 
       if (!Array.isArray(locations)) {
         return res.status(400).json({ code: 'INVALID_DATA', message: 'locations must be an array' });
@@ -657,10 +657,43 @@ export const LocationController = {
             ]
           }).catch(e => console.warn('[syncOsmLocations] deleteMany failed:', e.message));
 
+          // Purge des lieux OSM disparus d'Overpass : appelé uniquement quand le
+          // client fournit la zone couverte par la sync (activeOsmIds = tous les
+          // osmId retournés par Overpass pour ce rayon, pas seulement ce chunk) et
+          // la position/rayon interrogés. On scope la suppression géographiquement
+          // au rayon syncé pour ne jamais toucher les lieux OSM situés ailleurs, et
+          // on exclut les lieux revendiqués par un pro (isPro) pour ne pas faire
+          // disparaître silencieusement une fiche business à cause d'un tag OSM
+          // retiré/déplacé côté OpenStreetMap.
+          let deletedStaleCount = 0;
+          if (
+            Array.isArray(activeOsmIds) &&
+            typeof lat === 'number' &&
+            typeof lon === 'number' &&
+            typeof radius === 'number' &&
+            radius > 0
+          ) {
+            const EARTH_RADIUS_M = 6378100;
+            const staleResult = await Location.deleteMany({
+              osmId: { $exists: true, $nin: activeOsmIds },
+              isPro: false,
+              location: {
+                $geoWithin: {
+                  $centerSphere: [[lon, lat], radius / EARTH_RADIUS_M],
+                },
+              },
+            }).catch((e) => {
+              console.warn('[syncOsmLocations] stale deleteMany failed:', e.message);
+              return null;
+            });
+            deletedStaleCount = staleResult?.deletedCount || 0;
+          }
+
           return res.json({
             success: true,
             upsertedCount: result.upsertedCount,
-            modifiedCount: result.modifiedCount
+            modifiedCount: result.modifiedCount,
+            deletedStaleCount
           });
         } catch (bulkError) {
           // ordered: false permet de continuer même si certains échouent (ex: E11000 duplicate key sur osmId)
