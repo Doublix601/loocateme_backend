@@ -76,6 +76,14 @@ export async function reportBleSightings(userId, sightings) {
   return { recorded };
 }
 
+async function getFreshSightingsSortedByRssi(userId) {
+  const freshThreshold = new Date(Date.now() - SIGHTING_FRESHNESS_MS);
+  return BleSighting.find({ userId, seenAt: { $gte: freshThreshold } })
+    .select('peerUserId rssi')
+    .sort({ rssi: -1 })
+    .lean();
+}
+
 // Utilisé par user.service.js pour départager deux lieux candidats trop
 // proches (< MIN_LEAD_M) lors d'un heartbeat GPS ambigu : si l'utilisateur a
 // une détection BLE fraîche d'un pair déjà confirmé (`currentLocation`) sur
@@ -86,11 +94,7 @@ export async function resolveAmbiguousVenueViaBle(userId, candidateLocationIds) 
   const user = await User.findById(userId).select('privacyPreferences.bluetoothProximity');
   if (!user?.privacyPreferences?.bluetoothProximity) return null;
 
-  const freshThreshold = new Date(Date.now() - SIGHTING_FRESHNESS_MS);
-  const sightings = await BleSighting.find({ userId, seenAt: { $gte: freshThreshold } })
-    .select('peerUserId rssi')
-    .sort({ rssi: -1 })
-    .lean();
+  const sightings = await getFreshSightingsSortedByRssi(userId);
   if (!sightings.length) return null;
 
   const peerIds = sightings.map((s) => s.peerUserId);
@@ -100,6 +104,34 @@ export async function resolveAmbiguousVenueViaBle(userId, candidateLocationIds) 
   if (!peers.length) return null;
 
   // Le pair avec le meilleur RSSI (le plus proche) tranche.
+  const peerById = new Map(peers.map((p) => [String(p._id), p.currentLocation]));
+  for (const s of sightings) {
+    const loc = peerById.get(String(s.peerUserId));
+    if (loc) return loc;
+  }
+  return null;
+}
+
+// Cas "wifi mais pas de GPS" (sous-sol avec réseau, satellites bloqués) :
+// sans aucune coordonnée du tout, impossible de générer des lieux candidats
+// GPS pour resolveAmbiguousVenueViaBle. On se rabat sur les seuls pairs
+// détectés en BLE, sans filtrage de distance côté serveur — le filtrage
+// physique est déjà fait par la portée réelle du signal BLE (quelques
+// mètres). Retourne le lieu du pair au meilleur RSSI déjà confirmé quelque
+// part, ou null si aucun pair fiable n'est actuellement à portée.
+export async function resolveVenueFromBlePeersOnly(userId) {
+  const user = await User.findById(userId).select('privacyPreferences.bluetoothProximity');
+  if (!user?.privacyPreferences?.bluetoothProximity) return null;
+
+  const sightings = await getFreshSightingsSortedByRssi(userId);
+  if (!sightings.length) return null;
+
+  const peerIds = sightings.map((s) => s.peerUserId);
+  const peers = await User.find({ _id: { $in: peerIds }, currentLocation: { $ne: null } })
+    .select('currentLocation')
+    .lean();
+  if (!peers.length) return null;
+
   const peerById = new Map(peers.map((p) => [String(p._id), p.currentLocation]));
   for (const s of sightings) {
     const loc = peerById.get(String(s.peerUserId));

@@ -17,6 +17,7 @@ router.post('/heartbeat', requireAuth, heartbeatLimiter, validate(validators.upd
 router.post('/ble-token', requireAuth, bleLimiter, BleController.issueToken);
 router.post('/ble-sightings', requireAuth, bleLimiter, validate(validators.bleSightings), BleController.reportSightings);
 router.put('/ble-consent', requireAuth, validate(validators.bluetoothConsent), BleController.updateConsent);
+router.post('/ble-checkin', requireAuth, heartbeatLimiter, BleController.checkInViaBle);
 router.get('/nearby', requireAuth, validate(validators.nearby), UserController.nearby);
 router.get('/popular', requireAuth, validate(validators.popular), UserController.popular);
 router.get('/by-email', requireAuth, validate(validators.getUsersByEmail), UserController.getByEmail);

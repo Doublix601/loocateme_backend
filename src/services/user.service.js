@@ -8,7 +8,7 @@ import { NotificationDedup } from '../models/NotificationDedup.js';
 import { cityStarsQueue } from '../config/queue.js';
 import { singleflightRedis } from '../utils/singleflight.js';
 import { recordCrossedPaths } from './crossedPaths.service.js';
-import { resolveAmbiguousVenueViaBle } from './ble.service.js';
+import { resolveAmbiguousVenueViaBle, resolveVenueFromBlePeersOnly } from './ble.service.js';
 
 // Cache très court des candidats POI proches (geoNear 200m) pour le heartbeat.
 // TTL volontairement court (3s, pas 10s comme /api/locations) : cette liste
@@ -258,6 +258,48 @@ export async function forceCheckOut(userId) {
   );
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
   return user;
+}
+
+// Cas "réseau dispo mais pas de GPS" (ex : sous-sol avec wifi, satellites
+// bloqués) : updateLocation exige des coordonnées, donc inutilisable ici.
+// On check-in directement via les pairs BLE déjà confirmés à proximité,
+// sans aucune coordonnée. Retourne { user, resolved: false } si aucun pair
+// fiable n'est actuellement à portée (l'app garde alors sa position
+// précédente / propose la sélection manuelle côté client).
+export async function checkInViaBleOnly(userId) {
+  const existingUser = await User.findById(userId).select('boostUntil currentLocation');
+  if (existingUser?.boostUntil && existingUser.boostUntil > new Date()) {
+    throw Object.assign(new Error('Boost actif : impossible de changer de lieu tant que le boost est en cours.'), {
+      status: 409,
+      code: 'BOOST_ACTIVE',
+    });
+  }
+
+  const venueId = await resolveVenueFromBlePeersOnly(userId);
+  if (!venueId) return { user: null, resolved: false };
+
+  if (existingUser?.currentLocation && String(existingUser.currentLocation) === String(venueId)) {
+    // Déjà confirmé ici : rien à changer, on évite de repartir un compteur
+    // de séjour "5 minutes minimum" pour rien.
+    const user = await User.findById(userId);
+    return { user, resolved: true };
+  }
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    {
+      $set: {
+        currentLocation: venueId,
+        currentLocationSince: new Date(),
+        pendingLocation: null,
+        pendingLocationSince: null,
+        boostUntil: null,
+      },
+    },
+    { new: true }
+  );
+  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+  return { user, resolved: true };
 }
 
 export async function updateLocation(userId, { lat, lon }) {

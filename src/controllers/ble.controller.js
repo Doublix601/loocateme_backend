@@ -1,4 +1,5 @@
 import { issueBleToken, reportBleSightings } from '../services/ble.service.js';
+import { checkInViaBleOnly } from '../services/user.service.js';
 
 export const BleController = {
   // Toggle indépendant du consentement de politique globale : l'utilisateur
@@ -30,6 +31,16 @@ export const BleController = {
     try {
       const { sightings } = req.body;
       const result = await reportBleSightings(req.user.id, sightings);
+      return res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+  // Réseau disponible mais pas de position GPS exploitable (ex : sous-sol
+  // avec wifi). Check-in basé uniquement sur les pairs BLE déjà confirmés.
+  checkInViaBle: async (req, res, next) => {
+    try {
+      const result = await checkInViaBleOnly(req.user.id);
       return res.json(result);
     } catch (err) {
       next(err);
