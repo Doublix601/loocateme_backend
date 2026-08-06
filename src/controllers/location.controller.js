@@ -40,11 +40,12 @@ export async function invalidateLocationDetailCache(locationId) {
 // appartient à un seul mode.
 const TYPES_BY_VIBE = {
   moon: new Set([
-    'Bar 🍺', 'Boîte de nuit 💃', 'Restaurant 🍴', 'Cinéma 🎬',
-    'Fast food 🍔', 'Bowling 🎳', 'Rooftop 🌆', 'Karaoké 🎤', 'Club de jeux 🎮',
+    'Bar 🍺', 'Boîte de nuit 💃',
     'TEST 🤖',
   ]),
   sun: new Set([
+    'Restaurant 🍴', 'Cinéma 🎬', 'Fast food 🍔', 'Bowling 🎳', 'Rooftop 🌆',
+    'Karaoké 🎤', 'Club de jeux 🎮',
     'Café ☕', 'Coworking 🧑‍💻', 'Salle de sport 🏋️', 'Centre sportif 🏟️',
     'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢", 'Bibliothèque 📚',
     'Éducation 🎓', 'Glacier 🍦', 'Marché 🛒', 'Musée 🏛️', 'Brunch 🥞',
@@ -94,9 +95,8 @@ function getAllowedTypesForVibe(vibe) {
 }
 
 // Types strictement réservés à la vibe opposée : ne doivent JAMAIS apparaître
-// dans l'autre mode, même en fallback de remplissage. Un type est exclusif à
-// une vibe s'il appartient à son ensemble mais pas à l'ensemble de l'autre
-// vibe (donc hors types partagés comme Restaurant, Café, Cinéma…).
+// dans l'autre mode, même en fallback de remplissage. Séparation stricte :
+// chaque type appartient à un seul mode, il n'y a aucun type partagé.
 function getExcludedTypesForVibe(vibe) {
   const v = normalizeVibe(vibe);
   const other = v === 'sun' ? 'moon' : 'sun';
