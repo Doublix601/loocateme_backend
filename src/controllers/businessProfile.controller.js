@@ -1,4 +1,5 @@
 import fs from 'fs';
+import QRCode from 'qrcode';
 import { Location } from '../models/Location.js';
 import { businessMediaPublicUrl } from '../services/storage.service.js';
 import { processImage, processImageWithThumb } from '../services/mediaProcessing.service.js';
@@ -36,6 +37,24 @@ export const BusinessProfileController = {
   getById: async (req, res, next) => {
     // req.location déjà chargé par requireLocationOwner
     return res.json({ location: req.location });
+  },
+
+  // QR code à imprimer sur place (table, entrée, comptoir) : scanné, il ouvre
+  // l'app directement sur ce lieu et checke-in le client sans étape GPS/attente
+  // (la présence physique est déjà prouvée par le scan). Disponible dès la
+  // validation du claim, sans palier payant : c'est l'outil d'acquisition du
+  // lieu, pas un avantage premium.
+  getCheckinQr: async (req, res, next) => {
+    try {
+      const base = process.env.REFERRAL_SHARE_BASE_URL || 'https://api.loocate.me';
+      const deepLink = `${base}/venue/${req.location._id}`;
+      const png = await QRCode.toBuffer(deepLink, { type: 'png', width: 1024, margin: 2 });
+      res.set('Content-Type', 'image/png');
+      res.set('Content-Disposition', `inline; filename="loocateme-qr-${req.location._id}.png"`);
+      return res.send(png);
+    } catch (err) {
+      next(err);
+    }
   },
 
   updateCover: async (req, res, next) => {

@@ -82,9 +82,10 @@ function err(code, message, status) {
 }
 
 // Saisie d'un code de parrainage par le filleul. Le parrainage ne "compte"
-// que lorsque l'email du filleul est vérifié (cf. validateReferralIfAny) —
-// sauf si l'email est déjà vérifié au moment de la saisie (rattrapage tardif
-// depuis les réglages), auquel cas on valide immédiatement.
+// que lorsque le filleul effectue son premier check-in vérifié (cf.
+// validateReferralIfAny, appelé depuis user.service.js/updateLocation) —
+// jamais à la simple inscription, pour éviter de récompenser des comptes
+// créés mais jamais réellement actifs sur le terrain.
 export async function redeemCode(userId, rawCode) {
   const normalizedCode = String(rawCode || '').trim().toUpperCase();
   if (!normalizedCode) throw err('INVALID_CODE', 'Code requis', 400);
@@ -93,7 +94,7 @@ export async function redeemCode(userId, rawCode) {
   if (!referrer) throw err('INVALID_CODE', 'Code de parrainage invalide', 404);
   if (String(referrer._id) === String(userId)) throw err('SELF_REFERRAL', 'Vous ne pouvez pas utiliser votre propre code', 400);
 
-  const referredUser = await User.findById(userId).select('referredBy emailVerified');
+  const referredUser = await User.findById(userId).select('referredBy');
   if (!referredUser) throw err('USER_NOT_FOUND', 'Utilisateur introuvable', 404);
   if (referredUser.referredBy) throw err('ALREADY_REFERRED', 'Vous avez déjà utilisé un code de parrainage', 409);
 
@@ -107,18 +108,16 @@ export async function redeemCode(userId, rawCode) {
 
   await User.updateOne({ _id: userId, referredBy: null }, { $set: { referredBy: referrer._id } });
 
-  if (referredUser.emailVerified) {
-    await validateReferralIfAny({ _id: userId });
-  }
-
-  return { ok: true, pending: !referredUser.emailVerified };
+  // Pas de validation immédiate ici, même si le filleul a déjà un historique de
+  // présence : on attend son PROCHAIN check-in vérifié (cf. updateLocation) pour
+  // rester cohérent avec le cas nominal (code saisi avant toute sortie).
+  return { ok: true, pending: true };
 }
 
-// Point d'entrée unique appelé (a) juste après la vérification d'email dans
-// auth.service.js et (b) inline depuis redeemCode si l'email était déjà
-// vérifié au moment de la saisie tardive du code. Idempotent : le filtre
-// `status: 'pending'` empêche une double validation si les deux chemins
-// s'exécutent l'un après l'autre.
+// Point d'entrée unique, appelé depuis user.service.js/updateLocation au
+// moment où le premier "location_visit" (check-in vérifié, présence >= 5 min
+// sur un lieu) du filleul est enregistré. Idempotent : le filtre
+// `status: 'pending'` empêche une double validation si appelé plusieurs fois.
 export async function validateReferralIfAny(referredUser) {
   try {
     const now = new Date();

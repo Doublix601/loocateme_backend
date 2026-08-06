@@ -454,6 +454,18 @@ export async function updateLocation(userId, { lat, lon }) {
         if (!existingVisit) {
           await Event.create({ type: 'location_visit', actor: userId, locationId: currentLocationId });
 
+          // Premier check-in vérifié de ce user (tous lieux confondus) : c'est le
+          // déclencheur de la récompense de parrainage (cf. referral.service.js),
+          // pas l'inscription. Aligne l'incitation du parrain sur la densité réelle
+          // (un filleul qui sort vraiment) plutôt que sur un compte jamais utilisé.
+          Event.countDocuments({ type: 'location_visit', actor: userId }).then((totalVisits) => {
+            if (totalVisits === 1) {
+              import('./referral.service.js')
+                .then(({ validateReferralIfAny }) => validateReferralIfAny({ _id: userId }))
+                .catch((e) => console.error('[referral] validation error on first check-in:', e?.message || e));
+            }
+          }).catch((e) => console.warn('[user.service] Failed to check first-visit status for referral:', e.message));
+
           // Recalcule popularity + étoiles par tertiles de ville
           const loc = await Location.findById(currentLocationId, 'city').lean();
           // Décalé en tâche de fond : cette agrégation (tous les Events 30j d'une

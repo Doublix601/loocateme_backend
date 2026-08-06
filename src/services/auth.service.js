@@ -232,13 +232,9 @@ export async function verifyEmailByToken(token) {
   user.emailVerifyTokenHash = undefined;
   user.emailVerifyExpiresAt = undefined;
   await user.save();
-  try {
-    const { validateReferralIfAny } = await import('./referral.service.js');
-    await validateReferralIfAny(user);
-  } catch (e) {
-    // Ne jamais faire échouer la vérification d'email à cause d'un bug de parrainage.
-    console.error('[referral] validation error on email verify:', e?.message || e);
-  }
+  // La récompense de parrainage n'est plus validée ici : elle attend le premier
+  // check-in vérifié du filleul (cf. user.service.js/updateLocation), pour
+  // aligner l'incitation sur la densité réelle plutôt que sur la seule inscription.
   return sanitize(user);
 }
 

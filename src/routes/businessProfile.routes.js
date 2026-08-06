@@ -11,6 +11,9 @@ router.get('/my-location', requireAuth, BusinessProfileController.getMyLocation)
 
 router.get('/locations/:locationId', requireAuth, requireLocationOwner, BusinessProfileController.getById);
 
+// Outil d'acquisition, pas un avantage premium : aucun requireBusinessTier ici.
+router.get('/locations/:locationId/checkin-qr', requireAuth, requireLocationOwner, BusinessProfileController.getCheckinQr);
+
 // Palier 1 : photo de profil (logo) + couverture + Stories
 router.put(
   '/locations/:locationId/cover',
