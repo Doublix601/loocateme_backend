@@ -36,6 +36,9 @@ async function syncLocations() {
     console.log('Fetching POIs from Overpass API...');
     const response = await fetch(OVERPASS_URL, {
       method: 'POST',
+      // Le serveur Overpass (Apache) répond 406 Not Acceptable aux requêtes sans
+      // User-Agent explicite (absent par défaut du fetch de Node).
+      headers: { 'User-Agent': 'loocateme-sync-script/1.0' },
       body: 'data=' + encodeURIComponent(query),
     });
 
@@ -53,7 +56,9 @@ async function syncLocations() {
         { osmId: { $exists: false }, stars: { $lt: 3 } },
         { name: 'Unknown' },
         { shouldDelete: true },
-        { type: { $in: ['THEATRE', 'COMMUNITYCENTRE', 'SOCIALFACILITY', 'theatre', 'communityCentre', 'socialFacility', 'Restaurant 🍴', 'Parc 🌳', 'Café ☕', 'Fast food 🍔'] } },
+        // Types OSM devenus obsolètes/désactivés : uniquement les lieux synchronisés
+        // depuis OSM (osmId présent), jamais les lieux créés par des pros.
+        { osmId: { $exists: true }, type: { $in: ['THEATRE', 'COMMUNITYCENTRE', 'SOCIALFACILITY', 'theatre', 'communityCentre', 'socialFacility', 'Fast food 🍔'] } },
       ],
     });
     console.log(`Deleted ${deleteResult.deletedCount} locations.`);
