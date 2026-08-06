@@ -44,7 +44,7 @@ const TYPES_BY_VIBE = {
     'TEST 🤖',
   ]),
   sun: new Set([
-    'Restaurant 🍴', 'Cinéma 🎬', 'Fast food 🍔', 'Rooftop 🌆',
+    'Restaurant 🍴', 'Cinéma 🎬', 'Rooftop 🌆',
     'Karaoké 🎤', 'Club de jeux 🎮',
     'Café ☕', 'Coworking 🧑‍💻', 'Salle de sport 🏋️', 'Centre sportif 🏟️',
     'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢", 'Bibliothèque 📚',
@@ -551,7 +551,6 @@ export const LocationController = {
       const OSM_TO_BACKEND = {
         bar: 'Bar 🍺', pub: 'Bar 🍺', nightclub: 'Boîte de nuit 💃',
         restaurant: 'Restaurant 🍴', cafe: 'Café ☕',
-        fast_food: 'Fast food 🍔', food_court: 'Fast food 🍔',
         gym: 'Salle de sport 🏋️', fitness_centre: 'Salle de sport 🏋️',
         beach_resort: 'Plage 🏖️', theme_park: "Parc d'attractions 🎢",
         library: 'Bibliothèque 📚',

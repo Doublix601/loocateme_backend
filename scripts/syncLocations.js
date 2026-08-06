@@ -8,17 +8,17 @@ const MONGO_URI = process.env.MONGODB_URI_LOCAL || process.env.MONGODB_URI || 'm
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 
-// Query for bar, nightclub, gym, restaurant, park, beach, amusement_park, coffee, library, education, food_court, cinema, ice_cream, sports_centre, bowling
+// Query for bar, nightclub, gym, restaurant, park, beach, amusement_park, coffee, library, education, cinema, ice_cream, sports_centre, bowling
 // Compiègne area (around 10km)
 const query = `
 [out:json];
 (
-  node["amenity"~"bar|nightclub|library|university|college|food_court|cinema|ice_cream"](around:10000, 49.4178, 2.8261);
+  node["amenity"~"bar|nightclub|library|university|college|cinema|ice_cream"](around:10000, 49.4178, 2.8261);
   node["leisure"~"fitness_centre|beach_resort|theme_park|sports_centre|bowling_alley|park|escape_game|laser_tag|adult_gaming_centre"](around:10000, 49.4178, 2.8261);
   node["shop"~"marketplace"](around:10000, 49.4178, 2.8261);
   node["tourism"~"museum"](around:10000, 49.4178, 2.8261);
   node["sport"~"karting"](around:10000, 49.4178, 2.8261);
-  way["amenity"~"bar|nightclub|library|university|college|food_court|cinema|ice_cream"](around:10000, 49.4178, 2.8261);
+  way["amenity"~"bar|nightclub|library|university|college|cinema|ice_cream"](around:10000, 49.4178, 2.8261);
   way["leisure"~"fitness_centre|beach_resort|theme_park|sports_centre|bowling_alley|park|escape_game|laser_tag|adult_gaming_centre"](around:10000, 49.4178, 2.8261);
   way["shop"~"marketplace"](around:10000, 49.4178, 2.8261);
   way["tourism"~"museum"](around:10000, 49.4178, 2.8261);
@@ -53,7 +53,7 @@ async function syncLocations() {
         { osmId: { $exists: false }, stars: { $lt: 3 } },
         { name: 'Unknown' },
         { shouldDelete: true },
-        { type: { $in: ['THEATRE', 'COMMUNITYCENTRE', 'SOCIALFACILITY', 'theatre', 'communityCentre', 'socialFacility', 'Restaurant 🍴', 'Parc 🌳', 'Café ☕'] } },
+        { type: { $in: ['THEATRE', 'COMMUNITYCENTRE', 'SOCIALFACILITY', 'theatre', 'communityCentre', 'socialFacility', 'Restaurant 🍴', 'Parc 🌳', 'Café ☕', 'Fast food 🍔'] } },
       ],
     });
     console.log(`Deleted ${deleteResult.deletedCount} locations.`);
@@ -83,7 +83,6 @@ async function syncLocations() {
         else if (amenity === 'library') type = 'Bibliothèque 📚';
         else if (leisure === 'sports_centre') type = 'Centre sportif 🏟️';
         else if (amenity === 'university' || amenity === 'college') type = 'Éducation 🎓';
-        else if (amenity === 'food_court') type = 'Fast food 🍔';
         else if (amenity === 'cinema') type = 'Cinéma 🎬';
         else if (amenity === 'ice_cream') type = 'Glacier 🍦';
         else if (shop === 'marketplace') type = 'Marché 🛒';
