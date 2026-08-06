@@ -40,11 +40,11 @@ export async function invalidateLocationDetailCache(locationId) {
 // appartient à un seul mode.
 const TYPES_BY_VIBE = {
   moon: new Set([
-    'Bar 🍺', 'Boîte de nuit 💃',
+    'Bar 🍺', 'Boîte de nuit 💃', 'Loisir 🎯',
     'TEST 🤖',
   ]),
   sun: new Set([
-    'Restaurant 🍴', 'Cinéma 🎬', 'Fast food 🍔', 'Bowling 🎳', 'Rooftop 🌆',
+    'Restaurant 🍴', 'Cinéma 🎬', 'Fast food 🍔', 'Rooftop 🌆',
     'Karaoké 🎤', 'Club de jeux 🎮',
     'Café ☕', 'Coworking 🧑‍💻', 'Salle de sport 🏋️', 'Centre sportif 🏟️',
     'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢", 'Bibliothèque 📚',
@@ -556,11 +556,14 @@ export const LocationController = {
         beach_resort: 'Plage 🏖️', theme_park: "Parc d'attractions 🎢",
         library: 'Bibliothèque 📚',
         sports_centre: 'Centre sportif 🏟️', stadium: 'Centre sportif 🏟️', pitch: 'Centre sportif 🏟️',
-        bowling_alley: 'Bowling 🎳',
         university: 'Éducation 🎓', college: 'Éducation 🎓',
         coworking_space: 'Coworking 🧑‍💻',
         cinema: 'Cinéma 🎬',
         ice_cream: 'Glacier 🍦',
+        marketplace: 'Marché 🛒', museum: 'Musée 🏛️', park: 'Parc 🌳',
+        // Loisir 🎯 : bowling, karting, escape game, laser game, arcade — mode nuit exclusivement.
+        bowling_alley: 'Loisir 🎯', escape_game: 'Loisir 🎯', laser_tag: 'Loisir 🎯',
+        adult_gaming_centre: 'Loisir 🎯', karting: 'Loisir 🎯',
       };
       const mappedType = OSM_TO_BACKEND[type] || null;
       if (!mappedType) {

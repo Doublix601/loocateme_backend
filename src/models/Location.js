@@ -13,7 +13,7 @@ const LocationSchema = new mongoose.Schema(
       'Marché 🛒', 'Musée 🏛️', 'Brunch 🥞',
       // ── Mode 🌙 Nuit ──────────────────────────────────────────
       'Bar 🍺', 'Boîte de nuit 💃', 'Restaurant 🍴', 'Cinéma 🎬',
-      'Bowling 🎳', 'Fast food 🍔',
+      'Fast food 🍔', 'Loisir 🎯',
       'Rooftop 🌆', 'Karaoké 🎤', 'Club de jeux 🎮',
       // ── Interne ───────────────────────────────────────────────
       'TEST 🤖',

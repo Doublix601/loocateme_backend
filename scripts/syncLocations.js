@@ -14,9 +14,15 @@ const query = `
 [out:json];
 (
   node["amenity"~"bar|nightclub|library|university|college|food_court|cinema|ice_cream"](around:10000, 49.4178, 2.8261);
-  node["leisure"~"fitness_centre|beach_resort|theme_park|sports_centre|bowling_alley"](around:10000, 49.4178, 2.8261);
+  node["leisure"~"fitness_centre|beach_resort|theme_park|sports_centre|bowling_alley|park|escape_game|laser_tag|adult_gaming_centre"](around:10000, 49.4178, 2.8261);
+  node["shop"~"marketplace"](around:10000, 49.4178, 2.8261);
+  node["tourism"~"museum"](around:10000, 49.4178, 2.8261);
+  node["sport"~"karting"](around:10000, 49.4178, 2.8261);
   way["amenity"~"bar|nightclub|library|university|college|food_court|cinema|ice_cream"](around:10000, 49.4178, 2.8261);
-  way["leisure"~"fitness_centre|beach_resort|theme_park|sports_centre|bowling_alley"](around:10000, 49.4178, 2.8261);
+  way["leisure"~"fitness_centre|beach_resort|theme_park|sports_centre|bowling_alley|park|escape_game|laser_tag|adult_gaming_centre"](around:10000, 49.4178, 2.8261);
+  way["shop"~"marketplace"](around:10000, 49.4178, 2.8261);
+  way["tourism"~"museum"](around:10000, 49.4178, 2.8261);
+  way["sport"~"karting"](around:10000, 49.4178, 2.8261);
 );
 out center;
 `;
@@ -59,13 +65,15 @@ async function syncLocations() {
         const leisure = el.tags.leisure;
         if (name === 'Unknown') return false;
         if (['theatre', 'community_centre', 'social_facility', 'restaurant', 'cafe'].includes(amenity)) return false;
-        if (leisure === 'park') return false;
         return true;
       })
       .map((el) => {
         let type = null;
         const amenity = el.tags.amenity;
         const leisure = el.tags.leisure;
+        const shop = el.tags.shop;
+        const tourism = el.tags.tourism;
+        const sport = el.tags.sport;
 
         if (amenity === 'bar') type = 'Bar 🍺';
         else if (amenity === 'nightclub') type = 'Boîte de nuit 💃';
@@ -74,11 +82,16 @@ async function syncLocations() {
         else if (leisure === 'theme_park') type = 'Parc d\'attractions 🎢';
         else if (amenity === 'library') type = 'Bibliothèque 📚';
         else if (leisure === 'sports_centre') type = 'Centre sportif 🏟️';
-        else if (leisure === 'bowling_alley') type = 'Bowling 🎳';
         else if (amenity === 'university' || amenity === 'college') type = 'Éducation 🎓';
         else if (amenity === 'food_court') type = 'Fast food 🍔';
         else if (amenity === 'cinema') type = 'Cinéma 🎬';
         else if (amenity === 'ice_cream') type = 'Glacier 🍦';
+        else if (shop === 'marketplace') type = 'Marché 🛒';
+        else if (tourism === 'museum') type = 'Musée 🏛️';
+        else if (leisure === 'park') type = 'Parc 🌳';
+        // Loisir 🎯 : bowling, karting, escape game, laser game, arcade — mode nuit exclusivement.
+        else if (leisure === 'bowling_alley' || leisure === 'escape_game' || leisure === 'laser_tag' || leisure === 'adult_gaming_centre' || sport === 'karting')
+          type = 'Loisir 🎯';
 
         const lat = el.lat || el.center?.lat;
         const lon = el.lon || el.center?.lon;
