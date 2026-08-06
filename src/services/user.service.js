@@ -8,6 +8,7 @@ import { NotificationDedup } from '../models/NotificationDedup.js';
 import { cityStarsQueue } from '../config/queue.js';
 import { singleflightRedis } from '../utils/singleflight.js';
 import { recordCrossedPaths } from './crossedPaths.service.js';
+import { resolveAmbiguousVenueViaBle } from './ble.service.js';
 
 // Cache très court des candidats POI proches (geoNear 200m) pour le heartbeat.
 // TTL volontairement court (3s, pas 10s comme /api/locations) : cette liste
@@ -299,17 +300,34 @@ export async function updateLocation(userId, { lat, lon }) {
         const hasMinLead = !second || (second.dist - nearest.dist) >= MIN_LEAD_M;
         if (hasMinLead) {
           matchedLocationId = nearest._id;
-        } else if (oldPendingLocationId && String(oldPendingLocationId) === String(nearest._id)) {
-          // Ambiguïté persistante (lieux trop proches, ex: deux POIs à 7 m l'un de
-          // l'autre) mais ce même lieu ressort déjà comme le plus proche au heartbeat
-          // précédent : ça n'est pas du bruit GPS ponctuel, on confirme l'entrée.
-          // Coûte un cycle de heartbeat (quelques secondes à ~1 min), au lieu de
-          // bloquer indéfiniment le check-in tant que les deux lieux restent voisins.
-          matchedLocationId = nearest._id;
         } else {
-          // Premier heartbeat ambigu pour ce candidat : on le mémorise sans encore
-          // matcher, pour confirmer au heartbeat suivant s'il reste le plus proche.
-          pendingLocationId = nearest._id;
+          // Ambiguïté GPS (deux lieux trop proches) : si l'utilisateur a
+          // activé la proximité Bluetooth et détecte tout près un pair déjà
+          // confirmé dans l'un des candidats, on tranche immédiatement sans
+          // attendre un heartbeat GPS de confirmation supplémentaire.
+          const candidateIds = geoNearResult
+            .filter((c) => (c.dist - nearest.dist) < MIN_LEAD_M)
+            .map((c) => c._id);
+          let bleResolved = null;
+          try {
+            bleResolved = await resolveAmbiguousVenueViaBle(userId, candidateIds);
+          } catch (_) {
+            // Best-effort : une erreur BLE ne doit jamais bloquer le check-in GPS normal
+          }
+          if (bleResolved) {
+            matchedLocationId = bleResolved;
+          } else if (oldPendingLocationId && String(oldPendingLocationId) === String(nearest._id)) {
+            // Ambiguïté persistante (lieux trop proches, ex: deux POIs à 7 m l'un de
+            // l'autre) mais ce même lieu ressort déjà comme le plus proche au heartbeat
+            // précédent : ça n'est pas du bruit GPS ponctuel, on confirme l'entrée.
+            // Coûte un cycle de heartbeat (quelques secondes à ~1 min), au lieu de
+            // bloquer indéfiniment le check-in tant que les deux lieux restent voisins.
+            matchedLocationId = nearest._id;
+          } else {
+            // Premier heartbeat ambigu pour ce candidat : on le mémorise sans encore
+            // matcher, pour confirmer au heartbeat suivant s'il reste le plus proche.
+            pendingLocationId = nearest._id;
+          }
         }
       }
     }

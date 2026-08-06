@@ -73,6 +73,12 @@ export const validators = {
   login: [body('email').isEmail(), body('password').isString()],
   forgot: [body('email').isEmail()],
   updateLocation: [body('lat').isFloat({ min: -90, max: 90 }), body('lon').isFloat({ min: -180, max: 180 })],
+  bleSightings: [
+    body('sightings').isArray({ max: 50 }),
+    body('sightings.*.token').isString().isLength({ min: 1, max: 64 }),
+    body('sightings.*.rssi').isFloat({ min: -120, max: 0 }),
+    body('sightings.*.seenAt').optional().isISO8601(),
+  ],
   forceCheckIn: [
     body('locationId').isString().isLength({ min: 1 }),
     body('lat').isFloat({ min: -90, max: 90 }),
@@ -238,6 +244,7 @@ export const validators = {
     body('analytics').optional().isBoolean(),
     body('marketing').optional().isBoolean(),
   ],
+  bluetoothConsent: [body('enabled').isBoolean()],
   reportCreate: [
     body('reportedUserId').isMongoId(),
     body('category').isIn(['harassment', 'spam', 'inappropriate', 'impersonation', 'scam', 'other']),

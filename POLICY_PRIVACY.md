@@ -27,6 +27,12 @@ Pour toute question relative à cette politique ou à l'exercice de vos droits, 
 - En mode "invisible", votre position n'est pas partagée avec les autres utilisateurs et vos coordonnées enregistrées sont périodiquement effacées.
 - *Finalité* : vous permettre de voir et d'être vu par les utilisateurs présents dans les mêmes lieux, et afficher la fréquentation des lieux partenaires.
 
+### 2.3bis Proximité Bluetooth (fonctionnalité optionnelle)
+- Si vous l'activez explicitement dans les réglages (désactivée par défaut), l'application diffuse à proximité immédiate, via Bluetooth Low Energy, un identifiant technique **aléatoire et temporaire** (renouvelé toutes les 10 minutes) — jamais votre identifiant de compte, votre nom ou votre email. Elle détecte de la même façon les identifiants diffusés par les autres utilisateurs ayant activé cette même fonctionnalité, à proximité physique immédiate (quelques mètres).
+- *Finalités* : (a) continuer à faire fonctionner certaines fonctions de présence lorsque votre téléphone n'a pas de connexion réseau (les détections sont mises en file d'attente sur votre appareil puis envoyées dès que la connexion revient) ; (b) améliorer la précision de la détection du lieu où vous vous trouvez, lorsque le GPS seul ne permet pas de départager deux lieux très proches l'un de l'autre.
+- **Minimisation** : les détections BLE envoyées à nos serveurs sont automatiquement et définitivement supprimées après **30 minutes**. Elles ne sont jamais utilisées pour constituer un historique de déplacements et ne sont pas visibles par les autres utilisateurs.
+- Cette fonctionnalité repose sur votre **consentement explicite et distinct** de celui de la géolocalisation GPS ; vous pouvez l'activer ou la désactiver à tout moment dans les réglages de l'application, indépendamment de vos autres préférences de confidentialité.
+
 ### 2.4 Fonctionnalités sociales
 - Utilisateurs à proximité, demandes d'abonnement ("follow"), blocages, conversations et messages (texte, photos, vidéos) échangés avec d'autres utilisateurs.
 - *Finalité* : faire fonctionner la messagerie et les interactions sociales de l'application.
@@ -52,7 +58,7 @@ Pour toute question relative à cette politique ou à l'exercice de vos droits, 
 
 ## 3. Base légale du traitement
 
-Selon les cas : votre **consentement** (localisation, notifications, marketing), l'**exécution du contrat** qui nous lie (fonctionnement du compte et des fonctionnalités que vous utilisez), et notre **intérêt légitime** (sécurité, prévention des abus, statistiques agrégées).
+Selon les cas : votre **consentement** (localisation GPS, proximité Bluetooth, notifications, marketing), l'**exécution du contrat** qui nous lie (fonctionnement du compte et des fonctionnalités que vous utilisez), et notre **intérêt légitime** (sécurité, prévention des abus, statistiques agrégées).
 
 ## 4. Partage des données
 
@@ -71,6 +77,7 @@ Ces prestataires n'ont accès qu'aux données strictement nécessaires à leur m
 - **Historique de vues de profil** : environ 30 jours, puis supprimé.
 - **Historique de visites de lieux** : anonymisé après 30 jours (le lien avec votre profil est supprimé ; seule une statistique agrégée est conservée).
 - **Présence en temps réel** : effacée après quelques minutes d'inactivité.
+- **Détections de proximité Bluetooth** : effacées automatiquement après 30 minutes.
 - **Messages et conversations** : conservés tant que la conversation existe ; la suppression de votre compte retire votre profil mais un message déjà envoyé peut rester visible par son destinataire, comme dans la plupart des messageries.
 - **Signalements et historique de modération** : conservés pour la durée nécessaire à la gestion de la sécurité de la communauté et aux obligations légales éventuelles.
 
@@ -81,7 +88,7 @@ Conformément au RGPD (et, le cas échéant, au CCPA pour les résidents de Cali
 - **Accès et portabilité** : exporter vos informations de profil depuis l'application.
 - **Rectification** : modifier vos informations de profil à tout moment.
 - **Effacement** : supprimer votre compte à tout moment.
-- **Opposition et retrait du consentement** : désactiver la localisation, les notifications ou vos préférences de suivi analytique/marketing dans les paramètres.
+- **Opposition et retrait du consentement** : désactiver la localisation, la proximité Bluetooth, les notifications ou vos préférences de suivi analytique/marketing dans les paramètres.
 - **Do Not Sell (CCPA)** : demander explicitement que vos données ne soient ni vendues ni partagées à des fins commerciales, via les paramètres.
 - **Réclamation** : vous pouvez introduire une réclamation auprès de la CNIL (ou de l'autorité de protection des données compétente) si vous estimez que vos droits ne sont pas respectés.
 

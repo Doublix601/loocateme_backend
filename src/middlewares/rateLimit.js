@@ -51,6 +51,18 @@ export const heartbeatLimiter = rateLimit({
   message: { code: 'RATE_LIMITED', message: 'Too many location updates' },
 });
 
+// Détections BLE potentiellement plus fréquentes qu'un heartbeat GPS (scan
+// continu en arrière-plan), mais toujours en rafale batchée côté client.
+export const bleLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+  store: lazyRedisStore(),
+  message: { code: 'RATE_LIMITED', message: 'Too many BLE reports' },
+});
+
 export const locationsListLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 30,

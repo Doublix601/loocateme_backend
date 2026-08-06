@@ -59,6 +59,11 @@ const UserSchema = new mongoose.Schema(
       analytics: { type: Boolean, default: false },
       marketing: { type: Boolean, default: false },
       doNotSell: { type: Boolean, default: false },
+      // Opt-in distinct du consentement de localisation GPS (finalité RGPD
+      // différente : détection de proximité Bluetooth entre appareils, y
+      // compris hors connexion réseau). Défaut false — activation explicite
+      // requise via un écran de consentement dédié.
+      bluetoothProximity: { type: Boolean, default: false },
     },
     // User role: 'user' (default), 'moderator', 'admin'
     role: { type: String, enum: ['user', 'moderator', 'admin'], default: 'user', index: true },
