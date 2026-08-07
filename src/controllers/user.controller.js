@@ -1,4 +1,5 @@
 import { getNearbyUsers, updateLocation, forceCheckIn, forceCheckOut, getUsersByEmails, getPopularUsers, searchUsers, getUserByIdForViewer } from '../services/user.service.js';
+import { requestEmailChange, confirmEmailChange } from '../services/auth.service.js';
 
 export const UserController = {
   me: async (req, res, next) => {
@@ -76,8 +77,8 @@ export const UserController = {
   },
   forceCheckIn: async (req, res, next) => {
     try {
-      const { locationId, lat, lon, bypassDistance } = req.body;
-      const user = await forceCheckIn(req.user.id, { locationId, lat, lon, bypassDistance });
+      const { locationId, lat, lon, bypassDistance, mode } = req.body;
+      const user = await forceCheckIn(req.user.id, { locationId, lat, lon, bypassDistance, mode });
       return res.json({ user });
     } catch (err) {
       next(err);
@@ -131,6 +132,28 @@ export const UserController = {
       const emails = req.query.email; // after validator, this is an array of normalized emails
       const users = await getUsersByEmails(emails);
       return res.json({ users });
+    } catch (err) {
+      next(err);
+    }
+  },
+  // Étape 1 du changement d'email : demande + envoi de l'email de
+  // confirmation vers la nouvelle adresse (cf. auth.service.js/requestEmailChange).
+  requestEmailChange: async (req, res, next) => {
+    try {
+      const { newEmail, currentPassword } = req.body;
+      const result = await requestEmailChange(req.user.id, { newEmail, currentPassword });
+      return res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+  // Étape 2 : confirmation via le token reçu par email sur la nouvelle adresse.
+  confirmEmailChange: async (req, res, next) => {
+    try {
+      const token = String(req.body.token || req.query.token || '');
+      if (!token) return res.status(400).json({ code: 'TOKEN_REQUIRED', message: 'Token requis' });
+      const user = await confirmEmailChange(token);
+      return res.json({ success: true, user });
     } catch (err) {
       next(err);
     }
@@ -198,6 +221,81 @@ export const UserController = {
       const user = await getUserByIdForViewer({ userId: req.user?.id, targetId: id });
       if (!user) return res.status(404).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
       return res.json({ user });
+    } catch (err) {
+      next(err);
+    }
+  },
+  // Mode invisible (RGPD) : masque l'utilisateur des listes/cartes de lieux
+  // sans toucher au champ `status`. Pas de gating premium.
+  updateInvisibleMode: async (req, res, next) => {
+    try {
+      const { invisibleMode } = req.body || {};
+      if (typeof invisibleMode !== 'boolean') {
+        return res.status(400).json({ code: 'INVALID_INVISIBLE_MODE', message: 'invisibleMode must be a boolean' });
+      }
+      const { User } = await import('../models/User.js');
+      const { sanitize } = await import('../services/auth.service.js');
+      const user = await User.findByIdAndUpdate(req.user.id, { $set: { invisibleMode } }, { new: true }).select('-password');
+      if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
+      return res.json({ user: sanitize(user) });
+    } catch (err) {
+      next(err);
+    }
+  },
+  // Préférences de notifications par "kind" (clé libre). Remplace/ajoute une
+  // entrée dans la Map plutôt que de remplacer la map entière.
+  updateNotificationPreferences: async (req, res, next) => {
+    try {
+      const { kind, enabled } = req.body || {};
+      if (typeof kind !== 'string' || !kind.trim() || typeof enabled !== 'boolean') {
+        return res.status(400).json({ code: 'INVALID_NOTIFICATION_PREFERENCE', message: 'kind (string) and enabled (boolean) are required' });
+      }
+      const { User } = await import('../models/User.js');
+      const { sanitize } = await import('../services/auth.service.js');
+      const user = await User.findByIdAndUpdate(
+        req.user.id,
+        { $set: { [`notificationPreferences.${kind.trim()}`]: enabled } },
+        { new: true }
+      ).select('-password');
+      if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
+      return res.json({ user: sanitize(user) });
+    } catch (err) {
+      next(err);
+    }
+  },
+  // Mode de check-in : 'auto' (détection GPS/heartbeat) ou 'manual'
+  // (l'utilisateur force systématiquement son check-in).
+  updateCheckInMode: async (req, res, next) => {
+    try {
+      const { checkInMode } = req.body || {};
+      if (!['auto', 'manual'].includes(checkInMode)) {
+        return res.status(400).json({ code: 'INVALID_CHECK_IN_MODE', message: 'checkInMode must be "auto" or "manual"' });
+      }
+      const { User } = await import('../models/User.js');
+      const { sanitize } = await import('../services/auth.service.js');
+      const user = await User.findByIdAndUpdate(req.user.id, { $set: { checkInMode } }, { new: true }).select('-password');
+      if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
+      return res.json({ user: sanitize(user) });
+    } catch (err) {
+      next(err);
+    }
+  },
+  claimSupervise: async (req, res, next) => {
+    try {
+      const { claimSupervise } = await import('../services/streak.service.js');
+      const { sanitize } = await import('../services/auth.service.js');
+      const user = await claimSupervise(req.user.id);
+      return res.json({ user: sanitize(user) });
+    } catch (err) {
+      next(err);
+    }
+  },
+  claimBoost: async (req, res, next) => {
+    try {
+      const { claimBoost } = await import('../services/streak.service.js');
+      const { sanitize } = await import('../services/auth.service.js');
+      const user = await claimBoost(req.user.id);
+      return res.json({ user: sanitize(user) });
     } catch (err) {
       next(err);
     }

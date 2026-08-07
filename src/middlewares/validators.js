@@ -23,8 +23,7 @@ export const validators = {
       }),
     body('password').isLength({ min: 6 }),
     body('username')
-      .exists()
-      .bail()
+      .optional({ checkFalsy: true })
       .isString()
       .isLength({ min: 1, max: 30 })
       .bail()
@@ -72,6 +71,23 @@ export const validators = {
   ],
   login: [body('email').isEmail(), body('password').isString()],
   forgot: [body('email').isEmail()],
+  changePassword: [
+    body('currentPassword').isString().isLength({ min: 1 }),
+    body('newPassword').isString().isLength({ min: 6 }),
+  ],
+  changeEmail: [
+    body('newEmail')
+      .isEmail()
+      .normalizeEmail({
+        gmail_remove_dots: false,
+        gmail_remove_subaddress: false,
+        outlookdotcom_remove_subaddress: false,
+        yahoo_remove_subaddress: false,
+        icloud_remove_subaddress: false,
+      }),
+    body('currentPassword').isString().isLength({ min: 1 }),
+  ],
+  confirmEmailChange: [body('token').isString().isLength({ min: 1 })],
   updateLocation: [body('lat').isFloat({ min: -90, max: 90 }), body('lon').isFloat({ min: -180, max: 180 })],
   bleSightings: [
     body('sightings').isArray({ max: 50 }),
@@ -84,6 +100,9 @@ export const validators = {
     body('lat').isFloat({ min: -90, max: 90 }),
     body('lon').isFloat({ min: -180, max: 180 }),
     body('bypassDistance').optional().isBoolean(),
+    // Distingue un check-in manuel (choisi explicitement par l'utilisateur)
+    // d'un check-in auto forcé côté dev, pour l'analytics/crédit de streak.
+    body('mode').optional().isIn(['manual', 'auto']),
   ],
   nearby: [
     query('lat').isFloat({ min: -90, max: 90 }),

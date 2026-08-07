@@ -1,4 +1,4 @@
-import { login, signup, logout, requestPasswordReset, verifyEmailByToken, resetPasswordByToken, businessLogin, activateBusinessAccount, signAccessToken } from '../services/auth.service.js';
+import { login, signup, logout, requestPasswordReset, verifyEmailByToken, resetPasswordByToken, businessLogin, activateBusinessAccount, signAccessToken, changePassword, requestEmailChange, confirmEmailChange } from '../services/auth.service.js';
 import { RefreshToken } from '../models/RefreshToken.js';
 
 function setRefreshCookie(res, token) {
@@ -128,6 +128,17 @@ export const AuthController = {
       const { email } = req.body;
       const result = await requestPasswordReset(email);
       return res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+  // Changement de mot de passe "connecté" (l'utilisateur fournit son mot de
+  // passe actuel), distinct du flux forgot/reset-password ci-dessus.
+  changePassword: async (req, res, next) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      const user = await changePassword(req.user.id, { currentPassword, newPassword });
+      return res.json({ success: true, user });
     } catch (err) {
       next(err);
     }

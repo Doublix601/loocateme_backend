@@ -58,8 +58,32 @@ async function _handleDeadToken(token, kind) {
   }
 }
 
+// Filtre les userIds ayant explicitement désactivé ce type ("kind") de
+// notification via PATCH /users/me/notification-preferences. L'absence de
+// préférence enregistrée pour ce kind laisse la notification passer par défaut.
+async function _filterOptedOutUsers(userIds, kind) {
+  if (!kind || !Array.isArray(userIds) || !userIds.length) return userIds;
+  try {
+    const users = await User.find({ _id: { $in: userIds } }).select('notificationPreferences').lean();
+    const optedOut = new Set(
+      users
+        .filter((u) => u.notificationPreferences && u.notificationPreferences[kind] === false)
+        .map((u) => String(u._id))
+    );
+    if (!optedOut.size) return userIds;
+    return userIds.filter((id) => !optedOut.has(String(id)));
+  } catch (e) {
+    console.error('[push] notificationPreferences filter error:', e);
+    return userIds;
+  }
+}
+
 export async function sendPushUnified({ userIds = [], tokens = [], title, body, data = {}, sound = 'default', androidChannelId, badge, collapseKey }) {
-  const resolved = await resolveUserTokens(userIds, tokens);
+  const filteredUserIds = await _filterOptedOutUsers(userIds, data?.kind);
+  if (Array.isArray(userIds) && userIds.length && !filteredUserIds.length && !(Array.isArray(tokens) && tokens.length)) {
+    return { ok: false, skipped: true, reason: 'OPTED_OUT' };
+  }
+  const resolved = await resolveUserTokens(filteredUserIds, tokens);
   if (!resolved.length) return { ok: false, skipped: true, reason: 'NO_TOKENS' };
   const { expoTokens, fcmTokens } = splitTokens(resolved);
   const channelId = androidChannelId || 'default';

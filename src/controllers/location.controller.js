@@ -27,14 +27,7 @@ const LOCATION_DETAIL_CACHE_TTL_SECONDS = 60;
 // Utilisé par les endpoints qui mutent un lieu (dashboard pro : events, stories,
 // media, cover, logo) pour ne pas laisser le client voir une fiche périmée
 // jusqu'à expiration du TTL ci-dessus.
-export async function invalidateLocationDetailCache(locationId) {
-  if (!locationId) return;
-  try {
-    await redisClient.del(`location:v1:${locationId}`);
-  } catch (e) {
-    console.warn('[invalidateLocationDetailCache] Redis cache delete failed:', e.message);
-  }
-}
+export { invalidateLocationDetailCache, invalidateLocationsListCache } from '../utils/locationCache.js';
 
 // Filtrage des lieux par vibe (jour/nuit). Séparation stricte : chaque type
 // appartient à un seul mode.
@@ -140,6 +133,9 @@ async function resolveLocation(id) {
 export const LocationController = {
   getLocations: async (req, res, next) => {
     try {
+      if (req.user?.invisibleMode) {
+        return res.status(403).json({ error: 'INVISIBLE_MODE_ACTIVE' });
+      }
       const lat = parseFloat(req.query.lat);
       const lon = parseFloat(req.query.lon);
 
@@ -332,24 +328,28 @@ export const LocationController = {
       // mais celui-ci est trié par distance pour rester pertinent).
       locations = locations.slice(0, limit);
 
-      // "Pro Boost" : un seul lieu sponsorisé globalement, épinglé en tête de
-      // liste avec le flag isSponsored, si l'utilisateur est dans un rayon
-      // raisonnable (200km) — évite d'afficher un lieu sponsorisé à l'autre
-      // bout du pays.
+      // "Pro Boost" : un seul lieu sponsorisé globalement. Il ne doit PAS être
+      // épinglé en tête de la liste normale — juste marqué isSponsored pour
+      // que le client l'affiche dans sa section dédiée "Mis en avant". S'il
+      // fait déjà partie du classement naturel, on ne touche pas à sa
+      // position ; sinon on l'ajoute en fin de liste (jamais en tête) afin
+      // qu'il reste disponible pour la section "Mis en avant" tout en restant
+      // absent du haut de la liste normale.
       const sponsor = await Location.findOne({
         'sponsorship.active': true,
         'sponsorship.until': { $gt: new Date() },
       }).lean();
-      if (sponsor && String(sponsor._id) !== String(locations[0]?._id)) {
-        const [sLon, sLat] = sponsor.location.coordinates;
-        const distance = haversineMeters(lat, lon, sLat, sLon);
-        if (distance <= 200000) {
-          locations = locations.filter((l) => String(l._id) !== String(sponsor._id));
-          locations.unshift({ ...sponsor, distance, isSponsored: true });
-          locations = locations.slice(0, limit);
+      if (sponsor) {
+        const alreadyInList = locations.some((l) => String(l._id) === String(sponsor._id));
+        if (alreadyInList) {
+          locations = locations.map((l) => (String(l._id) === String(sponsor._id) ? { ...l, isSponsored: true } : l));
+        } else {
+          const [sLon, sLat] = sponsor.location.coordinates;
+          const distance = haversineMeters(lat, lon, sLat, sLon);
+          if (distance <= 200000) {
+            locations.push({ ...sponsor, distance, isSponsored: true });
+          }
         }
-      } else if (sponsor) {
-        locations = locations.map((l) => (String(l._id) === String(sponsor._id) ? { ...l, isSponsored: true } : l));
       }
 
         const result = { locations: locations.map(sanitizePublicLocation) };
@@ -438,7 +438,7 @@ export const LocationController = {
           ]
         }))
         .select('-password')
-        .sort({ boostUntil: -1, cotePercent: -1, createdAt: 1 }); // Prioritize boosted, then Cote, users
+        .sort({ boostUntil: -1, 'streak.count': -1, createdAt: 1 }); // Prioritize boosted, then streak, users
 
         // Add isGhost flag for boosted users who are offline
         const usersWithGhostFlag = users.map(user => {

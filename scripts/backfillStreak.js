@@ -11,35 +11,41 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/loocateme';
 
-// Backfill des champs "Cote" (cotePercent/lastLoginAt) pour les comptes créés
-// avant l'introduction de la fonctionnalité : les defaults du schéma Mongoose
-// ne s'appliquent qu'aux nouveaux documents, pas aux documents déjà en base.
-// On démarre tout le monde à 100% pour ne pas pénaliser les comptes existants.
+// Backfill du champ "streak" pour les comptes créés avant l'introduction de la
+// fonctionnalité (remplace l'ancien système `cotePercent`) : les defaults du
+// schéma Mongoose ne s'appliquent qu'aux nouveaux documents, pas aux
+// documents déjà en base. On démarre tout le monde à 0, sans récompense en
+// attente, pour ne pas créditer artificiellement des comptes existants.
 async function backfill() {
   try {
-    console.log('--- Starting Cote Backfill ---');
+    console.log('--- Starting Streak Backfill ---');
     await mongoose.connect(MONGODB_URI);
     console.log('Connected to MongoDB');
 
     const res = await User.updateMany(
-      { cotePercent: { $exists: false } },
+      { streak: { $exists: false } },
       [
         {
           $set: {
-            cotePercent: 100,
+            streak: {
+              count: 0,
+              lastCheckInDate: null,
+              supervisePendingClaim: false,
+              boostPendingClaim: false,
+              lastClaimedAt: null,
+            },
             lastLoginAt: { $ifNull: ['$updatedAt', '$createdAt', new Date()] },
-            coteWarningSentAt: null,
           },
         },
       ]
     );
-    console.log(`[Backfill] Cote fields set for ${res.modifiedCount} users.`);
+    console.log(`[Backfill] Streak field set for ${res.modifiedCount} users.`);
   } catch (e) {
     console.error('[Backfill] Error:', e);
     process.exitCode = 1;
   } finally {
     await mongoose.disconnect();
-    console.log('--- Cote Backfill finished ---');
+    console.log('--- Streak Backfill finished ---');
   }
 }
 

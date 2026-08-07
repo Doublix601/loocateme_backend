@@ -148,7 +148,7 @@ async function seedDemoUsers() {
         location: { type: 'Point', coordinates: coords, updatedAt: now },
         currentLocation: demoLocation._id,
         currentLocationSince: now,
-        cotePercent: 100,
+        streak: { count: 14 },
       });
       created++;
       console.log(`Créé: ${email} (${profile.firstName})`);

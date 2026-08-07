@@ -196,7 +196,7 @@ async function seedScoringTestUsers() {
           location: { type: 'Point', coordinates: coords, updatedAt: now },
           currentLocation: location._id,
           currentLocationSince: now,
-          cotePercent: 100,
+          streak: { count: 14 },
         });
         createdUsers++;
       }

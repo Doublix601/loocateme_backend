@@ -9,6 +9,8 @@ import { cityStarsQueue } from '../config/queue.js';
 import { singleflightRedis } from '../utils/singleflight.js';
 import { recordCrossedPaths } from './crossedPaths.service.js';
 import { resolveAmbiguousVenueViaBle, resolveVenueFromBlePeersOnly } from './ble.service.js';
+import { maybeRefreshCity } from './geocoding.service.js';
+import { invalidateLocationDetailCache, invalidateLocationsListCache } from '../utils/locationCache.js';
 
 // Cache très court des candidats POI proches (geoNear 200m) pour le heartbeat.
 // TTL volontairement court (3s, pas 10s comme /api/locations) : cette liste
@@ -197,8 +199,14 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
 // `bypassDistance` lève la contrainte des 100 m. Ce flag n'est envoyé que par
 // les builds de dev de l'app (gating fait côté client via __DEV__) — il n'y a
 // pas de notion dev/prod côté serveur pour l'instant (un seul environnement).
-export async function forceCheckIn(userId, { locationId, lat, lon, bypassDistance }) {
-  const existingUser = await User.findById(userId).select('boostUntil');
+export async function forceCheckIn(userId, { locationId, lat, lon, bypassDistance, mode }) {
+  // Capturé avant tout traitement async : sert de garde d'ordre ci-dessous pour
+  // qu'un double tap rapide sur deux lieux différents ne puisse jamais faire
+  // "gagner" la requête la plus ancienne juste parce qu'elle termine après
+  // l'autre (ex: son Location.findById est plus lent).
+  const requestStartedAt = Date.now();
+
+  const existingUser = await User.findById(userId).select('boostUntil currentLocation');
   if (existingUser?.boostUntil && existingUser.boostUntil > new Date()) {
     throw Object.assign(new Error('Boost actif : impossible de changer de lieu tant que le boost est en cours.'), {
       status: 409,
@@ -215,8 +223,15 @@ export async function forceCheckIn(userId, { locationId, lat, lon, bypassDistanc
     throw Object.assign(new Error('Trop loin du lieu sélectionné'), { status: 400 });
   }
 
-  const user = await User.findByIdAndUpdate(
-    userId,
+  // findOneAndUpdate avec filtre sur lastForceCheckInRequestAt : si une requête
+  // de check-in démarrée APRÈS celle-ci a déjà écrit (cas classique du double
+  // tap rapide sur deux lieux), ce filtre ne matche plus rien et l'écriture est
+  // silencieusement ignorée au lieu d'écraser le résultat plus récent.
+  const user = await User.findOneAndUpdate(
+    {
+      _id: userId,
+      $or: [{ lastForceCheckInRequestAt: null }, { lastForceCheckInRequestAt: { $lte: requestStartedAt } }],
+    },
     {
       $set: {
         location: { type: 'Point', coordinates: [lon, lat], updatedAt: new Date() },
@@ -225,18 +240,43 @@ export async function forceCheckIn(userId, { locationId, lat, lon, bypassDistanc
         pendingLocation: null,
         pendingLocationSince: null,
         boostUntil: null,
+        // Trace le mode du dernier check-in ('manual' si l'utilisateur a
+        // explicitement choisi ce lieu, 'auto' par défaut) : sert de
+        // distinction analytics/crédit de streak, sans impact sur la
+        // validation de distance ci-dessus (toujours ≤ FORCE_CHECKIN_MAX_M
+        // sauf bypassDistance).
+        lastCheckInMode: mode === 'manual' ? 'manual' : 'auto',
+        lastForceCheckInRequestAt: requestStartedAt,
       },
     },
     { new: true }
   );
-  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+
+  if (!user) {
+    // Soit l'utilisateur n'existe pas, soit (cas normal du double tap) une
+    // requête plus récente a déjà gagné : dans ce dernier cas on renvoie
+    // l'état actuel (déjà correct) plutôt qu'une erreur.
+    const current = await User.findById(userId);
+    if (!current) throw Object.assign(new Error('User not found'), { status: 404 });
+    return current;
+  }
+
+  // Sans ça, le userCount de l'ancien ET du nouveau lieu restent servis depuis
+  // le cache `locations:v1:*` (TTL 60s) le temps que le client rafraîchisse,
+  // donnant l'impression que l'utilisateur est resté sur l'ancien lieu.
+  await invalidateLocationsListCache();
+  await invalidateLocationDetailCache(existingUser?.currentLocation);
+  await invalidateLocationDetailCache(locationId);
+
   return user;
 }
 
 // Force le check-out de l'utilisateur, sans passer par le heartbeat GPS.
 // Appelé uniquement par les builds de dev de l'app (gating côté client).
 export async function forceCheckOut(userId) {
-  const existingUser = await User.findById(userId).select('boostUntil');
+  const requestStartedAt = Date.now();
+
+  const existingUser = await User.findById(userId).select('boostUntil currentLocation');
   if (existingUser?.boostUntil && existingUser.boostUntil > new Date()) {
     throw Object.assign(new Error('Boost actif : impossible de se check-out tant que le boost est en cours.'), {
       status: 409,
@@ -244,19 +284,34 @@ export async function forceCheckOut(userId) {
     });
   }
 
-  const user = await User.findByIdAndUpdate(
-    userId,
+  // Même garde d'ordre que forceCheckIn (cf. commentaire là-bas) : un check-out
+  // ne doit pas écraser un check-in manuel démarré après lui.
+  const user = await User.findOneAndUpdate(
+    {
+      _id: userId,
+      $or: [{ lastForceCheckInRequestAt: null }, { lastForceCheckInRequestAt: { $lte: requestStartedAt } }],
+    },
     {
       $set: {
         currentLocation: null,
         currentLocationSince: null,
         pendingLocation: null,
         pendingLocationSince: null,
+        lastForceCheckInRequestAt: requestStartedAt,
       },
     },
     { new: true }
   );
-  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+
+  if (!user) {
+    const current = await User.findById(userId);
+    if (!current) throw Object.assign(new Error('User not found'), { status: 404 });
+    return current;
+  }
+
+  await invalidateLocationsListCache();
+  await invalidateLocationDetailCache(existingUser?.currentLocation);
+
   return user;
 }
 
@@ -267,6 +322,8 @@ export async function forceCheckOut(userId) {
 // fiable n'est actuellement à portée (l'app garde alors sa position
 // précédente / propose la sélection manuelle côté client).
 export async function checkInViaBleOnly(userId) {
+  const requestStartedAt = Date.now();
+
   const existingUser = await User.findById(userId).select('boostUntil currentLocation');
   if (existingUser?.boostUntil && existingUser.boostUntil > new Date()) {
     throw Object.assign(new Error('Boost actif : impossible de changer de lieu tant que le boost est en cours.'), {
@@ -285,8 +342,15 @@ export async function checkInViaBleOnly(userId) {
     return { user, resolved: true };
   }
 
-  const user = await User.findByIdAndUpdate(
-    userId,
+  // Même garde d'ordre que forceCheckIn/forceCheckOut/updateLocation (cf.
+  // commentaires là-bas) : la résolution BLE peut prendre un moment, donc ce
+  // check-in "automatique" peut terminer après un check-in manuel plus
+  // récent et l'écraser sans cette garde.
+  const user = await User.findOneAndUpdate(
+    {
+      _id: userId,
+      $or: [{ lastForceCheckInRequestAt: null }, { lastForceCheckInRequestAt: { $lte: requestStartedAt } }],
+    },
     {
       $set: {
         currentLocation: venueId,
@@ -294,16 +358,42 @@ export async function checkInViaBleOnly(userId) {
         pendingLocation: null,
         pendingLocationSince: null,
         boostUntil: null,
+        lastForceCheckInRequestAt: requestStartedAt,
       },
     },
     { new: true }
   );
-  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+  if (!user) {
+    const current = await User.findById(userId);
+    if (!current) throw Object.assign(new Error('User not found'), { status: 404 });
+    return { user: current, resolved: true };
+  }
+
+  await invalidateLocationsListCache();
+  if (existingUser?.currentLocation) await invalidateLocationDetailCache(existingUser.currentLocation);
+  await invalidateLocationDetailCache(venueId);
+
   return { user, resolved: true };
 }
 
+// Fenêtre pendant laquelle un check-in manuel ('je suis là') est protégé
+// contre un heartbeat GPS qui matcherait un autre lieu (typiquement : le
+// heartbeat suivant arrive avant que l'utilisateur ait physiquement bougé,
+// et le lieu le plus proche reste l'ancien). Sans ça, le choix explicite de
+// l'utilisateur est écrasé quelques secondes après par le heartbeat normal.
+const MANUAL_CHECKIN_GRACE_MS = 5 * 60 * 1000;
+
 export async function updateLocation(userId, { lat, lon }) {
-  const userToUpdate = await User.findById(userId).select('currentLocation pendingLocation pendingLocationSince currentLocationSince location boostUntil');
+  // Même garde d'ordre que forceCheckIn/forceCheckOut (cf. commentaire là-bas) :
+  // un heartbeat GPS "normal" peut être en vol pile au moment d'un check-in
+  // manuel (ex: watcher usePresence qui se déclenche indépendamment). Sans
+  // garde, ce heartbeat — parti avant le check-in mais dont l'agrégation
+  // Mongo/geoNear prend quelques centaines de ms — peut terminer et écrire
+  // APRÈS le check-in manuel, écrasant le lieu choisi par l'utilisateur en
+  // quelques centaines de ms à peine.
+  const requestStartedAt = Date.now();
+
+  const userToUpdate = await User.findById(userId).select('currentLocation pendingLocation pendingLocationSince currentLocationSince location boostUntil lastCheckInMode');
   if (!userToUpdate) throw Object.assign(new Error('User not found'), { status: 404 });
 
   const oldLocationId = userToUpdate.currentLocation;
@@ -312,6 +402,11 @@ export async function updateLocation(userId, { lat, lon }) {
   const oldCurrentLocationSince = userToUpdate.currentLocationSince;
   const oldLocation = userToUpdate.location || { type: 'Point', coordinates: [0, 0] };
   const hasActiveBoost = userToUpdate.boostUntil && userToUpdate.boostUntil > new Date();
+  const isWithinManualCheckInGrace =
+    oldLocationId &&
+    userToUpdate.lastCheckInMode === 'manual' &&
+    oldCurrentLocationSince &&
+    Date.now() - new Date(oldCurrentLocationSince).getTime() < MANUAL_CHECKIN_GRACE_MS;
 
   // Utilisation de l'agrégation pour obtenir les distances exactes et gérer le rayon par lieu
   const geoNearResult = await getNearbyPoiCandidates(lat, lon);
@@ -406,6 +501,10 @@ export async function updateLocation(userId, { lat, lon }) {
       // ils seront nettoyés naturellement à l'expiration du boost (prochain
       // heartbeat une fois `hasActiveBoost` redevenu false) ou si l'utilisateur
       // entre dans un autre POI (cf. branche ci-dessous, safety check anti-ghost).
+    } else if (isWithinManualCheckInGrace) {
+      // Check-in manuel récent et aucun POI matché par ce heartbeat (l'utilisateur
+      // n'a pas encore physiquement bougé jusqu'au lieu choisi) : on ne retire pas
+      // sa présence, le temps qu'il rejoigne le lieu ou que la fenêtre expire.
     } else {
       // L'utilisateur n'est dans aucun POI → retrait immédiat
       update.currentLocation = null;
@@ -419,6 +518,11 @@ export async function updateLocation(userId, { lat, lon }) {
     // tourne, on reste verrouillé sur l'ancien lieu et on ignore le nouveau
     // match (currentLocation/currentLocationSince inchangés). L'utilisateur
     // doit laisser son boost expirer avant de "changer de lieu" côté app.
+  } else if (isWithinManualCheckInGrace) {
+    // L'utilisateur vient de se check-in manuellement ('je suis là') et le
+    // heartbeat GPS matche un autre lieu (typiquement l'ancien, s'il n'a pas
+    // encore bougé) : on ignore ce re-match pendant la fenêtre de grâce pour
+    // ne pas écraser son choix explicite quelques secondes après l'avoir fait.
   } else {
     // Entrée immédiate dans le POI matché (nouveau ou différent de l'ancien)
     update.currentLocation = matchedLocationId;
@@ -426,13 +530,45 @@ export async function updateLocation(userId, { lat, lon }) {
     // Safety check: clear boostUntil to prevent being a "Ghost" in an old Bar
     // while being "Present" in a new one.
     update.boostUntil = null;
+    // Sans ça, `lastCheckInMode` restait à 'manual' indéfiniment après un
+    // check-in manuel : la prochaine entrée AUTOMATIQUE (heartbeat) dans un
+    // autre POI hériterait alors, à tort, de la fenêtre de grâce anti-override
+    // (MANUAL_CHECKIN_GRACE_MS) alors qu'elle n'a rien de manuel.
+    update.lastCheckInMode = 'auto';
     console.log(`[Presence] User ${userId} entered POI ${matchedLocationId} (instant)`);
   }
   void oldPendingSince; // plus utilisé : la confirmation ne dépend que de l'identité du candidat, pas d'un délai
+  update.lastForceCheckInRequestAt = requestStartedAt;
 
-  const user = await User.findByIdAndUpdate(userId, { $set: update }, { new: true });
+  // findOneAndUpdate avec le même filtre d'ordre que forceCheckIn/forceCheckOut :
+  // si un check-in manuel (ou un autre heartbeat) démarré APRÈS celui-ci a déjà
+  // écrit, ce heartbeat "en retard" n'écrase rien — on relit juste l'état
+  // actuel (déjà correct) ci-dessous.
+  let user = await User.findOneAndUpdate(
+    {
+      _id: userId,
+      $or: [{ lastForceCheckInRequestAt: null }, { lastForceCheckInRequestAt: { $lte: requestStartedAt } }],
+    },
+    { $set: update },
+    { new: true }
+  );
+  if (!user) {
+    user = await User.findById(userId);
+    if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+    return user;
+  }
 
   const currentLocationId = user.currentLocation;
+
+  // Check-in/check-out automatique (heartbeat) : sans invalidation, le lieu
+  // quitté ET le lieu rejoint restent servis depuis le cache `locations:v1:*`
+  // (TTL 60s) le temps qu'il expire — l'utilisateur n'apparaît/disparaît dans
+  // la pile de visiteurs qu'au bout d'~1 min au lieu d'être instantané.
+  if (String(currentLocationId || '') !== String(oldLocationId || '')) {
+    await invalidateLocationsListCache();
+    if (oldLocationId) await invalidateLocationDetailCache(oldLocationId);
+    if (currentLocationId) await invalidateLocationDetailCache(currentLocationId);
+  }
 
   // Record a location_visit only after the user has been in the POI for at least 5 minutes.
   // - On new entry: currentLocationSince is set in `update` above → skip this block.
@@ -522,6 +658,12 @@ export async function updateLocation(userId, { lat, lon }) {
   try {
     await redisClient.geoAdd('geo:users', [{ longitude: lon, latitude: lat, member: userId.toString() }]);
   } catch {}
+
+  // Fire-and-forget : dérive/rafraîchit `city` via reverse geocoding (throttlé,
+  // cf. geocoding.service.js). Ne doit jamais bloquer ni faire échouer la
+  // réponse du check-in/heartbeat — erreurs déjà avalées côté service.
+  maybeRefreshCity(userId, lat, lon).catch(() => {});
+
   return user;
 }
 
@@ -559,7 +701,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
         ]
       }))
       .select('-password')
-      .sort({ boostUntil: -1, cotePercent: -1 });
+      .sort({ boostUntil: -1, 'streak.count': -1 });
 
       console.log(`[getNearbyUsers] Redis audit: Found=${users.length}/${ids.length} candidates. Threshold=${threshold.toISOString()}. ExcludedIdsCount=${excludeIds.length}`);
       return users;
@@ -581,7 +723,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
       },
     },
   }))
-    .sort({ boostUntil: -1, cotePercent: -1 })
+    .sort({ boostUntil: -1, 'streak.count': -1 })
     .limit(100)
     .select('-password');
 

@@ -42,6 +42,12 @@ const UserSchema = new mongoose.Schema(
     pendingLocationSince: { type: Date, default: null },
     // Timestamp when user entered their current location (for 5-min minimum stay rule)
     currentLocationSince: { type: Date, default: null },
+    // Horodatage (ms epoch, capturé côté serveur avant tout traitement async) de la
+    // dernière requête forceCheckIn/forceCheckOut acceptée. Sert de garde d'ordre : si
+    // deux check-ins manuels partent en quasi-simultané (double tap rapide sur deux
+    // lieux différents), celui dont la requête a démarré le plus tôt ne doit jamais
+    // écraser le résultat de celui parti après, même s'il termine son traitement après.
+    lastForceCheckInRequestAt: { type: Number, default: null },
     // GDPR consent and privacy preferences
     consent: {
       accepted: { type: Boolean, default: false },
@@ -116,11 +122,29 @@ const UserSchema = new mongoose.Schema(
     pendingReferralReward: { type: Boolean, default: false },
     lastAllowanceAt: { type: Date },
     expoPushToken: { type: String, index: true },
-    // "Cote" : score de présence façon flammes Snapchat, utilisé pour trier
-    // les utilisateurs d'un lieu (cf. cote.service.js)
-    cotePercent: { type: Number, enum: [0, 25, 50, 75, 100], default: 100, index: true },
     lastLoginAt: { type: Date, default: Date.now },
-    coteWarningSentAt: { type: Date, default: null },
+    // Streak de présence façon flammes Snapchat, utilisé pour trier les
+    // utilisateurs d'un lieu et pour débloquer des récompenses à réclamer
+    // (cf. streak.service.js). Remplace l'ancien système `cotePercent`.
+    streak: {
+      count: { type: Number, default: 0, min: 0, max: 14, index: true },
+      lastCheckInDate: { type: Date, default: null },
+      supervisePendingClaim: { type: Boolean, default: false },
+      boostPendingClaim: { type: Boolean, default: false },
+      lastClaimedAt: { type: Date, default: null },
+    },
+    // Mode invisible (RGPD) : masque l'utilisateur de la liste/carte des
+    // lieux sans changer son `status` (distinct de status='red').
+    invisibleMode: { type: Boolean, default: false },
+    // Préférences de notifications par "kind" (clé libre, ex: 'cote_expiring',
+    // 'streak_reward', ...). Absence de clé = notification autorisée par défaut.
+    notificationPreferences: { type: Map, of: Boolean, default: {} },
+    // Préférence utilisateur : 'auto' (détection GPS/heartbeat) ou 'manual'
+    // (l'utilisateur force systématiquement son check-in).
+    checkInMode: { type: String, enum: ['auto', 'manual'], default: 'auto' },
+    // Mode du dernier check-in effectif via /location/force (cf. forceCheckIn
+    // dans user.service.js) : distinction analytics/crédit de streak.
+    lastCheckInMode: { type: String, enum: ['auto', 'manual'], default: 'auto' },
     // Relance "X profils t'ont vu récemment" envoyée après 4h d'inactivité
     // (cf. engagement.service.js) : évite les envois répétés.
     profileViewsNudgeSentAt: { type: Date, default: null },
@@ -151,12 +175,32 @@ const UserSchema = new mongoose.Schema(
       coordinates: { type: [Number], default: [0, 0] }, // [lon, lat]
       updatedAt: { type: Date, default: Date.now },
     },
+    // Ville dérivée des coordonnées GPS via reverse geocoding (cf.
+    // geocoding.service.js), affichée dans l'app (MyAccountScreen,
+    // UserProfileScreen) à côté du statut de disponibilité. Jamais saisie
+    // manuellement par l'utilisateur — c'est une décision produit explicite.
+    city: { type: String, default: '' },
+    // Dernière fois que `city` a été (re)calculée avec succès. Sert au
+    // throttling du reverse geocoding (cf. maybeRefreshCity dans
+    // geocoding.service.js) : évite d'appeler Nominatim à chaque heartbeat.
+    cityUpdatedAt: { type: Date, default: null },
+    // Coordonnées utilisées lors du dernier reverse geocoding réussi. Comparées
+    // aux nouvelles coordonnées pour décider si un ré-appel est nécessaire
+    // (déplacement > ~2km) indépendamment de `cityUpdatedAt`.
+    lastGeocodedCoordinates: { type: [Number], default: null },
     socialNetworks: [SocialSchema],
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     // Email verification and password reset
     emailVerified: { type: Boolean, default: false, index: true },
     emailVerifyTokenHash: { type: String, index: true, select: false },
     emailVerifyExpiresAt: { type: Date, select: false },
+    // Email en attente de confirmation lors d'un changement d'adresse
+    // (POST /api/users/me/email). Réutilise emailVerifyTokenHash/
+    // emailVerifyExpiresAt pour le token — seul `pendingEmail` distingue ce
+    // flux de la vérification d'email initiale à l'inscription. `email`
+    // n'est mis à jour qu'une fois le token confirmé (cf. auth.service.js/
+    // confirmEmailChange).
+    pendingEmail: { type: String, default: null, select: false },
     pwdResetTokenHash: { type: String, index: true, select: false },
     pwdResetExpiresAt: { type: Date, select: false },
     // Parrainage

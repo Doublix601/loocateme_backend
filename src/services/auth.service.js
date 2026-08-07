@@ -36,6 +36,20 @@ function parseExpiry(str) {
   return 30 * 24 * 60 * 60 * 1000;
 }
 
+function generateUsername({ firstName = '', lastName = '', email = '' } = {}) {
+  const base = `${firstName}${lastName}` || String(email).split('@')[0] || 'user';
+  const slug = base
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // strip accents
+    .toLowerCase()
+    .replace(/[^a-z0-9._]/g, '')
+    .replace(/\.\.+/g, '.')
+    .replace(/^\.|\.$/g, '')
+    .slice(0, 24) || 'user';
+  const suffix = String(Math.floor(100000 + Math.random() * 900000)).slice(0, 6);
+  return `${slug}${suffix}`;
+}
+
 export async function signup({ email, password, username, firstName = '', lastName = '', customName = '', birthdate, gender }) {
   // Refuse signup if an account already exists for this email (do NOT delete existing accounts)
   const existing = await User.findOne({ email }).select('_id');
@@ -55,6 +69,9 @@ export async function signup({ email, password, username, firstName = '', lastNa
   }
   // Normaliser le username (aligné sur les règles Instagram): tout en minuscules
   let normalizedUsername = String(username || '').trim().toLowerCase();
+  if (!normalizedUsername) {
+    normalizedUsername = generateUsername({ firstName, lastName, email });
+  }
   const now = new Date();
   const user = new User({
     email,
@@ -328,6 +345,128 @@ export async function resetPasswordByToken(token, newPassword) {
   user.password = newPassword; // will be hashed by pre-save hook
   user.pwdResetTokenHash = undefined;
   user.pwdResetExpiresAt = undefined;
+  await user.save();
+  return sanitize(user);
+}
+
+// Changement de mot de passe "connecté" (l'utilisateur connaît déjà son mot
+// de passe actuel) — distinct du flux "mot de passe oublié" ci-dessus qui ne
+// nécessite pas l'ancien mot de passe.
+export async function changePassword(userId, { currentPassword, newPassword }) {
+  const user = await User.findById(userId).select('+password');
+  if (!user) throw Object.assign(new Error('User not found'), { status: 404, code: 'USER_NOT_FOUND' });
+  const ok = await user.comparePassword(currentPassword);
+  if (!ok) {
+    const err = new Error('Mot de passe actuel incorrect');
+    err.status = 401;
+    err.code = 'INVALID_CURRENT_PASSWORD';
+    throw err;
+  }
+  user.password = newPassword; // hashed by pre-save hook
+  await user.save();
+  try {
+    await emailQueue.add('send', {
+      to: user.email,
+      subject: 'Votre mot de passe a été modifié',
+      text: `Bonjour,\nVotre mot de passe LoocateMe vient d'être modifié. Si vous n'êtes pas à l'origine de ce changement, contactez immédiatement notre support.`,
+      html: `<p>Bonjour,</p><p>Votre mot de passe LoocateMe vient d'être modifié.</p><p>Si vous n'êtes pas à l'origine de ce changement, contactez immédiatement notre support.</p>`,
+    });
+  } catch (e) {
+    // Best-effort : ne doit jamais faire échouer le changement de mot de passe
+    console.error('Failed to enqueue password-changed notification email:', e?.message || e);
+  }
+  return sanitize(user);
+}
+
+// Étape 1 du changement d'email : vérifie le mot de passe, vérifie que la
+// nouvelle adresse n'est pas déjà prise, puis réutilise le mécanisme de
+// vérification d'email existant (emailVerifyTokenHash/emailVerifyExpiresAt),
+// mais stocke la nouvelle adresse dans `pendingEmail` pour ne jamais écraser
+// `email` avant confirmation (et donc ne jamais entrer en conflit avec
+// l'index unique sur `email`).
+export async function requestEmailChange(userId, { newEmail, currentPassword }) {
+  const user = await User.findById(userId).select('+password');
+  if (!user) throw Object.assign(new Error('User not found'), { status: 404, code: 'USER_NOT_FOUND' });
+  const ok = await user.comparePassword(currentPassword);
+  if (!ok) {
+    const err = new Error('Mot de passe incorrect');
+    err.status = 401;
+    err.code = 'INVALID_CURRENT_PASSWORD';
+    throw err;
+  }
+  const normalizedEmail = String(newEmail).toLowerCase().trim();
+  if (normalizedEmail === user.email) {
+    const err = new Error('Cette adresse est déjà votre adresse actuelle');
+    err.status = 400;
+    err.code = 'EMAIL_UNCHANGED';
+    throw err;
+  }
+  const existing = await User.findOne({ email: normalizedEmail });
+  if (existing) {
+    const err = new Error('Cette adresse email est déjà utilisée');
+    err.status = 409;
+    err.code = 'EMAIL_TAKEN';
+    throw err;
+  }
+  const { token, hash, expiresAt } = generateOpaqueToken(process.env.EMAIL_VERIF_TOKEN_TTL || '24h');
+  user.pendingEmail = normalizedEmail;
+  user.emailVerifyTokenHash = hash;
+  user.emailVerifyExpiresAt = expiresAt;
+  await user.save();
+  // See priority comment on requestPasswordReset above
+  const baseUrl = process.env.API_PUBLIC_URL || process.env.BASE_URL || 'http://api.loocate.me';
+  const confirmUrl = `${baseUrl}/api/users/me/email/confirm?token=${encodeURIComponent(token)}`;
+  try {
+    await emailQueue.add('send', {
+      to: normalizedEmail,
+      subject: 'Confirmez votre nouvelle adresse email',
+      text: `Bonjour,\nVous avez demandé à changer l'adresse email de votre compte LoocateMe.\nCliquez sur ce lien pour confirmer cette nouvelle adresse (valide 24h): ${confirmUrl}`,
+      html: `<p>Bonjour,</p><p>Vous avez demandé à changer l'adresse email de votre compte LoocateMe.</p><p><a href="${confirmUrl}">Cliquez ici pour confirmer cette nouvelle adresse</a> (valide 24h).</p><p>Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.</p>`,
+    });
+  } catch (e) {
+    console.error('Failed to enqueue email-change confirmation email:', e?.message || e);
+  }
+  return { success: true };
+}
+
+// Étape 2 du changement d'email : consomme le token (même hash/expiry que la
+// vérification d'email initiale) et applique `pendingEmail` -> `email`
+// uniquement à la confirmation.
+export async function confirmEmailChange(token) {
+  const hash = sha256(token);
+  const now = new Date();
+  const user = await User.findOne({ emailVerifyTokenHash: hash }).select('+emailVerifyExpiresAt +pendingEmail');
+  if (!user) {
+    const err = new Error('Token de confirmation invalide');
+    err.status = 400;
+    err.code = 'VERIFY_TOKEN_INVALID';
+    throw err;
+  }
+  if (user.emailVerifyExpiresAt && user.emailVerifyExpiresAt < now) {
+    const err = new Error('Le lien de confirmation a expiré');
+    err.status = 400;
+    err.code = 'VERIFY_TOKEN_EXPIRED';
+    throw err;
+  }
+  if (!user.pendingEmail) {
+    const err = new Error('Aucun changement d\'email en attente pour ce token');
+    err.status = 400;
+    err.code = 'NO_PENDING_EMAIL_CHANGE';
+    throw err;
+  }
+  // Re-check uniqueness at confirmation time (race condition: another account
+  // could have taken the address between request and confirmation).
+  const existing = await User.findOne({ email: user.pendingEmail, _id: { $ne: user._id } });
+  if (existing) {
+    const err = new Error('Cette adresse email est déjà utilisée');
+    err.status = 409;
+    err.code = 'EMAIL_TAKEN';
+    throw err;
+  }
+  user.email = user.pendingEmail;
+  user.pendingEmail = null;
+  user.emailVerifyTokenHash = undefined;
+  user.emailVerifyExpiresAt = undefined;
   await user.save();
   return sanitize(user);
 }

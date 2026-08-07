@@ -6,7 +6,7 @@ import { sendPushUnified } from './push.service.js';
 import { recalculateAllCityStars } from './location.service.js';
 import { recomputeAllLocationAnalytics } from './businessStats.service.js';
 import { processPolicyEmailJobs } from './policyNotification.service.js';
-import { decayInactiveUsers, sendCoteExpiryWarnings } from './cote.service.js';
+import { decayInactiveUsers, sendStreakExpiryWarnings } from './streak.service.js';
 import { sendInactiveProfileViewsNudge, sendNightModeActivatedNotification } from './engagement.service.js';
 import { revokePremiumAdvantages } from '../controllers/businessBilling.controller.js';
 import { expireReferralRewardsAndApplyBanked } from './referral.service.js';
@@ -173,25 +173,25 @@ export const CronService = {
       }
     });
 
-    // Cote : décroissance quotidienne à 0% des utilisateurs inactifs depuis
+    // Streak : décroissance quotidienne à 0 des utilisateurs inactifs depuis
     // au moins un jour civil complet. Tous les jours à 00:10.
     nodeCron.schedule('10 0 * * *', async () => {
       try {
         const count = await decayInactiveUsers();
-        console.log(`[cron] Cote decay: ${count} users reset to 0%.`);
+        console.log(`[cron] Streak decay: ${count} users reset to 0.`);
       } catch (e) {
-        console.error('[cron] Cote decay error:', e);
+        console.error('[cron] Streak decay error:', e);
       }
     });
 
-    // Cote : alerte push aux utilisateurs à 6h de l'expiration (18h-24h sans
+    // Streak : alerte push aux utilisateurs à 6h de l'expiration (18h-24h sans
     // connexion). Toutes les 30 minutes.
     nodeCron.schedule('*/30 * * * *', async () => {
       try {
-        const count = await sendCoteExpiryWarnings();
-        if (count) console.log(`[cron] Cote expiry warnings sent to ${count} users.`);
+        const count = await sendStreakExpiryWarnings();
+        if (count) console.log(`[cron] Streak expiry warnings sent to ${count} users.`);
       } catch (e) {
-        console.error('[cron] Cote expiry warning error:', e);
+        console.error('[cron] Streak expiry warning error:', e);
       }
     });
 

@@ -11,6 +11,8 @@ router.post('/login', loginLimiter, validate(validators.login), AuthController.l
 router.post('/refresh', AuthController.refresh);
 router.post('/logout', requireAuth, AuthController.logout);
 router.post('/forgot-password', forgotPasswordLimiter, validate(validators.forgot), AuthController.forgotPassword);
+// Change password while logged in (requires current password)
+router.post('/change-password', requireAuth, validate(validators.changePassword), AuthController.changePassword);
 // Comptes professionnels (site Web uniquement)
 router.post('/business/login', loginLimiter, validate(validators.login), AuthController.businessLogin);
 router.get('/business/activate', AuthController.businessActivateGet);
