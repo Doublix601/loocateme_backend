@@ -376,6 +376,55 @@ export async function checkInViaBleOnly(userId) {
   return { user, resolved: true };
 }
 
+// Seuil au-delà duquel une présence est considérée "fantôme" : le heartbeat
+// GPS (foreground, cf. usePresence.js) s'arrête dès que l'app quitte l'état
+// 'active', et le relais censé prendre le relai en arrière-plan (5 min
+// d'intervalle) peut être suspendu par l'OS lors d'un verrouillage d'écran
+// prolongé — sans qu'aucun check-out explicite ne soit jamais envoyé. Sans
+// filet de sécurité serveur, le check-in reste alors bloqué indéfiniment.
+// Seuil fixé à 4x l'intervalle du heartbeat d'arrière-plan pour absorber les
+// retards de livraison OS normaux sans faux positifs.
+const STALE_PRESENCE_THRESHOLD_MS = 20 * 60 * 1000;
+
+// Check-out automatique des utilisateurs dont la présence n'a plus été
+// rafraîchie depuis STALE_PRESENCE_THRESHOLD_MS (cf. cron.service.js).
+// Les utilisateurs avec un boost actif sont exclus : rester "présent" sans
+// heartbeat pendant un boost est le comportement voulu (cf. updateLocation).
+export async function expireStalePresence() {
+  const threshold = new Date(Date.now() - STALE_PRESENCE_THRESHOLD_MS);
+
+  const staleUsers = await User.find({
+    currentLocation: { $ne: null },
+    $and: [
+      { $or: [{ boostUntil: null }, { boostUntil: { $lte: new Date() } }] },
+      { $or: [{ 'location.updatedAt': { $lt: threshold } }, { 'location.updatedAt': { $exists: false } }] },
+    ],
+  }).select('_id currentLocation');
+
+  if (!staleUsers.length) return 0;
+
+  const staleLocationIds = [...new Set(staleUsers.map((u) => String(u.currentLocation)))];
+
+  await User.updateMany(
+    { _id: { $in: staleUsers.map((u) => u._id) } },
+    {
+      $set: {
+        currentLocation: null,
+        currentLocationSince: null,
+        pendingLocation: null,
+        pendingLocationSince: null,
+      },
+    }
+  );
+
+  await invalidateLocationsListCache();
+  for (const locationId of staleLocationIds) {
+    await invalidateLocationDetailCache(locationId);
+  }
+
+  return staleUsers.length;
+}
+
 // Fenêtre pendant laquelle un check-in manuel ('je suis là') est protégé
 // contre un heartbeat GPS qui matcherait un autre lieu (typiquement : le
 // heartbeat suivant arrive avant que l'utilisateur ait physiquement bougé,

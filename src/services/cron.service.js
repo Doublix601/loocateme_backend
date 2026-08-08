@@ -12,6 +12,7 @@ import { revokePremiumAdvantages } from '../controllers/businessBilling.controll
 import { expireReferralRewardsAndApplyBanked } from './referral.service.js';
 import { sendOnboardingSequence } from './onboarding.service.js';
 import { sendAtRiskReactivationNudge } from './churnRisk.service.js';
+import { expireStalePresence } from './user.service.js';
 
 /**
  * Service de tâches planifiées (Cron) pour LoocateMe.
@@ -238,6 +239,18 @@ export const CronService = {
         if (count) console.log(`[cron] At-risk reactivation nudge sent to ${count} users.`);
       } catch (e) {
         console.error('[cron] At-risk reactivation nudge error:', e);
+      }
+    });
+
+    // Check-out automatique des présences "fantômes" (écran verrouillé longtemps,
+    // heartbeat d'arrière-plan tué par l'OS avant l'envoi d'un check-out explicite) :
+    // toutes les 5 minutes, même cadence que le heartbeat d'arrière-plan côté app.
+    nodeCron.schedule('*/5 * * * *', async () => {
+      try {
+        const count = await expireStalePresence();
+        if (count) console.log(`[cron] Stale presence expired for ${count} users.`);
+      } catch (e) {
+        console.error('[cron] Stale presence expiry error:', e);
       }
     });
 
