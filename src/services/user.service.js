@@ -5,7 +5,6 @@ import { Event } from '../models/Event.js';
 import { redisClient } from '../config/redis.js';
 import { sendPushUnified } from './push.service.js';
 import { NotificationDedup } from '../models/NotificationDedup.js';
-import { cityStarsQueue } from '../config/queue.js';
 import { singleflightRedis } from '../utils/singleflight.js';
 import { recordCrossedPaths } from './crossedPaths.service.js';
 import { resolveAmbiguousVenueViaBle, resolveVenueFromBlePeersOnly } from './ble.service.js';
@@ -668,10 +667,19 @@ export async function updateLocation(userId, { lat, lon }) {
           const loc = await Location.findById(currentLocationId, 'city').lean();
           // Décalé en tâche de fond : cette agrégation (tous les Events 30j d'une
           // ville) n'a aucune raison de bloquer la réponse du heartbeat qui vient
-          // de la déclencher.
-          await cityStarsQueue.add('recalc', { city: loc?.city || null }).catch((e) => {
+          // de la déclencher. Import dynamique (comme referral.service.js
+          // ci-dessus) : construire une Queue BullMQ se connecte à Redis dès
+          // l'instanciation (pas seulement au premier .add()), donc un import
+          // statique de config/queue.js forcerait cette connexion dès le
+          // chargement de user.service.js — y compris dans des tests qui
+          // n'utilisent jamais la queue (repéré via tests/user.service.checkin.test.js,
+          // qui restait bloqué indéfiniment en l'absence de Redis).
+          try {
+            const { cityStarsQueue } = await import('../config/queue.js');
+            await cityStarsQueue.add('recalc', { city: loc?.city || null });
+          } catch (e) {
             console.warn('[user.service] Failed to enqueue city stars recalc:', e.message);
-          });
+          }
           console.log(`[Presence] Visit recorded for user ${userId} at POI ${currentLocationId} after ${Math.round(elapsedMs / 60000)}min`);
 
           // Croisements : même dédup 12h que le location_visit ci-dessus, pour
