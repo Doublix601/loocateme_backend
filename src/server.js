@@ -23,7 +23,6 @@ import premiumRoutes from './routes/premium.routes.js';
 import proxyRoutes from './routes/proxy.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import blocksRoutes from './routes/blocks.routes.js';
-import followRoutes from './routes/follow.routes.js';
 import locationRoutes from './routes/location.routes.js';
 import iapRoutes from './routes/iap.routes.js';
 import businessClaimRoutes from './routes/businessClaim.routes.js';
@@ -38,11 +37,12 @@ import { BusinessBillingController } from './controllers/businessBilling.control
 import { errorHandler, notFound } from './middlewares/error.js';
 import { verifyMailTransport } from './services/email.service.js';
 import { CronService } from './services/cron.service.js';
-import { startCityStarsWorker, startStripeWebhookWorker, startEmailWorker, startVideoProcessingWorker } from './config/queue.js';
+import { startCityStarsWorker, startStripeWebhookWorker, startEmailWorker, startVideoProcessingWorker, startBoostNotifyWorker } from './config/queue.js';
 import { recalculateCityStars } from './services/location.service.js';
 import { processVideoJob } from './services/mediaProcessing.service.js';
 import { processStripeEvent } from './controllers/businessBilling.controller.js';
 import { sendMail } from './services/email.service.js';
+import { processBoostNotifyJob } from './services/boostNotify.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -169,7 +169,6 @@ app.use('/api/premium', premiumRoutes);
 app.use('/api/proxy', proxyRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/blocks', blocksRoutes);
-app.use('/api/follow', followRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/iap', iapRoutes);
 app.use('/api/business-claims', businessClaimRoutes);
@@ -251,6 +250,7 @@ app.use(errorHandler);
     startStripeWebhookWorker(processStripeEvent);
     startEmailWorker(sendMail);
     startVideoProcessingWorker(processVideoJob);
+    startBoostNotifyWorker(processBoostNotifyJob);
   }
     app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT} (listening on 0.0.0.0)`);

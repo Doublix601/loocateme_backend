@@ -1,6 +1,6 @@
 import { SponsorshipSlot } from '../models/SponsorshipSlot.js';
-import { broadcastUltraBoost } from '../services/ultraBoost.service.js';
-import { broadcastEventBoost } from '../services/eventBoost.service.js';
+import { estimateUltraBoostRecipients, enqueueUltraBoostBroadcast } from '../services/ultraBoost.service.js';
+import { estimateEventBoostRecipients, enqueueEventBoostBroadcast } from '../services/eventBoost.service.js';
 import { stripe } from '../services/stripe.service.js';
 import { ensureStripeCustomer } from './businessBilling.controller.js';
 import { BOOST_PRICE_CENTS, BOOST_LABELS, BOOST_MIN_TIER_FOR_PURCHASE } from '../constants/boosts.js';
@@ -32,7 +32,8 @@ export const BusinessBoostController = {
       if ((location.proOffers?.ultraBoostBalance || 0) <= 0) {
         return res.status(403).json({ code: 'NO_ULTRA_BOOST', message: 'Aucun Ultra Boost disponible' });
       }
-      const { recipients } = await broadcastUltraBoost(location);
+      const recipients = await estimateUltraBoostRecipients(location);
+      await enqueueUltraBoostBroadcast(location);
       const now = new Date();
       location.proOffers.ultraBoostBalance -= 1;
       location.ultraBoost = { active: true, until: new Date(now.getTime() + ULTRA_BOOST_DURATION_MS), activatedAt: now, claimedBy: [] };
@@ -106,7 +107,8 @@ export const BusinessBoostController = {
         return res.status(404).json({ code: 'EVENT_NOT_FOUND', message: 'Événement introuvable' });
       }
 
-      const { recipients } = await broadcastEventBoost(location, event);
+      const recipients = await estimateEventBoostRecipients(location);
+      await enqueueEventBoostBroadcast(location, event);
 
       event.boostedAt = new Date();
       location.proOffers.eventBoostBalance -= 1;

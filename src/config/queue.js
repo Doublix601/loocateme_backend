@@ -138,3 +138,34 @@ export function startEmailWorker(sendMailFn) {
   });
   return emailWorker;
 }
+
+// Le fan-out des notifications de boost pro (ultra_boost / event_boost) peut
+// viser des dizaines de milliers de destinataires en zone dense (rayon
+// 30km, sans plafond) : bloquait auparavant la requête HTTP d'activation le
+// temps de résoudre les tokens et d'envoyer tous les push. On le sort du
+// cycle requête/réponse comme videoProcessingQueue l'a fait pour ffmpeg.
+export const BOOST_NOTIFY_QUEUE = 'boost-notify';
+
+export const boostNotifyQueue = new Queue(BOOST_NOTIFY_QUEUE, {
+  connection: queueConnection,
+  defaultJobOptions: {
+    removeOnComplete: true,
+    removeOnFail: 100,
+    attempts: 2,
+  },
+});
+
+let boostNotifyWorker = null;
+
+export function startBoostNotifyWorker(processFn) {
+  if (boostNotifyWorker) return boostNotifyWorker;
+  boostNotifyWorker = new Worker(
+    BOOST_NOTIFY_QUEUE,
+    async (job) => processFn(job.data),
+    { connection: queueConnection, concurrency: 2 },
+  );
+  boostNotifyWorker.on('failed', (job, err) => {
+    console.error(`[queue:${BOOST_NOTIFY_QUEUE}] Job failed (locationId=${job?.data?.locationId}, type=${job?.data?.type}):`, err.message);
+  });
+  return boostNotifyWorker;
+}
