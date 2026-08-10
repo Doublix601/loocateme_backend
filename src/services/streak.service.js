@@ -1,5 +1,6 @@
 import { User } from '../models/User.js';
 import { sendPushUnified } from './push.service.js';
+import { claimBehavioralNudgeSlot } from './notificationGovernor.service.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -177,6 +178,7 @@ export async function sendStreakExpiryWarnings(now = new Date()) {
       lastClaimedAt && new Date(lastClaimedAt) >= new Date(user.lastLoginAt);
 
     if (!withinWarningWindow || alreadyWarnedThisCycle) continue;
+    if (!(await claimBehavioralNudgeSlot(user._id, 'streak_expiring', now))) continue;
 
     try {
       const count = user.streak?.count || 0;

@@ -159,6 +159,13 @@ const UserSchema = new mongoose.Schema(
     permissionStatusUpdatedAt: { type: Date, default: null },
     // Relance "at-risk" (permission refusée + inactivité) : évite les envois répétés.
     atRiskNudgeSentAt: { type: Date, default: null },
+    // Gouvernance du volume quotidien de notifications "comportementales"
+    // (streak_expiring, inactive_profile_views, at_risk_reactivation,
+    // weekly_digest, night_mode_activated) : au plus une par jour civil par
+    // utilisateur, cf. notificationGovernor.service.js#claimBehavioralNudgeSlot.
+    lastBehavioralNudgeAt: { type: Date, default: null },
+    lastBehavioralNudgePriority: { type: Number, default: null },
+    lastBehavioralNudgeKind: { type: String, default: null },
     // Détection best-effort d'une désinstallation (cf. push.service.js : ticket Expo
     // "DeviceNotRegistered"), avec le type de la dernière notification envoyée avant
     // coupure — sert à corréler un type de push à un pic de désinstallation.

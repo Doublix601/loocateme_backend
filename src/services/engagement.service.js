@@ -2,6 +2,7 @@ import { User } from '../models/User.js';
 import { Event } from '../models/Event.js';
 import { FcmToken } from '../models/FcmToken.js';
 import { sendPushUnified } from './push.service.js';
+import { claimBehavioralNudgeSlot } from './notificationGovernor.service.js';
 
 /**
  * Relance "X profils t'ont vu récemment" : envoyée aux utilisateurs inactifs
@@ -31,6 +32,7 @@ export async function sendInactiveProfileViewsNudge() {
         createdAt: { $gt: user.lastLoginAt },
       });
       if (viewsCount <= 0) continue;
+      if (!(await claimBehavioralNudgeSlot(user._id, 'inactive_profile_views', now))) continue;
 
       const title = viewsCount > 1
         ? `${viewsCount} profils t'ont vu récemment`
@@ -52,29 +54,51 @@ export async function sendInactiveProfileViewsNudge() {
   return sent;
 }
 
+const NIGHT_MODE_RECENT_ACTIVITY_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
- * Notification "mode nuit activé" : envoyée en broadcast à tous les
- * utilisateurs disposant d'un token push, uniquement le vendredi et le
- * samedi à 19h (cf. cron.service.js), synchronisée avec le basculement
- * jour/nuit côté app (VibeContext.getAutoVibe(), 19h-7h).
+ * Notification "mode nuit activé" : envoyée uniquement aux utilisateurs
+ * actifs dans les 7 derniers jours (et disposant d'un token push), le
+ * vendredi et le samedi à 19h (cf. cron.service.js), synchronisée avec le
+ * basculement jour/nuit côté app (VibeContext.getAutoVibe(), 19h-7h).
+ * Anciennement un broadcast à tous les tokens enregistrés (y compris des
+ * comptes dormants) — recentré pour ne notifier que les utilisateurs
+ * susceptibles de sortir ce soir.
  */
 export async function sendNightModeActivatedNotification() {
-  const userIds = await FcmToken.distinct('user');
+  const recentThreshold = new Date(Date.now() - NIGHT_MODE_RECENT_ACTIVITY_MS);
+  const activeUsers = await User.find({ lastLoginAt: { $gte: recentThreshold } }).select('_id').lean();
+  if (!activeUsers.length) return 0;
+
+  const activeUserIds = activeUsers.map((u) => u._id);
+  const userIds = await FcmToken.distinct('user', { user: { $in: activeUserIds } });
   if (!userIds.length) return 0;
 
+  const now = new Date();
   const chunkSize = 500;
+  let sent = 0;
   for (let i = 0; i < userIds.length; i += chunkSize) {
     const chunk = userIds.slice(i, i + chunkSize);
     try {
+      // Gouvernance quotidienne (cf. notificationGovernor.service.js) : ne
+      // pas empiler ce broadcast sur une notification comportementale déjà
+      // envoyée aujourd'hui à un utilisateur donné.
+      const claims = await Promise.all(
+        chunk.map((id) => claimBehavioralNudgeSlot(id, 'night_mode_activated', now))
+      );
+      const eligible = chunk.filter((_, idx) => claims[idx]);
+      if (!eligible.length) continue;
+
       await sendPushUnified({
-        userIds: chunk,
+        userIds: eligible,
         title: 'Le mode nuit s\'est activé 🌙',
         body: 'Planifie ta soirée maintenant',
         data: { kind: 'night_mode_activated', url: 'loocateme://nearby' },
       });
+      sent += eligible.length;
     } catch (err) {
       console.error('[engagement] Night mode notification batch error:', err);
     }
   }
-  return userIds.length;
+  return sent;
 }

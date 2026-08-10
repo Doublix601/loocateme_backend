@@ -5,6 +5,7 @@ import { FeatureFlag } from '../models/FeatureFlag.js';
 import { CronService } from '../services/cron.service.js';
 import { sendMail, verifyMailTransport } from '../services/email.service.js';
 import { sendUnifiedNotification } from '../services/fcm.service.js';
+import { filterOptedOutUsers } from '../services/push.service.js';
 import { sanitize } from '../services/auth.service.js';
 import { getUninstallCorrelationReport } from '../services/churnRisk.service.js';
 
@@ -125,7 +126,15 @@ router.post('/push/send', requireAuth, requireAdmin, async (req, res, next) => {
       try { data = JSON.parse(b.data); } catch (_) { data = {}; }
     }
 
-    const options = { userIds, tokens, title, body, data, imageUrl, sound, badge, androidChannelId, priority, collapseKey, mutableContent, contentAvailable };
+    // Respecte l'opt-out utilisateur (notificationPreferences) quand un kind
+    // reconnu est fourni — comme sendPushUnified côté envois applicatifs.
+    // Cette route appelle sendUnifiedNotification directement (et non
+    // sendPushUnified) pour garder le support des champs FCM avancés
+    // (imageUrl, priority, mutableContent, contentAvailable) que
+    // sendPushUnified n'expose pas.
+    const filteredUserIds = await filterOptedOutUsers(userIds, data?.kind);
+
+    const options = { userIds: filteredUserIds, tokens, title, body, data, imageUrl, sound, badge, androidChannelId, priority, collapseKey, mutableContent, contentAvailable };
     const result = await sendUnifiedNotification(options);
     return res.json(result);
   } catch (err) {

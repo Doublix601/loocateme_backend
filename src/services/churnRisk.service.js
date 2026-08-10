@@ -1,5 +1,6 @@
 import { User } from '../models/User.js';
 import { sendPushUnified } from './push.service.js';
+import { claimBehavioralNudgeSlot } from './notificationGovernor.service.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -30,6 +31,7 @@ export async function sendAtRiskReactivationNudge(now = new Date()) {
 
   let sent = 0;
   for (const user of users) {
+    if (!(await claimBehavioralNudgeSlot(user._id, 'at_risk_reactivation', now))) continue;
     try {
       const isLocationIssue = user.locationPermissionStatus === 'denied';
       const title = isLocationIssue ? 'On dirait qu\'il manque quelque chose 📍' : 'Tu vas rater des choses 🔔';

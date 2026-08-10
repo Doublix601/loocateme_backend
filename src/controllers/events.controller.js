@@ -4,6 +4,13 @@ import { NotificationDedup } from '../models/NotificationDedup.js';
 import { FeatureFlag } from '../models/FeatureFlag.js';
 import { sendPushUnified } from '../services/push.service.js';
 
+const SOCIAL_CLICK_DEDUP_MS = 24 * 60 * 60 * 1000;
+// Anti-abus : empêche un même viewer de spammer la cible en rouvrant son
+// profil en boucle. Volontairement court (contrairement au dedup 24h de
+// social_click) pour préserver la fréquence "plusieurs vues/jour" voulue
+// quand ce sont des viewers différents.
+const PROFILE_VIEW_DEDUP_MS = 45 * 60 * 1000;
+
 async function isPremiumEnabled() {
   try {
     const flag = await FeatureFlag.findOne({ key: 'premiumEnabled' }).lean();
@@ -43,7 +50,29 @@ export const EventsController = {
       // Increment simple counter for quick reads (optional)
       try { await User.updateOne({ _id: targetUserId }, { $inc: { profileViews: 1 } }); } catch {}
 
+      // Anti-abus : un même viewer ne peut redéclencher un push vers la même
+      // cible qu'une fois toutes les 45min (évite qu'un utilisateur spamme la
+      // cible en rouvrant son profil en boucle). Les vues anonymes (actorId
+      // absent) ne peuvent pas être dédupliquées par viewer et gardent le
+      // comportement existant (push systématique).
+      let shouldNotify = true;
+      if (actorId) {
+        try {
+          await NotificationDedup.create({
+            targetUser: targetUserId,
+            viewerUser: actorId,
+            eventType: 'profile_view',
+            expireAt: new Date(Date.now() + PROFILE_VIEW_DEDUP_MS),
+          });
+        } catch (e) {
+          if (String(e?.code) === '11000') shouldNotify = false; // déjà notifié récemment pour ce viewer
+        }
+      }
+
       // Send push notification to target user (premium-aware copy)
+      if (!shouldNotify) {
+        return res.status(201).json({ success: true, eventId: ev._id });
+      }
       try {
         // - Free: « Quelqu'un regarde ton profil ! Découvre qui c'est. »
         // - Premium: « {Prénom} regarde ton profil ! »
@@ -145,7 +174,12 @@ export const EventsController = {
       let dedupKeyCreated = false;
       try {
         if (actorId) {
-          await NotificationDedup.create({ targetUser: targetUserId, viewerUser: actorId, eventType: 'social_click' });
+          await NotificationDedup.create({
+            targetUser: targetUserId,
+            viewerUser: actorId,
+            eventType: 'social_click',
+            expireAt: new Date(Date.now() + SOCIAL_CLICK_DEDUP_MS),
+          });
           dedupKeyCreated = true;
         }
       } catch (e) {
