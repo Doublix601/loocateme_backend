@@ -12,6 +12,7 @@ import {
   WEIGHT_USERS,
   SCORING_ALGO,
 } from '../config/locationScoring.js';
+import { PRESENCE_FRESHNESS_MS } from '../config/presenceWindows.js';
 
 // Cache de la liste des lieux à proximité : la position d'un utilisateur ne
 // change pas de zone assez souvent pour justifier une agrégation Mongo
@@ -146,14 +147,24 @@ export const LocationController = {
       const vibeParam = normalizeVibe(req.query.vibe);
       const cacheKey = `locations:v1:${lat.toFixed(3)}:${lon.toFixed(3)}:${vibeParam}:${req.query.limit || ''}`;
       const blockedIds = await getBlockedIds(req.user?.id);
-      try {
-        const cached = await redisClient.get(cacheKey);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          return res.json({ ...parsed, locations: stripBlockedFromLocations(parsed.locations, blockedIds) });
+      // Un refresh manuel (pull-to-refresh) doit renvoyer une donnée réellement
+      // fraîche : le cache (TTL 60s) n'est invalidé que sur un changement de
+      // currentLocation, donc un utilisateur qui reste au même lieu ou se
+      // déplace sans franchir la maille ~111m de cacheKey peut sinon se voir
+      // resservir indéfiniment le même snapshot. On saute uniquement la
+      // LECTURE du cache ; l'écriture ci-dessous a toujours lieu, donc les
+      // appels silencieux/automatiques qui suivent en bénéficient normalement.
+      const forceFresh = req.query.fresh === '1';
+      if (!forceFresh) {
+        try {
+          const cached = await redisClient.get(cacheKey);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            return res.json({ ...parsed, locations: stripBlockedFromLocations(parsed.locations, blockedIds) });
+          }
+        } catch (e) {
+          console.warn('[getLocations] Redis cache read failed:', e.message);
         }
-      } catch (e) {
-        console.warn('[getLocations] Redis cache read failed:', e.message);
       }
 
       // Coalescence des requêtes concurrentes sur la même clé de cache : sans
@@ -204,7 +215,7 @@ export const LocationController = {
                     $expr: { $eq: ['$currentLocation', '$$locationId'] },
                     status: { $in: ['green', 'orange'] },
                     $or: [
-                      { 'location.updatedAt': { $gte: new Date(Date.now() - 5 * 60 * 1000) } },
+                      { 'location.updatedAt': { $gte: new Date(Date.now() - PRESENCE_FRESHNESS_MS) } },
                       { boostUntil: { $gte: new Date() } }
                     ]
                   }),
@@ -225,7 +236,7 @@ export const LocationController = {
                     $expr: { $eq: ['$currentLocation', '$$locationId'] },
                     status: { $ne: 'red' },
                     $or: [
-                      { 'location.updatedAt': { $gte: new Date(Date.now() - 5 * 60 * 1000) } },
+                      { 'location.updatedAt': { $gte: new Date(Date.now() - PRESENCE_FRESHNESS_MS) } },
                       { boostUntil: { $gte: new Date() } }
                     ]
                   }),
@@ -427,7 +438,7 @@ export const LocationController = {
         }
 
         // Fetch users checked-in at this location, excluding 'red' status and respecting GDPR
-        const threshold = new Date(Date.now() - 5 * 60 * 1000);
+        const threshold = new Date(Date.now() - PRESENCE_FRESHNESS_MS);
         const now = new Date();
         const users = await User.find(applyNotBannedFilter({
           currentLocation: location._id,

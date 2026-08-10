@@ -13,6 +13,7 @@ import { expireReferralRewardsAndApplyBanked } from './referral.service.js';
 import { sendOnboardingSequence } from './onboarding.service.js';
 import { sendAtRiskReactivationNudge } from './churnRisk.service.js';
 import { expireStalePresence } from './user.service.js';
+import { claimBehavioralNudgeSlot } from './notificationGovernor.service.js';
 
 /**
  * Service de tâches planifiées (Cron) pour LoocateMe.
@@ -247,8 +248,19 @@ export const CronService = {
     // toutes les 5 minutes, même cadence que le heartbeat d'arrière-plan côté app.
     nodeCron.schedule('*/5 * * * *', async () => {
       try {
-        const count = await expireStalePresence();
-        if (count) console.log(`[cron] Stale presence expired for ${count} users.`);
+        const { count, userIds } = await expireStalePresence();
+        if (count) {
+          console.log(`[cron] Stale presence expired for ${count} users.`);
+          // Sans ce push, l'utilisateur se retrouve check-out sans aucune
+          // explication (le heartbeat d'arrière-plan s'est simplement tu) —
+          // cf. presenceWindows.js pour la relation avec les autres fenêtres.
+          sendPushUnified({
+            userIds: userIds.map((id) => String(id)),
+            title: 'Check-out automatique',
+            body: "Tu ne semblais plus sur place, on t'a check-out automatiquement.",
+            data: { kind: 'auto_checkout_stale_presence' },
+          }).catch((e) => console.error('[cron] push auto_checkout_stale_presence failed:', e?.message || e));
+        }
       } catch (e) {
         console.error('[cron] Stale presence expiry error:', e);
       }
@@ -281,6 +293,7 @@ export const CronService = {
           });
 
           if (viewsCount <= 0) continue;
+          if (!(await claimBehavioralNudgeSlot(userId, 'weekly_digest'))) continue;
 
           const user = await User.findById(userId).select('isPremium').lean();
           if (!user) continue;

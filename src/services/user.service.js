@@ -11,6 +11,7 @@ import { recordCrossedPaths } from './crossedPaths.service.js';
 import { resolveAmbiguousVenueViaBle, resolveVenueFromBlePeersOnly } from './ble.service.js';
 import { maybeRefreshCity } from './geocoding.service.js';
 import { invalidateLocationDetailCache, invalidateLocationsListCache } from '../utils/locationCache.js';
+import { STALE_PRESENCE_THRESHOLD_MS, PRESENCE_FRESHNESS_MS } from '../config/presenceWindows.js';
 
 // Cache très court des candidats POI proches (geoNear 200m) pour le heartbeat.
 // TTL volontairement court (3s, pas 10s comme /api/locations) : cette liste
@@ -359,6 +360,11 @@ export async function checkInViaBleOnly(userId) {
         pendingLocationSince: null,
         boostUntil: null,
         lastForceCheckInRequestAt: requestStartedAt,
+        // Sans ceci, ce check-in reste sur un timestamp GPS potentiellement
+        // ancien : expireStalePresence() et le filtre de fraîcheur de
+        // getLocationById (cf. location.controller.js) l'expirent/l'excluent
+        // prématurément alors que l'utilisateur vient tout juste d'arriver.
+        'location.updatedAt': new Date(),
       },
     },
     { new: true }
@@ -383,8 +389,9 @@ export async function checkInViaBleOnly(userId) {
 // prolongé — sans qu'aucun check-out explicite ne soit jamais envoyé. Sans
 // filet de sécurité serveur, le check-in reste alors bloqué indéfiniment.
 // Seuil fixé à 4x l'intervalle du heartbeat d'arrière-plan pour absorber les
-// retards de livraison OS normaux sans faux positifs.
-const STALE_PRESENCE_THRESHOLD_MS = 20 * 60 * 1000;
+// retards de livraison OS normaux sans faux positifs (cf.
+// config/presenceWindows.js pour sa relation avec les autres fenêtres de
+// fraîcheur de présence : cache liste/détail, filtre "qui est ici").
 
 // Check-out automatique des utilisateurs dont la présence n'a plus été
 // rafraîchie depuis STALE_PRESENCE_THRESHOLD_MS (cf. cron.service.js).
@@ -401,12 +408,18 @@ export async function expireStalePresence() {
     ],
   }).select('_id currentLocation');
 
-  if (!staleUsers.length) return 0;
+  if (!staleUsers.length) return { count: 0, userIds: [] };
 
   const staleLocationIds = [...new Set(staleUsers.map((u) => String(u.currentLocation)))];
 
   await User.updateMany(
-    { _id: { $in: staleUsers.map((u) => u._id) } },
+    {
+      _id: { $in: staleUsers.map((u) => u._id) },
+      // Revérifie la fraîcheur au moment de l'écriture (et non seulement au
+      // moment du find ci-dessus) : évite d'écraser un check-in/heartbeat
+      // arrivé entre-temps pendant la fenêtre du cron.
+      $or: [{ 'location.updatedAt': { $lt: threshold } }, { 'location.updatedAt': { $exists: false } }],
+    },
     {
       $set: {
         currentLocation: null,
@@ -422,7 +435,7 @@ export async function expireStalePresence() {
     await invalidateLocationDetailCache(locationId);
   }
 
-  return staleUsers.length;
+  return { count: staleUsers.length, userIds: staleUsers.map((u) => u._id) };
 }
 
 // Fenêtre pendant laquelle un check-in manuel ('je suis là') est protégé
@@ -717,8 +730,7 @@ export async function updateLocation(userId, { lat, lon }) {
 }
 
 export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) {
-  const freshnessMs = 5 * 60 * 1000; // Heartbeat: 5 minutes TTL for visibility
-  const threshold = new Date(Date.now() - freshnessMs);
+  const threshold = new Date(Date.now() - PRESENCE_FRESHNESS_MS);
   const blockedIds = await getBlockedIds(userId);
   const excludeIds = Array.from(new Set([String(userId), ...blockedIds]));
   // Try Redis first
