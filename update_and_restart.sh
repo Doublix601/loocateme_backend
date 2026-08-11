@@ -138,6 +138,15 @@ if [[ -d ./data ]]; then
   log "Ensuring data directories exist (./data/mongo, ./data/redis, ./data/uploads) and fixing permissions..."
   sudo chown -R "$USER:docker" ./data || true
   sudo chmod -R 770 ./data || true
+  # ./data/uploads est servi en lecture seule directement par le conteneur
+  # nginx (image nginx:alpine, dont l'utilisateur "nginx" n'appartient pas au
+  # groupe "docker" de l'hôte) : sans droit de lecture/traversée pour "other",
+  # nginx renvoie 403 sur toutes les images (photos de profil, de lieux,
+  # couvertures, médias business) dès que leur cache local expire côté client.
+  # Contenu déjà public (servi tel quel sur internet), donc sans risque à
+  # l'ouvrir en lecture pour "other" — contrairement à mongo/redis/business-docs
+  # ci-dessus, qui restent volontairement fermés.
+  sudo chmod -R o+rX ./data/uploads || true
 fi
 
 # Safety notice about volumes
