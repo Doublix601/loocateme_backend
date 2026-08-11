@@ -24,7 +24,7 @@ const LocationSchema = new mongoose.Schema(
       coordinates: { type: [Number], required: true }, // [lon, lat]
     },
     popularity: { type: Number, default: 0 },
-    stars: { type: Number, default: 0 }, // 0, 1, 2 ou 3 (recalculé par cron)
+    stars: { type: Number, default: 0 }, // 0, 1, 2 ou 3 (recalculé par cron, cf. services/location.service.js — percentile local x global)
     lastOsmSyncAt: { type: Date }, // Date de la dernière sync OSM
     shouldDelete: { type: Boolean, default: false }, // Indique si le lieu doit être supprimé lors de la prochaine synchronisation
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },

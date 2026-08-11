@@ -252,7 +252,7 @@ export const LocationController = {
             },
           },
           // Score composite de pertinence : mêle distance, popularité (stars,
-          // déjà calculée par tertiles/ville, cf. location.service.js) et
+          // déjà calculée par percentile local x global, cf. location.service.js) et
           // présence live (userCount), plutôt qu'un tri lexicographique où la
           // distance n'intervenait qu'en tout dernier départage. Constantes
           // dans config/locationScoring.js (dupliquées côté client pour le

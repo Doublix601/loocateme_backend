@@ -349,11 +349,12 @@ export const CronService = {
 
   /**
    * Recalcule la popularité (visiteurs uniques 30j) et les étoiles de tous les lieux.
-   * Les étoiles sont attribuées par tertiles relatifs à la ville du lieu.
+   * Les étoiles exigent un bon percentile à la fois local (ville) et global (app),
+   * cf. services/location.service.js et config/starRatingConfig.js.
    */
   updateLocationStats: async () => {
     try {
-      console.log('[cron] Recalculating location stats (city tertiles)...');
+      console.log('[cron] Recalculating location stats (percentile local x global)...');
       const count = await recalculateAllCityStars();
       console.log(`[cron] Updated stats for ${count} locations.`);
     } catch (e) {

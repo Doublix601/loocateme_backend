@@ -663,7 +663,7 @@ export async function updateLocation(userId, { lat, lon }) {
             }
           }).catch((e) => console.warn('[user.service] Failed to check first-visit status for referral:', e.message));
 
-          // Recalcule popularity + étoiles par tertiles de ville
+          // Recalcule popularity + étoiles (percentile local x global, cf. location.service.js)
           const loc = await Location.findById(currentLocationId, 'city').lean();
           // Décalé en tâche de fond : cette agrégation (tous les Events 30j d'une
           // ville) n'a aucune raison de bloquer la réponse du heartbeat qui vient
