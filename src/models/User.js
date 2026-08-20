@@ -85,24 +85,6 @@ const UserSchema = new mongoose.Schema(
     // Optional demographics, opt-in via privacyPreferences.analytics, used for business location stats
     birthdate: { type: Date },
     gender: { type: String, enum: ['male', 'female', 'other', 'prefer_not_to_say'] },
-    // Vérification d'âge tierce (loi "majorité numérique" du 7 juillet 2023) : le champ
-    // `birthdate` ci-dessus n'est qu'un déclaratif, insuffisant seul pour un réseau social.
-    // `status` reste 'not_started' tant que l'utilisateur n'a pas lancé de session Didit ;
-    // le compte n'est pas bloqué en attendant (cf. politique produit), mais sert à limiter
-    // certaines fonctionnalités et à répondre à un contrôle ARCOM/CNIL.
-    ageVerification: {
-      status: {
-        type: String,
-        enum: ['not_started', 'pending', 'approved', 'declined'],
-        default: 'not_started',
-        index: true,
-      },
-      provider: { type: String, default: 'didit' },
-      sessionId: { type: String, default: null, index: true },
-      method: { type: String, enum: [null, 'age_estimation', 'id_document'], default: null },
-      verifiedAt: { type: Date, default: null },
-      updatedAt: { type: Date, default: null },
-    },
     // Moderation & safety
     moderation: {
       warningsCount: { type: Number, default: 0 },
