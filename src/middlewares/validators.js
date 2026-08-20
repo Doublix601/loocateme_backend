@@ -257,11 +257,14 @@ export const validators = {
       }),
   ],
   socialRemove: [param('type').isIn(['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin', 'youtube'])],
+  socialReorder: [
+    body('order').isArray({ min: 1 }),
+    body('order.*').isIn(['instagram', 'facebook', 'x', 'snapchat', 'tiktok', 'linkedin', 'youtube']),
+  ],
   gdprConsent: [
     body('accepted').isBoolean(),
     body('version').optional().isString().isLength({ max: 20 }),
     body('analytics').optional().isBoolean(),
-    body('marketing').optional().isBoolean(),
   ],
   bluetoothConsent: [body('enabled').isBoolean()],
   reportCreate: [

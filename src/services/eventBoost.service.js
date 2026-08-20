@@ -9,9 +9,21 @@ const RADIUS_METERS = 30 * 1000;
 const RECENTLY_ACTIVE_MS = 24 * 60 * 60 * 1000;
 const BATCH_SIZE = 500;
 
+const EARTH_RADIUS_METERS = 6378100;
+
+// $geoWithin/$centerSphere (contrairement à $near/$nearSphere) reste utilisable
+// dans un $match d'agrégation, ce qui est nécessaire ici car
+// estimate*BoostRecipients() passe ce filtre à countDocuments(), lequel est
+// implémenté par le driver Mongo comme un pipeline [$match, $group] — Mongo
+// rejette $near/$geoNear/$nearSphere dans ce contexte avec l'erreur
+// "$geoNear, $near, and $nearSphere are not allowed in this context".
 function nearbyActiveUsersFilter(location) {
   return {
-    location: { $near: { $geometry: location.location, $maxDistance: RADIUS_METERS } },
+    location: {
+      $geoWithin: {
+        $centerSphere: [location.location.coordinates, RADIUS_METERS / EARTH_RADIUS_METERS],
+      },
+    },
     status: { $ne: 'red' },
     'location.updatedAt': { $gte: new Date(Date.now() - RECENTLY_ACTIVE_MS) },
   };
@@ -38,9 +50,10 @@ export async function enqueueEventBoostBroadcast(location, event) {
 // rayon de 30km autour du lieu, sans plafond de destinataires. Réservé au
 // palier pro3 (vérifié en amont dans businessBoost.controller.js). Traité par
 // lots (curseur Mongo) pour rester borné en mémoire même en zone très dense.
-// Pas de filtre sur privacyPreferences.marketing : il s'agit d'une
+// Pas de filtre sur un consentement marketing : il s'agit d'une
 // notification de proximité géographique, pas d'une publicité ciblée par
-// centre d'intérêt.
+// centre d'intérêt (d'où l'absence historique d'un tel consentement dans
+// privacyPreferences).
 export async function processEventBoostBroadcast({ locationId, eventId }) {
   const location = await Location.findById(locationId).select('location name events').lean();
   if (!location) return { recipients: 0 };

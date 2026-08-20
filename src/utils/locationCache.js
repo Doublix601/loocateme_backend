@@ -18,7 +18,14 @@ export async function invalidateLocationDetailCache(locationId) {
 // donnant l'impression que l'utilisateur est resté sur l'ancien lieu.
 export async function invalidateLocationsListCache() {
   try {
-    const keys = await redisClient.keys('locations:v1:*');
+    // SCAN plutôt que KEYS : KEYS bloque tout le serveur Redis (rate-limiting,
+    // autres caches, BullMQ) le temps de parcourir tout le keyspace, ce qui
+    // devient de plus en plus coûteux à mesure que Redis grossit. SCAN itère
+    // par curseur sans bloquer, au prix de quelques aller-retours de plus.
+    const keys = [];
+    for await (const key of redisClient.scanIterator({ MATCH: 'locations:v1:*', COUNT: 100 })) {
+      keys.push(key);
+    }
     if (keys.length) await redisClient.del(keys);
   } catch (e) {
     console.warn('[invalidateLocationsListCache] Redis cache delete failed:', e.message);

@@ -2,31 +2,11 @@ import mongoose from 'mongoose';
 import { Report } from '../models/Report.js';
 import { User } from '../models/User.js';
 import { sendPushUnified } from '../services/push.service.js';
+import { invalidateAuthCache } from '../utils/authCache.js';
+import { buildDiacriticRegex } from '../utils/text.js';
 
 const MAX_PAGE_LIMIT = 100;
 const WARNING_EXPIRY_MONTHS = 3;
-
-function buildDiacriticRegex(input) {
-  const map = {
-    a: '[aàáâäåæAÀÁÂÄÅÆ]',
-    c: '[cçCÇ]',
-    e: '[eèéêëEÈÉÊË]',
-    i: '[iìíîïIÌÍÎÏ]',
-    o: '[oòóôöøœOÒÓÔÖØŒ]',
-    u: '[uùúûüUÙÚÛÜ]',
-    y: '[yÿYŸ]',
-    n: '[nñNÑ]',
-  };
-  const escaped = String(input || '')
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  let pattern = '';
-  for (const ch of escaped) {
-    const lower = ch.toLowerCase();
-    if (map[lower]) pattern += map[lower];
-    else pattern += ch;
-  }
-  return new RegExp(pattern, 'i');
-}
 
 const normalizeWarnings = (moderation = {}) => {
   const cutoff = new Date();
@@ -251,6 +231,7 @@ export const ReportController = {
       }
 
       await user.save();
+      await invalidateAuthCache(targetUserId);
 
       if (action === 'ban_temp' || action === 'ban_permanent') {
         try {
@@ -378,6 +359,7 @@ export const ReportController = {
       }
 
       await user.save();
+      await invalidateAuthCache(user._id);
 
       if (action === 'ban_temp' || action === 'ban_permanent') {
         try {

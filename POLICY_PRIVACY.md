@@ -1,6 +1,6 @@
 # Politique de confidentialité — LoocateMe
 
-Version 1.0 — en vigueur depuis sa date de publication dans l'application.
+Version 1.1 — en vigueur depuis sa date de publication dans l'application (mise à jour : relèvement de l'âge minimum à 18 ans).
 
 ## 1. Qui sommes-nous
 
@@ -113,7 +113,7 @@ Le site loocate.me peut utiliser des cookies techniques strictement nécessaires
 
 ## 9. Mineurs
 
-L'application n'est pas destinée aux personnes de moins de 16 ans (ou l'âge de consentement numérique en vigueur dans votre pays de résidence). Si vous pensez qu'un mineur a créé un compte sans l'autorisation requise, contactez-nous afin que nous puissions procéder à sa suppression.
+L'application est strictement réservée aux personnes majeures (18 ans et plus). L'inscription est soumise à une vérification d'âge par un tiers de confiance (Didit), en complément de votre date de naissance déclarée, avant de pouvoir accéder au Service. Si vous pensez qu'un mineur a néanmoins pu créer un compte, contactez-nous afin que nous puissions procéder à sa suppression.
 
 ## 10. Évolution de cette politique
 

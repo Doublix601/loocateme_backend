@@ -63,13 +63,17 @@ const UserSchema = new mongoose.Schema(
     policyVersionSeenAt: { type: Date },
     privacyPreferences: {
       analytics: { type: Boolean, default: false },
-      marketing: { type: Boolean, default: false },
-      doNotSell: { type: Boolean, default: false },
+      doNotSell: { type: Boolean, default: true },
       // Opt-in distinct du consentement de localisation GPS (finalité RGPD
       // différente : détection de proximité Bluetooth entre appareils, y
       // compris hors connexion réseau). Défaut false — activation explicite
       // requise via un écran de consentement dédié.
       bluetoothProximity: { type: Boolean, default: false },
+      // Affiche aux autres utilisateurs le nom précis du lieu où l'utilisateur
+      // est actuellement check-in (`currentLocation`), en plus de la ville.
+      // Donnée bien plus sensible que la ville (localisation en direct, risque
+      // de stalking) : défaut false, activation explicite requise via Réglages.
+      shareCurrentLocation: { type: Boolean, default: false },
     },
     // User role: 'user' (default), 'moderator', 'admin'
     role: { type: String, enum: ['user', 'moderator', 'admin'], default: 'user', index: true },
@@ -81,6 +85,24 @@ const UserSchema = new mongoose.Schema(
     // Optional demographics, opt-in via privacyPreferences.analytics, used for business location stats
     birthdate: { type: Date },
     gender: { type: String, enum: ['male', 'female', 'other', 'prefer_not_to_say'] },
+    // Vérification d'âge tierce (loi "majorité numérique" du 7 juillet 2023) : le champ
+    // `birthdate` ci-dessus n'est qu'un déclaratif, insuffisant seul pour un réseau social.
+    // `status` reste 'not_started' tant que l'utilisateur n'a pas lancé de session Didit ;
+    // le compte n'est pas bloqué en attendant (cf. politique produit), mais sert à limiter
+    // certaines fonctionnalités et à répondre à un contrôle ARCOM/CNIL.
+    ageVerification: {
+      status: {
+        type: String,
+        enum: ['not_started', 'pending', 'approved', 'declined'],
+        default: 'not_started',
+        index: true,
+      },
+      provider: { type: String, default: 'didit' },
+      sessionId: { type: String, default: null, index: true },
+      method: { type: String, enum: [null, 'age_estimation', 'id_document'], default: null },
+      verifiedAt: { type: Date, default: null },
+      updatedAt: { type: Date, default: null },
+    },
     // Moderation & safety
     moderation: {
       warningsCount: { type: Number, default: 0 },

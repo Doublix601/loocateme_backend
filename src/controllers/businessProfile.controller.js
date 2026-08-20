@@ -6,6 +6,7 @@ import { processImage, processImageWithThumb } from '../services/mediaProcessing
 import { localPathFromUrl } from '../utils/uploadPaths.js';
 import { videoProcessingQueue } from '../config/queue.js';
 import { invalidateLocationDetailCache } from './location.controller.js';
+import { getPendingChangeForLocation, reviewChangeRequest } from '../services/locationChange.service.js';
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_MEDIA_PDF = 3;
@@ -37,6 +38,34 @@ export const BusinessProfileController = {
   getById: async (req, res, next) => {
     // req.location déjà chargé par requireLocationOwner
     return res.json({ location: req.location });
+  },
+
+  // Changement OSM en attente de validation pour ce lieu (bannière dashboard), s'il y en a un.
+  getPendingChange: async (req, res, next) => {
+    try {
+      const changeRequest = await getPendingChangeForLocation(req.location._id);
+      return res.json({ changeRequest });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  approveChange: async (req, res, next) => {
+    try {
+      const changeRequest = await reviewChangeRequest(req.params.changeRequestId, req.user.id, 'approve');
+      return res.json({ changeRequest });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  rejectChange: async (req, res, next) => {
+    try {
+      const changeRequest = await reviewChangeRequest(req.params.changeRequestId, req.user.id, 'reject');
+      return res.json({ changeRequest });
+    } catch (err) {
+      next(err);
+    }
   },
 
   // QR code à imprimer sur place (table, entrée, comptoir) : scanné, il ouvre

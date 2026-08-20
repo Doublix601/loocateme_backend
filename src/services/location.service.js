@@ -6,6 +6,257 @@ import {
   GLOBAL_TIER2_PERCENTILE,
   GLOBAL_TIER3_PERCENTILE,
 } from '../config/starRatingConfig.js';
+import { applyNotBannedFilter } from './user.service.js';
+import { PRESENCE_FRESHNESS_MS } from '../config/presenceWindows.js';
+import {
+  DISTANCE_REF_METERS,
+  USERCOUNT_CAP,
+  WEIGHT_DISTANCE,
+  WEIGHT_STARS,
+  WEIGHT_USERS,
+  SCORING_ALGO,
+} from '../config/locationScoring.js';
+import { haversineMeters } from '../utils/geo.js';
+
+// Filtrage des lieux par vibe (jour/nuit). Séparation stricte : chaque type
+// appartient à un seul mode.
+const TYPES_BY_VIBE = {
+  moon: new Set([
+    'Bar 🍺', 'Boîte de nuit 💃', 'Loisir 🎯',
+    'TEST 🤖',
+  ]),
+  sun: new Set([
+    'Restaurant 🍴', 'Cinéma 🎬', 'Rooftop 🌆',
+    'Karaoké 🎤', 'Club de jeux 🎮',
+    'Café ☕', 'Coworking 🧑‍💻', 'Salle de sport 🏋️', 'Centre sportif 🏟️',
+    'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢", 'Bibliothèque 📚',
+    'Éducation 🎓', 'Glacier 🍦', 'Marché 🛒', 'Musée 🏛️', 'Brunch 🥞',
+    'TEST 🤖',
+  ]),
+};
+
+export function normalizeVibe(v) {
+  return v === 'moon' ? 'moon' : 'sun';
+}
+
+function getAllowedTypesForVibe(vibe) {
+  const v = normalizeVibe(vibe);
+  // Pour le filtre $match Mongo: liste explicite des types autorisés.
+  return Array.from(TYPES_BY_VIBE[v]);
+}
+
+// Types strictement réservés à la vibe opposée : ne doivent JAMAIS apparaître
+// dans l'autre mode, même en fallback de remplissage. Séparation stricte :
+// chaque type appartient à un seul mode, il n'y a aucun type partagé.
+function getExcludedTypesForVibe(vibe) {
+  const v = normalizeVibe(vibe);
+  const other = v === 'sun' ? 'moon' : 'sun';
+  const allowed = TYPES_BY_VIBE[v];
+  return Array.from(TYPES_BY_VIBE[other]).filter((t) => !allowed.has(t));
+}
+
+// Pagination simple par "limit" (min 40, max 80). Le client demande au
+// minimum 40 lieux et peut en charger plus jusqu'à 80 en faisant défiler la
+// liste (cf. LocationListScreen onEndReached).
+const NEARBY_MIN_LIMIT = 40;
+const NEARBY_MAX_LIMIT = 80;
+// 10km → 500km : on veut au minimum `limit` lieux. Si la zone proche ne
+// contient pas assez de lieux pour la vibe demandée, on élargit
+// progressivement le rayon de recherche jusqu'à en trouver assez, ou jusqu'à
+// atteindre une recherche sans limite de distance.
+const NEARBY_RADIUS_STEPS = [10000, 30000, 100000, 500000];
+
+async function getAggregatedLocations({ lat, lon, allowedTypes, limit, maxDistance }) {
+  return await Location.aggregate([
+    {
+      $geoNear: {
+        near: { type: 'Point', coordinates: [lon, lat] },
+        distanceField: 'distance',
+        maxDistance,
+        spherical: true,
+        // Exclut les lieux OSM seedés sans nom (fallback historique
+        // "Lieu OSM" côté osmSeedOne) : pas de vrai libellé à afficher,
+        // ne doivent jamais remonter dans l'app.
+        query: { type: { $in: allowedTypes }, name: { $ne: 'Lieu OSM' } },
+      },
+    },
+    // Cap early so the two $lookup stages below only join the closest candidates.
+    // Without this, a dense DB (1000+ locations within 10 km) would run
+    // user-joins on every document before sorting — very expensive.
+    { $limit: limit * 3 },
+    {
+      $lookup: {
+        from: 'users',
+        let: { locationId: '$_id' },
+        pipeline: [
+          {
+            $match: applyNotBannedFilter({
+              $expr: { $eq: ['$currentLocation', '$$locationId'] },
+              status: { $in: ['green', 'orange'] },
+              $or: [
+                { 'location.updatedAt': { $gte: new Date(Date.now() - PRESENCE_FRESHNESS_MS) } },
+                { boostUntil: { $gte: new Date() } }
+              ]
+            }),
+          },
+          { $project: { _id: 1, profileImageUrl: 1, status: 1, boostUntil: 1, location: 1 } },
+          { $limit: 3 },
+        ],
+        as: 'activeUsers',
+      },
+    },
+    {
+      $lookup: {
+        from: 'users',
+        let: { locationId: '$_id' },
+        pipeline: [
+          {
+            $match: applyNotBannedFilter({
+              $expr: { $eq: ['$currentLocation', '$$locationId'] },
+              status: { $ne: 'red' },
+              $or: [
+                { 'location.updatedAt': { $gte: new Date(Date.now() - PRESENCE_FRESHNESS_MS) } },
+                { boostUntil: { $gte: new Date() } }
+              ]
+            }),
+          },
+          { $count: 'count' },
+        ],
+        as: 'userCount',
+      },
+    },
+    {
+      $addFields: {
+        userCount: { $ifNull: [{ $arrayElemAt: ['$userCount.count', 0] }, 0] },
+      },
+    },
+    // Score composite de pertinence : mêle distance, popularité (stars,
+    // déjà calculée par percentile local x global, cf. ci-dessous dans ce
+    // fichier) et présence live (userCount), plutôt qu'un tri lexicographique
+    // où la distance n'intervenait qu'en tout dernier départage. Constantes
+    // dans config/locationScoring.js (dupliquées côté client pour le score de
+    // secours des POI OSM, cf. LocationListScreen.js).
+    {
+      $addFields: {
+        score: {
+          $add: [
+            { $multiply: [WEIGHT_DISTANCE, { $exp: { $multiply: [-1, { $divide: ['$distance', DISTANCE_REF_METERS] }] } }] },
+            { $multiply: [WEIGHT_STARS, { $divide: [{ $ifNull: ['$stars', 0] }, 3] }] },
+            { $multiply: [WEIGHT_USERS, { $divide: [{ $min: ['$userCount', USERCOUNT_CAP] }, USERCOUNT_CAP] }] },
+          ],
+        },
+      },
+    },
+    {
+      $sort:
+        SCORING_ALGO === 'legacy'
+          ? { stars: -1, distance: 1 }
+          : { score: -1 },
+    },
+  ]);
+}
+
+/**
+ * Trouve les lieux proches d'un point pour une vibe donnée (logique métier
+ * pure de getLocations) : élargit progressivement le rayon de recherche,
+ * complète avec l'autre vibe si la zone est trop pauvre, calcule un score
+ * composite (distance/étoiles/présence live) et injecte le lieu sponsorisé
+ * actif s'il y en a un. La mise en cache Redis et le filtrage des
+ * utilisateurs bloqués restent au niveau du controller (concerns
+ * HTTP/caching, pas métier).
+ */
+export async function findNearbyLocations({ lat, lon, vibe, limitParam }) {
+  let limit = parseInt(limitParam, 10);
+  if (!Number.isFinite(limit) || limit < NEARBY_MIN_LIMIT) limit = NEARBY_MIN_LIMIT;
+  if (limit > NEARBY_MAX_LIMIT) limit = NEARBY_MAX_LIMIT;
+
+  const normalizedVibe = normalizeVibe(vibe);
+  const allowedTypes = getAllowedTypesForVibe(normalizedVibe);
+  const excludedTypes = getExcludedTypesForVibe(normalizedVibe);
+
+  let locations = [];
+  for (const maxDistance of NEARBY_RADIUS_STEPS) {
+    locations = await getAggregatedLocations({ lat, lon, allowedTypes, limit, maxDistance });
+    if (locations.length >= limit) break;
+  }
+  // Dernier recours: aucune limite de distance (toute la collection). $geoNear
+  // nécessite maxDistance optionnel; sans maxDistance on prend tous les lieux
+  // triés par distance croissante.
+  if (locations.length < limit) {
+    locations = await Location.aggregate([
+      {
+        $geoNear: {
+          near: { type: 'Point', coordinates: [lon, lat] },
+          distanceField: 'distance',
+          spherical: true,
+          query: { type: { $in: allowedTypes, $nin: ['Lieu 📍'] }, name: { $ne: 'Lieu OSM' } },
+        },
+      },
+    ]);
+  }
+
+  // Garantie stricte d'un minimum de `limit` lieux pour la vibe demandée : si
+  // la DB locale ne contient pas assez de lieux compatibles vibe (jour ou
+  // nuit), on complète avec les lieux les plus proches de l'AUTRE vibe afin
+  // d'atteindre le minimum. Mieux vaut afficher des lieux moins « in‑vibe »
+  // que de présenter une liste quasi vide à l'utilisateur.
+  if (locations.length < limit) {
+    const existingIds = new Set(locations.map((l) => String(l._id)));
+    const fillers = await Location.aggregate([
+      {
+        $geoNear: {
+          near: { type: 'Point', coordinates: [lon, lat] },
+          distanceField: 'distance',
+          spherical: true,
+          // On prend les plus proches, mais on EXCLUT toujours les types
+          // strictement réservés à la vibe opposée (ex : un Bar ne doit
+          // jamais apparaître en mode jour, même en remplissage). Les types
+          // partagés (Restaurant, Café…) restent autorisés. "Lieu 📍" est
+          // définitivement exclu (legacy en DB, non désiré par l'utilisateur).
+          query: { type: { $nin: [...excludedTypes, 'Lieu 📍'] }, name: { $ne: 'Lieu OSM' } },
+        },
+      },
+      { $limit: limit * 3 },
+    ]);
+    for (const loc of fillers) {
+      if (locations.length >= limit) break;
+      if (existingIds.has(String(loc._id))) continue;
+      locations.push(loc);
+      existingIds.add(String(loc._id));
+    }
+  }
+
+  // Les prioritaires (popularité, utilisateurs, étoiles) sont déjà en tête
+  // grâce au $sort de l'agrégation (sauf pour le fallback sans maxDistance,
+  // mais celui-ci est trié par distance pour rester pertinent).
+  locations = locations.slice(0, limit);
+
+  // "Pro Boost" : un seul lieu sponsorisé globalement. Il ne doit PAS être
+  // épinglé en tête de la liste normale — juste marqué isSponsored pour que
+  // le client l'affiche dans sa section dédiée "Mis en avant". S'il fait déjà
+  // partie du classement naturel, on ne touche pas à sa position ; sinon on
+  // l'ajoute en fin de liste (jamais en tête) afin qu'il reste disponible
+  // pour la section "Mis en avant" tout en restant absent du haut de la liste
+  // normale.
+  const sponsor = await Location.findOne({
+    'sponsorship.active': true,
+    'sponsorship.until': { $gt: new Date() },
+  }).lean();
+  if (sponsor) {
+    const alreadyInList = locations.some((l) => String(l._id) === String(sponsor._id));
+    if (alreadyInList) {
+      locations = locations.map((l) => (String(l._id) === String(sponsor._id) ? { ...l, isSponsored: true } : l));
+    } else {
+      const [sLon, sLat] = sponsor.location.coordinates;
+      const distance = haversineMeters(lat, lon, sLat, sLon);
+      if (distance <= 200000) {
+        locations.push({ ...sponsor, distance, isSponsored: true });
+      }
+    }
+  }
+
+  return locations;
+}
 
 /**
  * Construit, à partir d'une liste de lieux actifs triée par popularité

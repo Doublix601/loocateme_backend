@@ -52,28 +52,42 @@ export async function reportBleSightings(userId, sightings) {
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SIGHTING_TTL_MS);
-  let recorded = 0;
 
+  // Validation de forme d'abord (pas la peine d'attendre une résolution
+  // réseau Redis pour une entrée déjà invalide).
+  const candidates = [];
   for (const s of list) {
     const token = String(s?.token || '');
     const rssi = Number(s?.rssi);
     if (!token || !Number.isFinite(rssi) || rssi < MIN_RSSI) continue;
-
-    const peerUserId = await redisClient.get(tokenKey(token));
-    if (!peerUserId || peerUserId === String(userId)) continue;
-
     const seenAt = s?.seenAt ? new Date(s.seenAt) : now;
     if (Number.isNaN(seenAt.getTime())) continue;
-
-    await BleSighting.updateOne(
-      { userId, peerUserId },
-      { $set: { rssi, seenAt, expiresAt }, $setOnInsert: { userId, peerUserId } },
-      { upsert: true }
-    );
-    recorded += 1;
+    candidates.push({ token, rssi, seenAt });
   }
+  if (!candidates.length) return { recorded: 0 };
 
-  return { recorded };
+  // Résout tous les tokens en un seul aller-retour Redis (mGet) au lieu d'un
+  // GET séquentiel par sighting — jusqu'à 50 aller-retours réseau avant ce
+  // changement, pour un seul appel HTTP client.
+  const peerIds = await redisClient.mGet(candidates.map((c) => tokenKey(c.token)));
+
+  const ops = [];
+  candidates.forEach((c, i) => {
+    const peerUserId = peerIds[i];
+    if (!peerUserId || peerUserId === String(userId)) return;
+    ops.push({
+      updateOne: {
+        filter: { userId, peerUserId },
+        update: { $set: { rssi: c.rssi, seenAt: c.seenAt, expiresAt }, $setOnInsert: { userId, peerUserId } },
+        upsert: true,
+      },
+    });
+  });
+  if (!ops.length) return { recorded: 0 };
+
+  // Idem côté Mongo : un seul bulkWrite au lieu d'un updateOne par sighting.
+  await BleSighting.bulkWrite(ops, { ordered: false });
+  return { recorded: ops.length };
 }
 
 async function getFreshSightingsSortedByRssi(userId) {

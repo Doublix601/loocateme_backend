@@ -4,7 +4,10 @@ import { stripe } from '../services/stripe.service.js';
 export const PromoCodeController = {
   list: async (req, res, next) => {
     try {
-      const promoCodes = await PromoCode.find().sort({ createdAt: -1 });
+      // Pas de pagination UI pour cet écran admin aujourd'hui ; un plafond
+      // dur évite au moins une requête non bornée si la table grossit
+      // beaucoup plus que prévu.
+      const promoCodes = await PromoCode.find().sort({ createdAt: -1 }).limit(500);
       return res.json({ promoCodes });
     } catch (err) {
       next(err);

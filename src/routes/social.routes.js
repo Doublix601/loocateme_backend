@@ -6,6 +6,7 @@ import { SocialController } from '../controllers/social.controller.js';
 const router = Router();
 
 router.put('/', requireAuth, validate(validators.socialUpsert), SocialController.upsert);
+router.put('/reorder', requireAuth, validate(validators.socialReorder), SocialController.reorder);
 router.delete('/:type', requireAuth, validate(validators.socialRemove), SocialController.remove);
 
 export default router;

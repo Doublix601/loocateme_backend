@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import morgan from 'morgan';
+import compression from 'compression';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import path from 'path';
@@ -33,7 +34,9 @@ import promoCodeRoutes from './routes/promoCode.routes.js';
 import supportRoutes from './routes/support.routes.js';
 import referralRoutes from './routes/referral.routes.js';
 import engagementRoutes from './routes/engagement.routes.js';
+import ageVerificationRoutes from './routes/ageVerification.routes.js';
 import { BusinessBillingController } from './controllers/businessBilling.controller.js';
+import { AgeVerificationController } from './controllers/ageVerification.controller.js';
 import { errorHandler, notFound } from './middlewares/error.js';
 import { verifyMailTransport } from './services/email.service.js';
 import { CronService } from './services/cron.service.js';
@@ -68,10 +71,18 @@ app.use(cors({
   credentials: true,
 }));
 app.use(morgan('dev'));
+// Compresse les réponses JSON (liste de lieux, d'utilisateurs...) sondées en
+// continu par l'app (heartbeat/liste toutes les 10-90s) : gain de bande
+// passante immédiat, sans risque pour les webhooks montés plus bas (ce
+// middleware ne touche que le corps de la réponse, jamais celui de la requête).
+app.use(compression());
 
 // Webhook Stripe : DOIT être monté avant express.json() pour recevoir le
 // corps brut (nécessaire à la vérification de signature).
 app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), BusinessBillingController.stripeWebhook);
+
+// Webhook Didit (vérification d'âge) : même contrainte de corps brut pour la signature HMAC.
+app.post('/api/webhooks/didit', express.raw({ type: 'application/json' }), AgeVerificationController.webhook);
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -179,6 +190,7 @@ app.use('/api/promo-codes', promoCodeRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/referrals', referralRoutes);
 app.use('/api/engagement', engagementRoutes);
+app.use('/api/age-verification', ageVerificationRoutes);
 
 // 404 and error
 app.use(notFound);

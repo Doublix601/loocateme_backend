@@ -1,12 +1,13 @@
 import { getNearbyUsers, updateLocation, forceCheckIn, forceCheckOut, getUsersByEmails, getPopularUsers, searchUsers, getUserByIdForViewer } from '../services/user.service.js';
 import { requestEmailChange, confirmEmailChange } from '../services/auth.service.js';
+import { debugLog } from '../utils/logger.js';
 
 export const UserController = {
   me: async (req, res, next) => {
     try {
       // Return full user profile (sans password)
       const { User } = await import('../models/User.js');
-      const user = await User.findById(req.user.id).select('-password');
+      const user = await User.findById(req.user.id).select('-password').populate('currentLocation', 'name city');
       if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
       // Ensure new fields exist with sane defaults for legacy users
       let changed = false;
@@ -95,11 +96,11 @@ export const UserController = {
   heartbeat: async (req, res, next) => {
     try {
       const { lat, lon } = req.body;
-      console.log(`[heartbeat] Received from user=${req.user.id} at lat=${lat}, lon=${lon}`);
+      debugLog(`[heartbeat] Received from user=${req.user.id} at lat=${lat}, lon=${lon}`);
 
       const user = await updateLocation(req.user.id, { lat, lon });
 
-      console.log(`[heartbeat] User updated: id=${user._id}, lastSeen=${user.location?.updatedAt}, loc=${user.currentLocation || 'none'}`);
+      debugLog(`[heartbeat] User updated: id=${user._id}, lastSeen=${user.location?.updatedAt}, loc=${user.currentLocation || 'none'}`);
 
       return res.json({ status: 'ok', user });
     } catch (err) {
@@ -236,6 +237,31 @@ export const UserController = {
       const { User } = await import('../models/User.js');
       const { sanitize } = await import('../services/auth.service.js');
       const user = await User.findByIdAndUpdate(req.user.id, { $set: { invisibleMode } }, { new: true }).select('-password');
+      if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
+      return res.json({ user: sanitize(user) });
+    } catch (err) {
+      next(err);
+    }
+  },
+  // Partage du lieu précis actuel (au-delà de la ville) avec les autres
+  // utilisateurs. RGPD : défaut false, opt-in explicite requis.
+  updateShareCurrentLocation: async (req, res, next) => {
+    try {
+      const { shareCurrentLocation } = req.body || {};
+      if (typeof shareCurrentLocation !== 'boolean') {
+        return res
+          .status(400)
+          .json({ code: 'INVALID_SHARE_CURRENT_LOCATION', message: 'shareCurrentLocation must be a boolean' });
+      }
+      const { User } = await import('../models/User.js');
+      const { sanitize } = await import('../services/auth.service.js');
+      const user = await User.findByIdAndUpdate(
+        req.user.id,
+        { $set: { 'privacyPreferences.shareCurrentLocation': shareCurrentLocation } },
+        { new: true }
+      )
+        .select('-password')
+        .populate('currentLocation', 'name city');
       if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
       return res.json({ user: sanitize(user) });
     } catch (err) {

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { User } from '../models/User.js';
 
 const CONSUMABLE_GRANTS = {
@@ -28,6 +29,15 @@ export const handleWebhook = async (req, res) => {
 
     console.log(`[RevenueCat Webhook] Event Type: ${type}, User: ${app_user_id}`);
 
+    // app_user_id peut être un $RCAnonymousID (installation jamais identifiée
+    // côté app via Purchases.logIn) plutôt qu'un ObjectId Mongo. On répond 200
+    // pour éviter que RevenueCat ne retente indéfiniment un event qu'on ne
+    // pourra de toute façon jamais rattacher à un compte.
+    if (!mongoose.isValidObjectId(app_user_id)) {
+      console.warn(`[RevenueCat Webhook] Non-Mongo app_user_id (anonymous install?): ${app_user_id}`);
+      return res.status(200).json({ success: true, ignored: true });
+    }
+
     const user = await User.findById(app_user_id);
     if (!user) {
       console.warn(`[RevenueCat Webhook] User not found: ${app_user_id}`);
@@ -40,7 +50,7 @@ export const handleWebhook = async (req, res) => {
       case 'CANCELLATION':
       case 'EXPIRATION':
       case 'BILLING_ISSUE': {
-        const hasPremium = entitlement_ids && entitlement_ids.includes('premium');
+        const hasPremium = entitlement_ids && entitlement_ids.includes('LoocateMe Premium');
         user.isPremium = hasPremium;
         await user.save();
         console.log(`[RevenueCat Webhook] User ${user.username} premium status updated to: ${hasPremium}`);

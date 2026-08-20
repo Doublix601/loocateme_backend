@@ -84,6 +84,21 @@ export async function addOrUpdateSocial(userId, { type, handle }) {
   return user;
 }
 
+export async function reorderSocial(userId, order) {
+  const user = await User.findById(userId);
+  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+  const byType = new Map(user.socialNetworks.map((s) => [s.type, s]));
+  const reordered = order.map((type) => byType.get(type)).filter(Boolean);
+  // Append any existing networks omitted from `order` (defensive: keeps data
+  // if client sends a stale/partial list) so nothing is silently dropped.
+  user.socialNetworks.forEach((s) => {
+    if (!order.includes(s.type)) reordered.push(s);
+  });
+  user.socialNetworks = reordered;
+  await user.save();
+  return user;
+}
+
 export async function removeSocial(userId, type) {
   const user = await User.findById(userId);
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });

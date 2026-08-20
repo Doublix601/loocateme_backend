@@ -27,6 +27,7 @@ router.post('/me/email', requireAuth, validate(validators.changeEmail), UserCont
 // /api/auth/verify-email and /api/auth/reset-password (token-based, not session-based).
 router.post('/me/email/confirm', validate(validators.confirmEmailChange), UserController.confirmEmailChange);
 router.patch('/me/invisible-mode', requireAuth, UserController.updateInvisibleMode);
+router.patch('/me/share-current-location', requireAuth, UserController.updateShareCurrentLocation);
 router.patch('/me/notification-preferences', requireAuth, UserController.updateNotificationPreferences);
 router.patch('/me/check-in-mode', requireAuth, UserController.updateCheckInMode);
 router.post('/streak/claim-supervise', requireAuth, UserController.claimSupervise);

@@ -4,11 +4,37 @@ import { estimateEventBoostRecipients, enqueueEventBoostBroadcast } from '../ser
 import { stripe } from '../services/stripe.service.js';
 import { ensureStripeCustomer } from './businessBilling.controller.js';
 import { BOOST_PRICE_CENTS, BOOST_LABELS, BOOST_MIN_TIER_FOR_PURCHASE } from '../constants/boosts.js';
+import { redisClient } from '../config/redis.js';
 
 const PRO_BOOST_DURATION_MS = 24 * 60 * 60 * 1000;
 const ULTRA_BOOST_DURATION_MS = 24 * 60 * 60 * 1000;
 
 const TIER_RANK = { none: 0, pro1: 1, pro2: 2, pro3: 3 };
+
+// Anti-spam : un lieu ne peut déclencher qu'UN SEUL boost géociblé (Ultra ou
+// Event confondus) par heure, même s'il dispose de solde pour les deux. Sans
+// cette limite, un pro peut activer un Ultra Boost puis un Event Boost
+// quelques minutes après : filterBoostCooldown (boostNotify.service.js)
+// dédupliquant déjà les push par utilisateur sur 4h, le second envoi se
+// retrouve alors sans aucun destinataire (tous les riverains ont déjà reçu le
+// premier boost) sans que le pro n'en soit informé. Verrou Redis (SET NX EX)
+// plutôt qu'un champ Mongo : évite une race entre les deux routes
+// d'activation et centralise le TTL sans étape de nettoyage.
+const BOOST_ACTIVATION_COOLDOWN_SECONDS = 60 * 60;
+
+async function checkAndSetBoostActivationCooldown(locationId) {
+  const key = `boost_activation_cooldown:${locationId}`;
+  try {
+    const ok = await redisClient.set(key, '1', { NX: true, EX: BOOST_ACTIVATION_COOLDOWN_SECONDS });
+    if (ok) return { allowed: true };
+    const ttl = await redisClient.ttl(key);
+    return { allowed: false, retryAfterSeconds: ttl > 0 ? ttl : BOOST_ACTIVATION_COOLDOWN_SECONDS };
+  } catch (e) {
+    // Redis indisponible : on autorise plutôt que de bloquer toute activation de boost.
+    console.warn('[businessBoost] Redis cooldown check failed, failing open:', e.message);
+    return { allowed: true };
+  }
+}
 
 export const BusinessBoostController = {
   getBoosts: async (req, res, next) => {
@@ -31,6 +57,14 @@ export const BusinessBoostController = {
       const location = req.location;
       if ((location.proOffers?.ultraBoostBalance || 0) <= 0) {
         return res.status(403).json({ code: 'NO_ULTRA_BOOST', message: 'Aucun Ultra Boost disponible' });
+      }
+      const cooldown = await checkAndSetBoostActivationCooldown(location._id);
+      if (!cooldown.allowed) {
+        return res.status(429).json({
+          code: 'BOOST_COOLDOWN',
+          message: 'Un seul boost (Ultra ou Event) peut être activé par heure pour ce lieu. Réessayez plus tard.',
+          retryAfterSeconds: cooldown.retryAfterSeconds,
+        });
       }
       const recipients = await estimateUltraBoostRecipients(location);
       await enqueueUltraBoostBroadcast(location);
@@ -105,6 +139,15 @@ export const BusinessBoostController = {
       const event = location.events.id(req.params.eventId);
       if (!event) {
         return res.status(404).json({ code: 'EVENT_NOT_FOUND', message: 'Événement introuvable' });
+      }
+
+      const cooldown = await checkAndSetBoostActivationCooldown(location._id);
+      if (!cooldown.allowed) {
+        return res.status(429).json({
+          code: 'BOOST_COOLDOWN',
+          message: 'Un seul boost (Ultra ou Event) peut être activé par heure pour ce lieu. Réessayez plus tard.',
+          retryAfterSeconds: cooldown.retryAfterSeconds,
+        });
       }
 
       const recipients = await estimateEventBoostRecipients(location);

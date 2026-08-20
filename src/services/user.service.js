@@ -8,6 +8,9 @@ import { NotificationDedup } from '../models/NotificationDedup.js';
 import { singleflightRedis } from '../utils/singleflight.js';
 import { recordCrossedPaths } from './crossedPaths.service.js';
 import { resolveAmbiguousVenueViaBle, resolveVenueFromBlePeersOnly } from './ble.service.js';
+import { debugLog } from '../utils/logger.js';
+import { haversineMeters } from '../utils/geo.js';
+import { buildDiacriticRegex } from '../utils/text.js';
 import { maybeRefreshCity } from './geocoding.service.js';
 import { invalidateLocationDetailCache, invalidateLocationsListCache } from '../utils/locationCache.js';
 import { STALE_PRESENCE_THRESHOLD_MS, PRESENCE_FRESHNESS_MS } from '../config/presenceWindows.js';
@@ -63,29 +66,6 @@ async function getNearbyPoiCandidates(lat, lon) {
 export const MIN_STAY_MS = 5 * 60 * 1000; // 5 minutes minimum pour être comptabilisé
 const ULTRA_BOOST_CLAIM_MS = 20 * 60 * 1000; // 20 minutes, cf. texte du push dans ultraBoost.service.js
 const FREE_BOOST_DURATION_MS = 30 * 60 * 1000; // même durée que le boost payant (premium.controller.js)
-
-// Build a diacritic-insensitive regex by expanding common French accented letters
-function buildDiacriticRegex(input) {
-  const map = {
-    a: '[aàáâäåæAÀÁÂÄÅÆ]',
-    c: '[cçCÇ]',
-    e: '[eèéêëEÈÉÊË]',
-    i: '[iìíîïIÌÍÎÏ]',
-    o: '[oòóôöøœOÒÓÔÖØŒ]',
-    u: '[uùúûüUÙÚÛÜ]',
-    y: '[yÿYŸ]',
-    n: '[nñNÑ]',
-  };
-  const escaped = String(input || '')
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  let pattern = '';
-  for (const ch of escaped) {
-    const lower = ch.toLowerCase();
-    if (map[lower]) pattern += map[lower];
-    else pattern += ch;
-  }
-  return new RegExp(pattern, 'i');
-}
 
 const GEO_CACHE_TTL = 5; // seconds
 
@@ -155,7 +135,10 @@ export async function computeMutualConnection(userId, otherId) {
 
 export async function getUserByIdForViewer({ userId, targetId }) {
   if (!targetId) return null;
-  const target = await User.findById(targetId).select('-password').lean();
+  const target = await User.findById(targetId)
+    .select('-password')
+    .populate('currentLocation', 'name city')
+    .lean();
   if (!target) return null;
   if (String(userId) !== String(targetId)) {
     if (target.status === 'red' || target.emailVerified === false) return null;
@@ -163,6 +146,12 @@ export async function getUserByIdForViewer({ userId, targetId }) {
     const blockedIds = await getBlockedIds(userId);
     if (blockedIds.includes(String(targetId))) return null;
     target.mutualConnection = await computeMutualConnection(userId, targetId);
+    // Lieu précis (au-delà de la ville) : donnée sensible, exposée à des tiers
+    // uniquement si explicitement partagée via privacyPreferences.shareCurrentLocation.
+    if (!target.privacyPreferences?.shareCurrentLocation) {
+      target.currentLocation = null;
+      target.currentLocationSince = null;
+    }
   }
   return target;
 }
@@ -175,22 +164,11 @@ export async function getUserByEmail(email) {
 
 export async function getUsersByEmails(emails) {
   const unique = Array.from(new Set(emails));
-  const users = await User.find({ email: { $in: unique } }).select('-password');
+  const users = await User.find({ email: { $in: unique } }).select('-password').lean();
   return users;
 }
 
 const FORCE_CHECKIN_MAX_M = 100;
-
-function haversineMeters(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
 
 // Force le check-in de l'utilisateur sur un lieu précis, en bypassant le
 // matching/hystérésis normal. Utilisé quand l'utilisateur constate que le
@@ -757,7 +735,7 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
         .map((m) => m.member)
         .filter((id) => id && !excludeIds.includes(String(id)));
       if (ids.length === 0) {
-        console.log(`[getNearbyUsers] Redis: Found ${members.length} total, but 0 after exclusion. Requester=${userId}`);
+        debugLog(`[getNearbyUsers] Redis: Found ${members.length} total, but 0 after exclusion. Requester=${userId}`);
         return [];
       }
       const users = await User.find(applyNotBannedFilter({
@@ -770,9 +748,10 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
         ]
       }))
       .select('-password')
-      .sort({ boostUntil: -1, 'streak.count': -1 });
+      .sort({ boostUntil: -1, 'streak.count': -1 })
+      .lean();
 
-      console.log(`[getNearbyUsers] Redis audit: Found=${users.length}/${ids.length} candidates. Threshold=${threshold.toISOString()}. ExcludedIdsCount=${excludeIds.length}`);
+      debugLog(`[getNearbyUsers] Redis audit: Found=${users.length}/${ids.length} candidates. Threshold=${threshold.toISOString()}. ExcludedIdsCount=${excludeIds.length}`);
       return users;
     }
   } catch (err) {
@@ -794,9 +773,10 @@ export async function getNearbyUsers({ userId, lat, lon, radiusMeters = 2000 }) 
   }))
     .sort({ boostUntil: -1, 'streak.count': -1 })
     .limit(100)
-    .select('-password');
+    .select('-password')
+    .lean();
 
-  console.log(`[getNearbyUsers] MongoDB audit: Found=${users.length} users. Threshold=${threshold.toISOString()}. Radius=${radiusMeters}m`);
+  debugLog(`[getNearbyUsers] MongoDB audit: Found=${users.length} users. Threshold=${threshold.toISOString()}. Radius=${radiusMeters}m`);
   return users;
 }
 
@@ -811,7 +791,8 @@ export async function getPopularUsers({ userId = null, limit = 10 } = {}) {
   const users = await User.find(query)
     .sort({ profileViews: -1, createdAt: -1 })
     .limit(safeLimit)
-    .select('-password');
+    .select('-password')
+    .lean();
   return users;
 }
 

@@ -8,6 +8,7 @@ import { sendUnifiedNotification } from '../services/fcm.service.js';
 import { filterOptedOutUsers } from '../services/push.service.js';
 import { sanitize } from '../services/auth.service.js';
 import { getUninstallCorrelationReport } from '../services/churnRisk.service.js';
+import { invalidateAuthCache } from '../utils/authCache.js';
 
 const router = Router();
 
@@ -222,6 +223,12 @@ router.put('/users/:id/user-role', requireAuth, requireAdmin, async (req, res, n
     }
     user.role = role;
     await user.save();
+    // requireAuth/requireActiveUser lisent req.user.role depuis un cache Redis
+    // court (20s, cf. utils/authCache.js) : sans invalidation explicite ici,
+    // un modérateur/admin qui vient d'être rétrogradé garderait ses accès
+    // (bannir/débannir, lire les signalements, gérer les codes promo, éditer
+    // la politique GDPR...) jusqu'à expiration du cache.
+    await invalidateAuthCache(user._id);
     return res.json({ success: true, user: sanitize(user) });
   } catch (err) {
     next(err);

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { Location } from '../src/models/Location.js';
+import { proposeOsmChange } from '../src/services/locationChange.service.js';
 
 dotenv.config();
 
@@ -63,6 +64,16 @@ async function syncLocations() {
     });
     console.log(`Deleted ${deleteResult.deletedCount} locations.`);
 
+    // Lieux déjà revendiqués par un pro : leurs champs ne doivent jamais être
+    // écrasés silencieusement par la sync OSM (cf. proposeOsmChange), pour
+    // éviter qu'une modification malveillante sur OSM ne change les
+    // informations d'un établissement sans validation du gérant.
+    const proLocationsByOsmId = new Map();
+    const proLocations = await Location.find({ osmId: { $exists: true }, isPro: true }).select('osmId name city location ownerId');
+    for (const loc of proLocations) {
+      if (loc.osmId !== undefined && loc.osmId !== null) proLocationsByOsmId.set(loc.osmId, loc);
+    }
+
     const ops = data.elements
       .filter((el) => {
         const name = el.tags.name || 'Unknown';
@@ -105,6 +116,16 @@ async function syncLocations() {
 
         if (!type) return null;
 
+        // Lieu déjà revendiqué par un pro : ne pas écraser directement, on
+        // met la modification en attente de validation par le gérant.
+        if (proLocationsByOsmId.has(osmId)) {
+          return {
+            pending: true,
+            location: proLocationsByOsmId.get(osmId),
+            incoming: { name, city, location: { type: 'Point', coordinates: [lon, lat] } },
+          };
+        }
+
         return {
           updateOne: {
             filter: {
@@ -128,17 +149,33 @@ async function syncLocations() {
       })
       .filter((op) => op !== null);
 
-    if (ops.length > 0) {
-      const result = await Location.bulkWrite(ops);
+    const pendingOps = ops.filter((op) => op.pending);
+    const bulkOps = ops.filter((op) => !op.pending);
+
+    if (bulkOps.length > 0) {
+      const result = await Location.bulkWrite(bulkOps);
       console.log(`Sync completed: ${result.upsertedCount} new, ${result.modifiedCount} updated.`);
     } else {
       console.log('No elements to sync.');
+    }
+
+    if (pendingOps.length > 0) {
+      console.log(`Detected ${pendingOps.length} OSM change(s) on claimed pro locations, submitting for owner validation...`);
+      for (const { location, incoming } of pendingOps) {
+        try {
+          const changeRequest = await proposeOsmChange(location, incoming);
+          if (changeRequest) console.log(`  -> Pending change request created for "${location.name}" (${location._id}).`);
+        } catch (e) {
+          console.error(`  -> Failed to propose OSM change for "${location.name}":`, e?.message || e);
+        }
+      }
     }
 
     // Delete OSM locations that no longer exist in Overpass results
     const activeOsmIds = data.elements.map((el) => el.id);
     const staleDelete = await Location.deleteMany({
       osmId: { $exists: true, $nin: activeOsmIds },
+      isPro: { $ne: true },
     });
     console.log(`Deleted ${staleDelete.deletedCount} stale OSM locations no longer in Overpass.`);
   } catch (error) {

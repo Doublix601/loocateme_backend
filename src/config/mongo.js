@@ -1,6 +1,29 @@
 import mongoose from 'mongoose';
+import os from 'os';
 
 let attemptedAppUserCreate = false;
+
+// Pool Mongo agrégé cible (tous workers PM2 confondus) sous lequel le
+// contexte-switching Mongo reste gérable (cf. commentaire historique plus
+// bas : 15/worker x 4 workers = 60, dimensionné par test de charge). Plutôt
+// que de figer maxPoolSize à une valeur qui suppose un nombre de workers fixe
+// (ecosystem.config.cjs utilise `instances: 'max'`, donc le nombre réel de
+// workers dépend du nombre de vCPU de l'hôte), on dérive maxPoolSize du
+// nombre de workers effectif pour que l'agrégat reste proche de cette cible
+// quelle que soit la taille de la machine.
+const TARGET_AGGREGATE_POOL_SIZE = 60;
+const MIN_POOL_SIZE_PER_WORKER = 5;
+
+function resolveWorkerCount() {
+  const raw = process.env.PM2_INSTANCES;
+  if (raw && raw !== 'max') {
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  // 'max' (valeur par défaut de ecosystem.config.cjs) ou non renseigné (dev
+  // hors PM2) : PM2 résout 'max' au nombre de vCPU, on reproduit le même calcul.
+  return os.cpus().length || 1;
+}
 
 function parseMongoFromUri(uri) {
   try {
@@ -64,18 +87,22 @@ export async function connectMongo() {
   while (true) {
     try {
       attempt += 1;
+      const workerCount = resolveWorkerCount();
+      const maxPoolSize = Math.max(MIN_POOL_SIZE_PER_WORKER, Math.round(TARGET_AGGREGATE_POOL_SIZE / workerCount));
+      // 50 était dimensionné pour un seul process. En cluster PM2, ça pouvait
+      // donner jusqu'à 200+ connexions simultanées vers un mongod unique
+      // (confirmé en test de charge : sous contention CPU, un pool aussi large
+      // fait plus de mal que de bien — Mongo passe son temps à faire du context
+      // switching entre centaines d'opérations en attente au lieu d'avancer).
+      // maxPoolSize est maintenant dérivé du nombre réel de workers (cf.
+      // resolveWorkerCount) pour que l'agrégat reste proche de la cible
+      // ci-dessus quelle que soit la taille de la machine.
+      console.log(`[mongo] ${workerCount} worker(s) détecté(s) -> maxPoolSize=${maxPoolSize} (agrégat visé: ~${maxPoolSize * workerCount})`);
       await mongoose.connect(uri, {
         autoIndex: true,
         dbName: undefined,
         serverSelectionTimeoutMS: 5000,
-        // 50 était dimensionné pour un seul process. En cluster PM2 (4 workers),
-        // ça donnait jusqu'à 200 connexions simultanées vers un mongod unique
-        // (confirmé en test de charge : sous contention CPU, un pool aussi large
-        // fait plus de mal que de bien — Mongo passe son temps à faire du context
-        // switching entre centaines d'opérations en attente au lieu d'avancer).
-        // 15 par worker (60 au total) laisse une file d'attente plus courte et
-        // plus gérable pour un mongod mono-instance.
-        maxPoolSize: 15,
+        maxPoolSize,
       });
       console.log('MongoDB connected');
       // Slow query log : sans ça, on ne sait jamais quelle requête devient le

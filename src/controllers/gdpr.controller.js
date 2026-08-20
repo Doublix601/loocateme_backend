@@ -182,7 +182,7 @@ export const GdprController = {
   // fields so a first-time acceptance counts as accepting the latest policy.
   async updateConsent(req, res) {
     const userId = req.user.id;
-    const { accepted, analytics = false, marketing = false, doNotSell = false } = req.body || {};
+    const { accepted, analytics = false, doNotSell = true } = req.body || {};
     const user = await User.findById(userId);
     if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
 
@@ -199,7 +199,12 @@ export const GdprController = {
       user.policyVersionSeen = latest.version;
       user.policyVersionSeenAt = now;
     }
-    user.privacyPreferences = { analytics: !!analytics, marketing: !!marketing, doNotSell: !!doNotSell };
+    // Mutation ciblée des deux champs concernés par cet endpoint : un
+    // remplacement intégral de user.privacyPreferences effacerait
+    // silencieusement bluetoothProximity et shareCurrentLocation, gérés par
+    // des endpoints dédiés (ble.controller.js, user.controller.js).
+    user.privacyPreferences.analytics = !!analytics;
+    user.privacyPreferences.doNotSell = !!doNotSell;
     await user.save();
     return res.json({ success: true, user: sanitizeUser(user) });
   },

@@ -11,6 +11,13 @@ router.get('/my-location', requireAuth, BusinessProfileController.getMyLocation)
 
 router.get('/locations/:locationId', requireAuth, requireLocationOwner, BusinessProfileController.getById);
 
+// Changement OSM en attente (bannière dashboard) : vérification par le gérant
+// avant application, pour éviter qu'une modification malveillante sur OSM ne
+// change les informations d'un lieu revendiqué sans son accord.
+router.get('/locations/:locationId/pending-change', requireAuth, requireLocationOwner, BusinessProfileController.getPendingChange);
+router.post('/locations/:locationId/pending-change/:changeRequestId/approve', requireAuth, requireLocationOwner, BusinessProfileController.approveChange);
+router.post('/locations/:locationId/pending-change/:changeRequestId/reject', requireAuth, requireLocationOwner, BusinessProfileController.rejectChange);
+
 // Outil d'acquisition, pas un avantage premium : aucun requireBusinessTier ici.
 router.get('/locations/:locationId/checkin-qr', requireAuth, requireLocationOwner, BusinessProfileController.getCheckinQr);
 

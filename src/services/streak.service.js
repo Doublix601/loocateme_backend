@@ -23,12 +23,18 @@ function calendarDayGap(from, to) {
  * - Gap > 1 jour civil (au moins un jour complet manqué) : réinitialise
  *   `streak.count` à 0 et efface les deux flags de claim en attente.
  */
+// Retourne true si lastLoginAt/streak ont été réécrits (nouveau jour civil),
+// false si l'appel n'a rien fait (déjà actif aujourd'hui) — utilisé par
+// requireAuth pour savoir s'il doit invalider le cache d'auth de l'utilisateur
+// (sinon une requête suivante dans la fenêtre de TTL rejouerait le même gap
+// à partir du lastLoginAt caché, désormais périmé, et réincrémenterait le
+// streak plusieurs fois pour un seul vrai changement de jour).
 export async function recordDailyActivity(userId, lastLoginAt) {
   const now = new Date();
   const previous = lastLoginAt ? new Date(lastLoginAt) : null;
   const gap = previous ? calendarDayGap(previous, now) : 1;
 
-  if (gap <= 0) return; // déjà actif aujourd'hui
+  if (gap <= 0) return false; // déjà actif aujourd'hui
 
   if (gap === 1) {
     const user = await User.findById(userId).select('streak').lean();
@@ -60,6 +66,7 @@ export async function recordDailyActivity(userId, lastLoginAt) {
       }
     );
   }
+  return true;
 }
 
 /**
