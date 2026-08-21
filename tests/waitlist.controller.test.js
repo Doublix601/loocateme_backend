@@ -96,6 +96,32 @@ test('subscribe returns alreadySubscribed without creating a duplicate or sendin
   }
 });
 
+test('subscribe treats a duplicate-key error from create() (TOCTOU race) as an existing subscription', async () => {
+  // Simulates two near-simultaneous subscribe() calls for the same email:
+  // findOne() finds nothing yet (neither insert has committed), but the
+  // create() that loses the race hits the unique index and rejects with a
+  // MongoDB duplicate-key error (code 11000).
+  const model = stubWaitlistModel({ existing: null, count: 5 });
+  const mail = stubMailer();
+  WaitlistSignup.create = () => {
+    const err = new Error('E11000 duplicate key error collection: waitlistsignups index: email_1');
+    err.code = 11000;
+    return Promise.reject(err);
+  };
+  try {
+    const { req, res } = makeReqRes({ email: 'race@example.com' });
+    await WaitlistController.subscribe(req, res, (err) => { throw err; });
+    await flush();
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.body, { ok: true, alreadySubscribed: true });
+    assert.equal(mail.calls.length, 0);
+  } finally {
+    model.restore();
+    mail.restore();
+  }
+});
+
 test('getCount returns the total number of signups', async () => {
   const model = stubWaitlistModel({ count: 42 });
   try {

@@ -12,7 +12,20 @@ export const WaitlistController = {
         return res.status(200).json({ ok: true, alreadySubscribed: true });
       }
 
-      await WaitlistSignup.create({ email });
+      try {
+        await WaitlistSignup.create({ email });
+      } catch (err) {
+        // Course TOCTOU : deux inscriptions quasi simultanées pour le même
+        // email peuvent toutes deux passer le findOne ci-dessus avant que
+        // l'une des deux create() n'aboutisse. L'index unique de
+        // WaitlistSignup.email fait alors échouer la seconde create() avec
+        // une erreur de clé dupliquée (E11000) — à traiter comme une
+        // inscription déjà existante, pas comme une erreur serveur.
+        if (err?.code === 11000) {
+          return res.status(200).json({ ok: true, alreadySubscribed: true });
+        }
+        throw err;
+      }
       const count = await WaitlistSignup.countDocuments();
 
       // Fire-and-forget : un échec SMTP ne doit pas faire échouer l'inscription,
