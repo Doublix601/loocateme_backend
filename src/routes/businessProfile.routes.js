@@ -21,6 +21,14 @@ router.post('/locations/:locationId/pending-change/:changeRequestId/reject', req
 // Outil d'acquisition, pas un avantage premium : aucun requireBusinessTier ici.
 router.get('/locations/:locationId/checkin-qr', requireAuth, requireLocationOwner, BusinessProfileController.getCheckinQr);
 
+// Préférence de notification, indépendante du palier (cf. contrôleur).
+router.put(
+  '/locations/:locationId/notification-preferences',
+  requireAuth,
+  requireLocationOwner,
+  BusinessProfileController.updateNotificationPreferences
+);
+
 // Palier 1 : photo de profil (logo) + couverture + Stories
 router.put(
   '/locations/:locationId/cover',
