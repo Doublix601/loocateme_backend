@@ -45,7 +45,7 @@ export function buildDigestEmail({ location, stats, unsubscribeUrl }) {
   const viewsLine = current > 0
     ? `Votre fiche a été vue ${current} fois cette semaine${trendSuffix}.`
     : 'Aucune vue sur votre fiche cette semaine, pensez à booster votre visibilité.';
-  const bestLine = best ? `Votre meilleur jour a été ${best}.` : '';
+  const bestLine = best ? `Sur les 30 derniers jours, votre meilleur jour est le ${best}.` : '';
 
   const subject = `Votre semaine sur LoocateMe Pro — ${location.name}`;
   const text = [

@@ -23,7 +23,7 @@ test('buildDigestEmail: normal case includes view count, trend and best weekday'
   assert.match(subject, /Le Central/);
   assert.match(text, /42 fois/);
   assert.match(text, /\+12\.5%/);
-  assert.match(text, /mercredi/); // index 2 (0=lundi) has the max count (30)
+  assert.match(text, /Sur les 30 derniers jours.*votre meilleur jour est le mercredi/); // index 2 (0=lundi) has the max count (30)
   assert.match(text, /https:\/\/api\.loocate\.me\/x/);
 });
 
