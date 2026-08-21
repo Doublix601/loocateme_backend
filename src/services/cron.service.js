@@ -6,6 +6,7 @@ import { sendPushUnified } from './push.service.js';
 import { recalculateAllCityStars } from './location.service.js';
 import { recomputeAllLocationAnalytics } from './businessStats.service.js';
 import { processPolicyEmailJobs } from './policyNotification.service.js';
+import { sendBusinessWeeklyDigest } from './businessDigest.service.js';
 import { decayInactiveUsers, sendStreakExpiryWarnings } from './streak.service.js';
 import { sendInactiveProfileViewsNudge, sendNightModeActivatedNotification } from './engagement.service.js';
 import { revokePremiumAdvantages } from '../controllers/businessBilling.controller.js';
@@ -27,6 +28,20 @@ export const CronService = {
     nodeCron.schedule('0 9 * * 1', () => {
       console.log('[cron] Starting Weekly Digest...');
       CronService.sendWeeklyDigest();
+    });
+
+    // Digest hebdomadaire par email (pros Pro2/Pro3, stats de fréquentation) : tous
+    // les lundis à 08h30, décalé du digest push grand public ci-dessus (09h00) pour
+    // étaler la charge SMTP/push. À ne pas confondre avec sendWeeklyDigest (push,
+    // utilisateurs grand public) — cf. docs/superpowers/specs/2026-08-21-digest-hebdomadaire-pro-design.md.
+    nodeCron.schedule('30 8 * * 1', async () => {
+      console.log('[cron] Starting Business Weekly Digest (email)...');
+      try {
+        const count = await sendBusinessWeeklyDigest();
+        console.log(`[cron] Business weekly digest sent to ${count} pro locations.`);
+      } catch (e) {
+        console.error('[cron] Business weekly digest error:', e);
+      }
     });
 
     // Envoi par lots des emails de mise à jour de la politique de confidentialité
