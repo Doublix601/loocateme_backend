@@ -316,4 +316,13 @@ export const validators = {
     body('subject').exists().bail().isString().trim().isLength({ min: 1, max: 150 }),
     body('message').exists().bail().isString().trim().isLength({ min: 1, max: 5000 }),
   ],
+  waitlistSignup: [
+    body('email').isEmail().normalizeEmail({
+      gmail_remove_dots: false,
+      gmail_remove_subaddress: false,
+      outlookdotcom_remove_subaddress: false,
+      yahoo_remove_subaddress: false,
+      icloud_remove_subaddress: false,
+    }),
+  ],
 };

@@ -129,3 +129,25 @@ export const forgotPasswordLimiter = rateLimit({
   keyGenerator: (req) => req.ip,
   message: { code: 'RATE_LIMITED', message: 'Trop de demandes de réinitialisation, réessayez plus tard.' },
 });
+
+// Inscription à la liste d'attente pré-lancement : geste léger (un seul
+// champ), fenêtre plus généreuse que le formulaire de contact.
+export const waitlistSignupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
+  message: { code: 'RATE_LIMITED', message: 'Trop de tentatives, réessayez plus tard.' },
+});
+
+// Lecture publique du compteur d'inscrits (affiché sur le site) : rate limit
+// large, juste anti-abus, pas anti-usage normal.
+export const waitlistCountLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
+  message: { code: 'RATE_LIMITED', message: 'Trop de requêtes, réessayez plus tard.' },
+});

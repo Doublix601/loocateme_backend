@@ -32,6 +32,7 @@ import businessBillingRoutes from './routes/businessBilling.routes.js';
 import businessBoostRoutes from './routes/businessBoost.routes.js';
 import promoCodeRoutes from './routes/promoCode.routes.js';
 import supportRoutes from './routes/support.routes.js';
+import waitlistRoutes from './routes/waitlist.routes.js';
 import referralRoutes from './routes/referral.routes.js';
 import engagementRoutes from './routes/engagement.routes.js';
 import { BusinessBillingController } from './controllers/businessBilling.controller.js';
@@ -183,6 +184,7 @@ app.use('/api/business/billing', businessBillingRoutes);
 app.use('/api/business', businessBoostRoutes);
 app.use('/api/promo-codes', promoCodeRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/waitlist', waitlistRoutes);
 app.use('/api/referrals', referralRoutes);
 app.use('/api/engagement', engagementRoutes);
 
