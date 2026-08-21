@@ -411,6 +411,13 @@ export const BusinessBillingController = {
         location.isPro = false;
         location.businessTier = 'none';
         location.subscription = { status: 'canceled' };
+        // Contrairement à un simple downgrade d'abonnement (où un Pro Boost en
+        // cours reste actif jusqu'à sa propre expiration, cf. revokePremiumAdvantages
+        // ci-dessus), la suppression du compte pro rend le lieu orphelin
+        // (ownerId undefined) : il ne doit plus rester mis en avant sans propriétaire.
+        if (location.sponsorship?.active) {
+          location.sponsorship.active = false;
+        }
         revokePremiumAdvantages(location);
         await location.save({ validateModifiedOnly: true });
       }
