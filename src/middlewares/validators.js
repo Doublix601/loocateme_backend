@@ -317,7 +317,7 @@ export const validators = {
     body('message').exists().bail().isString().trim().isLength({ min: 1, max: 5000 }),
   ],
   waitlistSignup: [
-    body('email').isEmail().normalizeEmail({
+    body('email').isString().bail().trim().isEmail().normalizeEmail({
       gmail_remove_dots: false,
       gmail_remove_subaddress: false,
       outlookdotcom_remove_subaddress: false,
