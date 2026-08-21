@@ -1,9 +1,11 @@
-import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Location } from '../src/models/Location.js';
 import { BusinessDigestController } from '../src/controllers/businessDigest.controller.js';
 import { signUnsubscribeToken } from '../src/services/businessDigest.service.js';
+
+// Set secret before any test runs so sign/verify work correctly
+process.env.DIGEST_UNSUBSCRIBE_SECRET = 'test-secret-for-sdd-suite';
 
 function makeRes() {
   return {
