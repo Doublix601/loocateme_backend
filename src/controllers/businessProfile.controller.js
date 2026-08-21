@@ -86,6 +86,23 @@ export const BusinessProfileController = {
     }
   },
 
+  // Indépendant du palier (cf. Task 1) : un pro peut préconfigurer sa préférence
+  // même à un palier qui n'y donne pas encore accès.
+  updateNotificationPreferences: async (req, res, next) => {
+    try {
+      const { weeklyDigestEmail } = req.body;
+      if (typeof weeklyDigestEmail !== 'boolean') {
+        return res.status(400).json({ code: 'INVALID_BODY', message: 'weeklyDigestEmail doit être un booléen' });
+      }
+      req.location.notificationPreferences = req.location.notificationPreferences || {};
+      req.location.notificationPreferences.weeklyDigestEmail = weeklyDigestEmail;
+      await req.location.save({ validateModifiedOnly: true });
+      return res.json({ location: req.location });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   updateCover: async (req, res, next) => {
     try {
       if (!req.file) return res.status(400).json({ code: 'FILE_REQUIRED', message: 'Fichier requis' });

@@ -120,6 +120,14 @@ const LocationSchema = new mongoose.Schema(
       until: { type: Date },
       activatedAt: { type: Date },
     },
+    // Préférences de notification par email, indépendantes du palier d'abonnement
+    // (un pro peut préconfigurer sa préférence même à un palier qui n'y donne pas
+    // encore accès). Défaut à true : ce digest est un email de service lié à
+    // l'abonnement payé, pas une newsletter marketing — désabonnement en un clic
+    // fourni dans chaque envoi (cf. businessDigest.service.js).
+    notificationPreferences: {
+      weeklyDigestEmail: { type: Boolean, default: true },
+    },
     // Événements créés par le pro (palier pro2+), affichés sur la fiche du lieu
     // (LocationScreen côté app) tant que non expirés. Plusieurs événements
     // peuvent coexister. L'Event Boost (palier pro3+, cf. businessBoost.controller.js)
