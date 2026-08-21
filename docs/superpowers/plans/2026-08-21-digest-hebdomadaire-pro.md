@@ -695,7 +695,8 @@ export const BusinessDigestController = {
         return res.redirect(`${siteUrl}/dashboard/settings?digest=error`);
       }
       return res.redirect(`${siteUrl}/dashboard/settings?digest=unsubscribed`);
-    } catch {
+    } catch (e) {
+      console.error('[businessDigest] Unsubscribe failed:', e?.message || e);
       return res.redirect(`${siteUrl}/dashboard/settings?digest=error`);
     }
   },
