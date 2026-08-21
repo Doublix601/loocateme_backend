@@ -93,6 +93,11 @@ test('POST /api/waitlist with a valid new email returns 201', async () => {
     assert.equal(res.status, 201);
     assert.deepEqual(body, { ok: true, alreadySubscribed: false, count: 3 });
     assert.equal(model.calls.create.length, 1);
+    // Consent-trail metadata (IP/user-agent) is captured on real requests
+    // through the actual Express req object, not the hand-rolled mocks used
+    // in waitlist.controller.test.js.
+    assert.ok(model.calls.create[0].ip, 'expected req.ip to be forwarded to create()');
+    assert.equal(typeof model.calls.create[0].userAgent, 'string');
   } finally {
     model.restore();
     mail.restore();

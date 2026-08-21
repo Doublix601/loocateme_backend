@@ -15,8 +15,8 @@ const { WaitlistSignup } = await import('../src/models/WaitlistSignup.js');
 const { mailer } = await import('../src/services/email.service.js');
 const { WaitlistController } = await import('../src/controllers/waitlist.controller.js');
 
-function makeReqRes(body) {
-  const req = { body };
+function makeReqRes(body, { ip = '203.0.113.5', userAgent = 'test-agent/1.0' } = {}) {
+  const req = { body, ip, get: (header) => (header.toLowerCase() === 'user-agent' ? userAgent : undefined) };
   const res = {
     statusCode: 200,
     body: null,
@@ -70,8 +70,12 @@ test('subscribe creates a new signup, sends a welcome email, and returns the cou
     assert.deepEqual(res.body, { ok: true, alreadySubscribed: false, count: 3 });
     assert.equal(model.calls.create.length, 1);
     assert.equal(model.calls.create[0].email, 'new@example.com');
+    assert.equal(model.calls.create[0].ip, '203.0.113.5');
+    assert.equal(model.calls.create[0].userAgent, 'test-agent/1.0');
     assert.equal(mail.calls.length, 1);
     assert.equal(mail.calls[0].to, 'new@example.com');
+    assert.match(mail.calls[0].text, /support@loocate\.me/);
+    assert.match(mail.calls[0].html, /support@loocate\.me/);
   } finally {
     model.restore();
     mail.restore();

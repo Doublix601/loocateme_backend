@@ -2,6 +2,7 @@ import { WaitlistSignup } from '../models/WaitlistSignup.js';
 import { sendMail } from '../services/email.service.js';
 
 const LAUNCH_DATE_LABEL = '5 septembre 2026';
+const SUPPORT_INBOX = process.env.SUPPORT_INBOX || 'support@loocate.me';
 
 export const WaitlistController = {
   async subscribe(req, res, next) {
@@ -13,7 +14,11 @@ export const WaitlistController = {
       }
 
       try {
-        await WaitlistSignup.create({ email });
+        await WaitlistSignup.create({
+          email,
+          ip: req.ip,
+          userAgent: req.get('user-agent'),
+        });
       } catch (err) {
         // Course TOCTOU : deux inscriptions quasi simultanées pour le même
         // email peuvent toutes deux passer le findOne ci-dessus avant que
@@ -33,8 +38,8 @@ export const WaitlistController = {
       sendMail({
         to: email,
         subject: "Bienvenue sur la liste d'attente LoocateMe",
-        text: `Merci de ton inscription ! LoocateMe arrive le ${LAUNCH_DATE_LABEL}, on te préviendra dès que c'est disponible.`,
-        html: `<p>Merci de ton inscription !</p><p>LoocateMe arrive le <strong>${LAUNCH_DATE_LABEL}</strong>, on te préviendra dès que c'est disponible.</p>`,
+        text: `Merci de ton inscription ! LoocateMe arrive le ${LAUNCH_DATE_LABEL}, on te préviendra dès que c'est disponible.\n\nCet email ne t'intéresse pas ou tu n'es pas à l'origine de cette inscription ? Écris-nous à ${SUPPORT_INBOX} et on te retire de la liste.`,
+        html: `<p>Merci de ton inscription !</p><p>LoocateMe arrive le <strong>${LAUNCH_DATE_LABEL}</strong>, on te préviendra dès que c'est disponible.</p><p style="color:#666;font-size:13px;">Cet email ne t'intéresse pas ou tu n'es pas à l'origine de cette inscription ? Écris-nous à <a href="mailto:${SUPPORT_INBOX}">${SUPPORT_INBOX}</a> et on te retire de la liste.</p>`,
       }).catch((err) => {
         console.error('[waitlist] Échec envoi email de bienvenue:', err?.message || err);
       });
