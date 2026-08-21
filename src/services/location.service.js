@@ -1,5 +1,6 @@
 import { Location } from '../models/Location.js';
 import { Event } from '../models/Event.js';
+import { User } from '../models/User.js';
 import {
   CITY_TIER2_PERCENTILE,
   CITY_TIER3_PERCENTILE,
@@ -156,6 +157,31 @@ async function getAggregatedLocations({ lat, lon, allowedTypes, limit, maxDistan
   ]);
 }
 
+// Recalcule activeUsers/userCount pour UN lieu donné, avec le même filtrage
+// que $lookup dans getAggregatedLocations (non-bannis, statut, fraîcheur de
+// présence/boost). Nécessaire pour les lieux sponsorisés injectés hors de
+// l'agrégation normale (cf. findNearbyLocations) : un lieu sponsor de vibe
+// nuit consulté en vibe jour ne passe jamais par $lookup, donc sans cet appel
+// il resterait sans activeUsers/userCount (0 visiteur affiché à tort).
+async function attachLiveUserData(location) {
+  const now = new Date();
+  const baseMatch = {
+    currentLocation: location._id,
+    $or: [
+      { 'location.updatedAt': { $gte: new Date(now.getTime() - PRESENCE_FRESHNESS_MS) } },
+      { boostUntil: { $gte: now } },
+    ],
+  };
+  const [activeUsers, userCount] = await Promise.all([
+    User.find(applyNotBannedFilter({ ...baseMatch, status: { $in: ['green', 'orange'] } }, now))
+      .select('_id profileImageUrl status boostUntil location')
+      .limit(3)
+      .lean(),
+    User.countDocuments(applyNotBannedFilter({ ...baseMatch, status: { $ne: 'red' } }, now)),
+  ]);
+  return { ...location, activeUsers, userCount };
+}
+
 /**
  * Trouve les lieux proches d'un point pour une vibe donnée (logique métier
  * pure de getLocations) : élargit progressivement le rayon de recherche,
@@ -254,7 +280,7 @@ export async function findNearbyLocations({ lat, lon, vibe, limitParam }) {
       const [sLon, sLat] = sponsor.location.coordinates;
       const distance = haversineMeters(lat, lon, sLat, sLon);
       if (distance <= 200000) {
-        locations.push({ ...sponsor, distance, isSponsored: true });
+        locations.push(await attachLiveUserData({ ...sponsor, distance, isSponsored: true }));
       }
     }
   }
