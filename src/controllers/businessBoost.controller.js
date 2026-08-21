@@ -1,4 +1,3 @@
-import { SponsorshipSlot } from '../models/SponsorshipSlot.js';
 import { estimateUltraBoostRecipients, enqueueUltraBoostBroadcast } from '../services/ultraBoost.service.js';
 import { estimateEventBoostRecipients, enqueueEventBoostBroadcast } from '../services/eventBoost.service.js';
 import { stripe } from '../services/stripe.service.js';
@@ -91,27 +90,13 @@ export const BusinessBoostController = {
       }
 
       const now = new Date();
-      const until = new Date(now.getTime() + PRO_BOOST_DURATION_MS);
-
-      // S'assure que le document singleton existe (no-op s'il existe déjà),
-      // puis effectue le compare-and-swap atomique sans ambiguïté d'upsert.
-      await SponsorshipSlot.updateOne(
-        { _id: 'GLOBAL' },
-        { $setOnInsert: { activeLocationId: null, until: null } },
-        { upsert: true }
-      );
-      const slot = await SponsorshipSlot.findOneAndUpdate(
-        { _id: 'GLOBAL', $or: [{ activeLocationId: null }, { until: null }, { until: { $lte: now } }] },
-        { activeLocationId: location._id, until },
-        { new: true }
-      );
-
-      if (!slot || String(slot.activeLocationId) !== String(location._id)) {
+      if (location.sponsorship?.active && location.sponsorship.until > now) {
         return res.status(409).json({
-          code: 'SPONSORSHIP_SLOT_TAKEN',
-          message: 'Un autre lieu est déjà sponsorisé actuellement, réessayez plus tard.',
+          code: 'SPONSORSHIP_ALREADY_ACTIVE',
+          message: 'Ce lieu est déjà sponsorisé actuellement.',
         });
       }
+      const until = new Date(now.getTime() + PRO_BOOST_DURATION_MS);
 
       location.proOffers.proBoostBalance -= 1;
       location.sponsorship = { active: true, until, activatedAt: now };

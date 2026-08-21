@@ -141,23 +141,18 @@ export const CronService = {
       }
     });
 
-    // Libération du "Pro Boost" (SponsorshipSlot) expiré : toutes les 5 minutes
+    // Libération des "Pro Boost" expirés (un lieu par lieu, plus de verrou
+    // global) : toutes les 5 minutes.
     nodeCron.schedule('*/5 * * * *', async () => {
       try {
-        const { SponsorshipSlot } = await import('../models/SponsorshipSlot.js');
         const now = new Date();
-        const slot = await SponsorshipSlot.findOneAndUpdate(
-          { _id: 'GLOBAL', until: { $lte: now } },
-          { activeLocationId: null, until: null }
+        const result = await Location.updateMany(
+          { 'sponsorship.active': true, 'sponsorship.until': { $lte: now } },
+          { 'sponsorship.active': false }
         );
-        if (slot?.activeLocationId) {
-          await Location.updateMany(
-            { _id: slot.activeLocationId, 'sponsorship.until': { $lte: now } },
-            { 'sponsorship.active': false }
-          );
-        }
+        if (result.modifiedCount) console.log(`[cron] Sponsorship expired for ${result.modifiedCount} locations.`);
       } catch (e) {
-        console.error('[cron] Sponsorship slot release error:', e);
+        console.error('[cron] Sponsorship release error:', e);
       }
     });
 

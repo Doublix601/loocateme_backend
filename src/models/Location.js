@@ -112,7 +112,9 @@ const LocationSchema = new mongoose.Schema(
       eventBoostBalance: { type: Number, default: 0 },
       lastGrantedPeriodEnd: { type: Number },
     },
-    // Sponsorisation "Pro Boost" : un seul lieu actif à la fois (cf. SponsorshipSlot)
+    // Sponsorisation "Pro Boost" : plusieurs lieux peuvent être actifs
+    // simultanément, chacun visible aux utilisateurs à proximité (cf.
+    // findNearbyLocations dans location.service.js).
     sponsorship: {
       active: { type: Boolean, default: false, index: true },
       until: { type: Date },

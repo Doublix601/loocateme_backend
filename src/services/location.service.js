@@ -231,18 +231,22 @@ export async function findNearbyLocations({ lat, lon, vibe, limitParam }) {
   // mais celui-ci est trié par distance pour rester pertinent).
   locations = locations.slice(0, limit);
 
-  // "Pro Boost" : un seul lieu sponsorisé globalement. Il ne doit PAS être
-  // épinglé en tête de la liste normale — juste marqué isSponsored pour que
-  // le client l'affiche dans sa section dédiée "Mis en avant". S'il fait déjà
-  // partie du classement naturel, on ne touche pas à sa position ; sinon on
-  // l'ajoute en fin de liste (jamais en tête) afin qu'il reste disponible
-  // pour la section "Mis en avant" tout en restant absent du haut de la liste
-  // normale.
-  const sponsor = await Location.findOne({
+  // "Pro Boost" : plusieurs lieux peuvent être sponsorisés simultanément,
+  // chacun via son propre solde (cf. activateProBoost, plus de verrou
+  // global). Aucun ne doit être épinglé en tête de la liste normale —
+  // juste marqué isSponsored pour que le client l'affiche dans sa section
+  // dédiée "Mis en avant" (carousel côté app, cf. SponsoredCarousel). S'il
+  // fait déjà partie du classement naturel, on ne touche pas à sa
+  // position ; sinon on l'ajoute en fin de liste (jamais en tête) afin
+  // qu'il reste disponible pour la section "Mis en avant" tout en restant
+  // absent du haut de la liste normale. Un sponsor n'est proposé que s'il
+  // est à moins de 200km de l'utilisateur : la mise en avant doit rester
+  // pertinente localement.
+  const sponsors = await Location.find({
     'sponsorship.active': true,
     'sponsorship.until': { $gt: new Date() },
   }).lean();
-  if (sponsor) {
+  for (const sponsor of sponsors) {
     const alreadyInList = locations.some((l) => String(l._id) === String(sponsor._id));
     if (alreadyInList) {
       locations = locations.map((l) => (String(l._id) === String(sponsor._id) ? { ...l, isSponsored: true } : l));
