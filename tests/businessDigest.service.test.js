@@ -9,6 +9,9 @@ import {
   sendBusinessWeeklyDigest,
 } from '../src/services/businessDigest.service.js';
 
+// Set secret before any test runs so sign/verify work correctly
+process.env.DIGEST_UNSUBSCRIBE_SECRET = 'test-secret-for-sdd-suite';
+
 function statsWith({ current = 0, deltaPct = null, visitsByWeekday = [0, 0, 0, 0, 0, 0, 0] } = {}) {
   return { views: { '7d': { current, previous: 0, deltaPct } }, visitsByWeekday };
 }
@@ -59,6 +62,19 @@ test('verifyUnsubscribeToken: rejects malformed or missing tokens', () => {
   assert.equal(verifyUnsubscribeToken('not-a-valid-token'), null);
   assert.equal(verifyUnsubscribeToken(''), null);
   assert.equal(verifyUnsubscribeToken(undefined), null);
+});
+
+test('signUnsubscribeToken: throws when DIGEST_UNSUBSCRIBE_SECRET is empty', () => {
+  const original = process.env.DIGEST_UNSUBSCRIBE_SECRET;
+  try {
+    delete process.env.DIGEST_UNSUBSCRIBE_SECRET;
+    assert.throws(
+      () => signUnsubscribeToken('64b000000000000000000001'),
+      { message: /DIGEST_UNSUBSCRIBE_SECRET manquant/ }
+    );
+  } finally {
+    process.env.DIGEST_UNSUBSCRIBE_SECRET = original;
+  }
 });
 
 function stubLocationFind(locations) {

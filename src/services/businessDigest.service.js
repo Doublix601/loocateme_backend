@@ -4,9 +4,13 @@ import { User } from '../models/User.js';
 import { getLocationStats } from './businessStats.service.js';
 import { sendMail } from './email.service.js';
 
-const UNSUBSCRIBE_SECRET = process.env.DIGEST_UNSUBSCRIBE_SECRET || '';
-
 const WEEKDAY_LABELS_FR = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+
+// Lazy check pattern (like email.service.js SMTP_PASS) — read secret fresh each time
+// so tests can set process.env.DIGEST_UNSUBSCRIBE_SECRET and have it take effect.
+function getUnsubscribeSecret() {
+  return process.env.DIGEST_UNSUBSCRIBE_SECRET || '';
+}
 
 // Identité légale reprise de POLICY_PRIVACY.md §1 — exigée par CAN-SPAM (adresse
 // postale de l'expéditeur) pour tout email envoyé à des destinataires US.
@@ -67,20 +71,28 @@ export function buildDigestEmail({ location, stats, unsubscribeUrl }) {
 }
 
 export function signUnsubscribeToken(locationId) {
+  const secret = getUnsubscribeSecret();
+  if (!secret) {
+    const msg = 'DIGEST_UNSUBSCRIBE_SECRET manquant: définissez la variable d\'environnement DIGEST_UNSUBSCRIBE_SECRET.';
+    console.error('[businessDigest] ' + msg);
+    throw new Error(msg);
+  }
   const id = String(locationId);
-  const signature = crypto.createHmac('sha256', UNSUBSCRIBE_SECRET).update(id).digest('hex');
+  const signature = crypto.createHmac('sha256', secret).update(id).digest('hex');
   return `${id}.${signature}`;
 }
 
 // Retourne le locationId si le token est valide, sinon null. Comparaison en temps
 // constant pour ne pas laisser fuiter d'information sur la signature attendue.
 export function verifyUnsubscribeToken(token) {
+  const secret = getUnsubscribeSecret();
+  if (!secret) return null;
   if (!token || typeof token !== 'string') return null;
   const dotIndex = token.lastIndexOf('.');
   if (dotIndex <= 0) return null;
   const id = token.slice(0, dotIndex);
   const signature = token.slice(dotIndex + 1);
-  const expected = crypto.createHmac('sha256', UNSUBSCRIBE_SECRET).update(id).digest('hex');
+  const expected = crypto.createHmac('sha256', secret).update(id).digest('hex');
   const signatureBuf = Buffer.from(signature, 'hex');
   const expectedBuf = Buffer.from(expected, 'hex');
   if (signatureBuf.length !== expectedBuf.length) return null;
