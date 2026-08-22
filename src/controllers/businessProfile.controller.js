@@ -349,6 +349,43 @@ export const BusinessProfileController = {
     }
   },
 
+  // Modification d'un événement existant (titre/description/date). Le média
+  // n'est pas modifiable ici : pour en changer, le pro supprime et recrée
+  // l'événement (cf. removeEvent + addEvent).
+  updateEvent: async (req, res, next) => {
+    try {
+      const event = req.location.events.find((e) => String(e._id) === req.params.eventId);
+      if (!event) {
+        return res.status(404).json({ code: 'EVENT_NOT_FOUND', message: 'Événement introuvable' });
+      }
+
+      if (req.body?.title !== undefined) {
+        const title = String(req.body.title).trim();
+        if (!title) return res.status(400).json({ code: 'TITLE_REQUIRED', message: 'Titre requis' });
+        event.title = title;
+      }
+      if (req.body?.body !== undefined) {
+        const body = String(req.body.body).trim();
+        if (!body) return res.status(400).json({ code: 'DESCRIPTION_REQUIRED', message: 'Description requise' });
+        event.body = body;
+      }
+      if (req.body?.eventDate !== undefined) {
+        const eventDate = new Date(req.body.eventDate);
+        if (Number.isNaN(eventDate.getTime())) {
+          return res.status(400).json({ code: 'DATE_REQUIRED', message: 'Date invalide' });
+        }
+        event.eventDate = eventDate;
+        event.expiresAt = new Date(eventDate.getTime() + EVENT_DATE_GRACE_MS);
+      }
+
+      await req.location.save({ validateModifiedOnly: true });
+      await invalidateLocationDetailCache(req.location._id);
+      return res.json({ location: req.location });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   removeEvent: async (req, res, next) => {
     try {
       const event = req.location.events.find((e) => String(e._id) === req.params.eventId);

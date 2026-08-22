@@ -103,6 +103,13 @@ router.post(
   uploadBusinessMedia.single('media'),
   BusinessProfileController.addEvent
 );
+router.patch(
+  '/locations/:locationId/events/:eventId',
+  requireAuth,
+  requireLocationOwner,
+  requireBusinessTier('pro2'),
+  BusinessProfileController.updateEvent
+);
 router.delete(
   '/locations/:locationId/events/:eventId',
   requireAuth,
