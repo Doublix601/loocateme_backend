@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { User } from '../src/models/User.js';
 import { FcmToken } from '../src/models/FcmToken.js';
-import { recordDailyActivity, claimSupervise, claimBoost, sendStreakExpiryWarnings } from '../src/services/streak.service.js';
+import { recordDailyActivity, claimSupervise, claimBoost, sendStreakExpiryWarnings, decayInactiveUsers } from '../src/services/streak.service.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -291,5 +291,56 @@ test('sendStreakExpiryWarnings: does not warn once the deadline has already pass
   } finally {
     restoreFind();
     restorePush();
+  }
+});
+
+test('decayInactiveUsers: resets only the stale users and returns the modified count', async () => {
+  const now = new Date('2026-01-10T00:10:00.000Z');
+  const restoreFind = stubUserFind([
+    // Inactif depuis 3 jours civils : doit être réinitialisé.
+    { _id: 'user1', lastLoginAt: new Date('2026-01-07T00:01:00.000Z'), streak: { count: 5 } },
+    // Actif hier seulement (1 jour civil d'écart) : ne doit PAS être réinitialisé.
+    { _id: 'user2', lastLoginAt: new Date('2026-01-09T20:00:00.000Z'), streak: { count: 2 } },
+  ]);
+  const originalUpdateMany = User.updateMany;
+  const updateManyCalls = [];
+  User.updateMany = async (filter, update) => {
+    updateManyCalls.push({ filter, update });
+    return { modifiedCount: 1 };
+  };
+  const restorePush = stubNoPushTokens();
+
+  try {
+    const count = await decayInactiveUsers(now);
+    assert.equal(count, 1);
+    assert.equal(updateManyCalls.length, 1);
+    assert.deepEqual(updateManyCalls[0].filter._id.$in, ['user1']);
+    assert.equal(updateManyCalls[0].update.$set['streak.count'], 0);
+  } finally {
+    restoreFind();
+    User.updateMany = originalUpdateMany;
+    restorePush();
+  }
+});
+
+test('decayInactiveUsers: no stale user means no DB write and a return value of 0', async () => {
+  const now = new Date('2026-01-10T00:10:00.000Z');
+  const restoreFind = stubUserFind([
+    { _id: 'user1', lastLoginAt: new Date('2026-01-09T20:00:00.000Z'), streak: { count: 2 } },
+  ]);
+  const originalUpdateMany = User.updateMany;
+  const updateManyCalls = [];
+  User.updateMany = async (filter, update) => {
+    updateManyCalls.push({ filter, update });
+    return { modifiedCount: 0 };
+  };
+
+  try {
+    const count = await decayInactiveUsers(now);
+    assert.equal(count, 0);
+    assert.equal(updateManyCalls.length, 0);
+  } finally {
+    restoreFind();
+    User.updateMany = originalUpdateMany;
   }
 });

@@ -126,15 +126,16 @@ export async function claimBoost(userId) {
 /**
  * Décroissance quotidienne : remet à 0 le streak de tout utilisateur n'ayant
  * pas ouvert l'app depuis au moins un jour civil complet (cron nocturne), et
- * efface les récompenses en attente non réclamées.
+ * efface les récompenses en attente non réclamées. Envoie un push
+ * "streak_lost" à chaque utilisateur réinitialisé, avec le nombre de jours
+ * perdus.
  */
-export async function decayInactiveUsers() {
-  const now = new Date();
-  const users = await User.find({ 'streak.count': { $gt: 0 } }).select('_id lastLoginAt').lean();
-  const staleIds = users
-    .filter((u) => calendarDayGap(new Date(u.lastLoginAt || 0), now) >= 2)
-    .map((u) => u._id);
-  if (!staleIds.length) return 0;
+export async function decayInactiveUsers(now = new Date()) {
+  const users = await User.find({ 'streak.count': { $gt: 0 } }).select('_id lastLoginAt streak').lean();
+  const staleUsers = users.filter((u) => calendarDayGap(new Date(u.lastLoginAt || 0), now) >= 2);
+  if (!staleUsers.length) return 0;
+
+  const staleIds = staleUsers.map((u) => u._id);
   const res = await User.updateMany(
     { _id: { $in: staleIds } },
     {
@@ -145,6 +146,23 @@ export async function decayInactiveUsers() {
       },
     }
   );
+
+  for (const user of staleUsers) {
+    try {
+      const count = user.streak?.count || 0;
+      const title = 'Ta série est retombée à 0';
+      const body = `Tu as perdu ta série de ${count} jour${count > 1 ? 's' : ''}. Reviens sur l'app pour en démarrer une nouvelle.`;
+      await sendPushUnified({
+        userIds: [user._id],
+        title,
+        body,
+        data: { kind: 'streak_lost' },
+      });
+    } catch (err) {
+      console.error(`[streak] Failed to send streak_lost push to user ${user._id}:`, err);
+    }
+  }
+
   return res.modifiedCount || 0;
 }
 
