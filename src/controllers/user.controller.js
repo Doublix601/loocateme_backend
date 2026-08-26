@@ -174,7 +174,7 @@ export const UserController = {
 
       const excludeUserId = req.user?.id;
       const s = String(q || '').trim();
-      const safeLimit = Math.max(1, Math.min(10, parseInt(limit, 10) || 10));
+      const safeLimit = Math.max(1, Math.min(5, parseInt(limit, 10) || 5));
 
       if (!s || s.length < 2) {
         return res.json({ users: [], locations: [] });
