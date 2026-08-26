@@ -190,12 +190,17 @@ export const UserController = {
       // Locations search
       if (String(includeLocations) !== 'false') {
         const { Location } = await import('../models/Location.js');
+        // sanitizePublicLocation strips subscription (Stripe ids) and documents
+        // (pending KYC file URLs) — required on every public-facing location
+        // response, cf. location.controller.js. This endpoint returned raw
+        // Location docs, missing that scrub.
+        const { sanitizePublicLocation } = await import('./location.controller.js');
         const query = { name: { $regex: s, $options: 'i' } };
 
         if (lat && lon) {
           const latitude = parseFloat(lat);
           const longitude = parseFloat(lon);
-          results.locations = await Location.aggregate([
+          const locations = await Location.aggregate([
             {
               $geoNear: {
                 near: { type: 'Point', coordinates: [longitude, latitude] },
@@ -206,8 +211,10 @@ export const UserController = {
             },
             { $limit: safeLimit },
           ]);
+          results.locations = locations.map(sanitizePublicLocation);
         } else {
-          results.locations = await Location.find(query).limit(safeLimit).lean();
+          const locations = await Location.find(query).limit(safeLimit).lean();
+          results.locations = locations.map(sanitizePublicLocation);
         }
       }
 

@@ -30,7 +30,7 @@ export { invalidateLocationDetailCache, invalidateLocationsListCache } from '../
 // ici, à la sérialisation des réponses publiques, qu'un lieu en tier 'none' doit
 // apparaître comme n'importe quel lieu gratuit (pas de banner/logo/stories/PDF),
 // que ces champs soient déjà vidés ou encore en attente de purge définitive.
-function sanitizePublicLocation(location) {
+export function sanitizePublicLocation(location) {
   const obj = typeof location.toObject === 'function' ? location.toObject() : { ...location };
   if (obj.businessTier === 'none') {
     obj.bannerUrl = '';
