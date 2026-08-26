@@ -149,6 +149,8 @@ export async function decayInactiveUsers(now = new Date()) {
 
   for (const user of staleUsers) {
     try {
+      if (!(await claimBehavioralNudgeSlot(user._id, 'streak_lost', now))) continue;
+
       const count = user.streak?.count || 0;
       const title = 'Ta série est retombée à 0';
       const body = `Tu as perdu ta série de ${count} jour${count > 1 ? 's' : ''}. Reviens sur l'app pour en démarrer une nouvelle.`;

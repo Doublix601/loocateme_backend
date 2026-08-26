@@ -5,6 +5,7 @@ import { User } from '../models/User.js';
 // autre utilisateur). Plus la valeur est haute, plus la notification est
 // jugée actionnable/urgente pour l'utilisateur.
 const NUDGE_PRIORITY = {
+  streak_lost: 5,
   streak_expiring: 4,
   inactive_profile_views: 3,
   at_risk_reactivation: 2,

@@ -118,7 +118,7 @@ export const validators = {
       .bail()
       .isString()
       .isLength({ min: 2, max: 100 }),
-    query('limit').optional().isInt({ min: 1, max: 5 }),
+    query('limit').optional().isInt({ min: 1, max: 10 }),
     query('lat').optional().isFloat({ min: -90, max: 90 }),
     query('lon').optional().isFloat({ min: -180, max: 180 }),
     query('includeUsers').optional().isString(),
