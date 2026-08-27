@@ -1,12 +1,13 @@
 import { Location } from '../models/Location.js';
 import { User } from '../models/User.js';
 import { applyNotBannedFilter, getBlockedIds, isUserBanned } from '../services/user.service.js';
-import { findNearbyLocations, normalizeVibe, FREE_DISCOVERY_RADIUS_M, PREMIUM_DISCOVERY_RADIUS_M } from '../services/location.service.js';
+import { findNearbyLocations, normalizeVibe, FREE_DISCOVERY_RADIUS_M, PREMIUM_DISCOVERY_RADIUS_M, NEARBY_MIN_LIMIT } from '../services/location.service.js';
 import { CrossedPath } from '../models/CrossedPath.js';
 import { redisClient } from '../config/redis.js';
 import { singleflight, singleflightRedis } from '../utils/singleflight.js';
 import { PRESENCE_FRESHNESS_MS } from '../config/presenceWindows.js';
 import { FeatureFlag } from '../models/FeatureFlag.js';
+import { proposeUserCorrection, listPendingUserCorrections, reviewUserCorrection } from '../services/locationChange.service.js';
 
 // Cache de la liste des lieux à proximité : la position d'un utilisateur ne
 // change pas de zone assez souvent pour justifier une agrégation Mongo
@@ -129,7 +130,8 @@ export const LocationController = {
           const cached = await redisClient.get(cacheKey);
           if (cached) {
             const parsed = JSON.parse(cached);
-            return res.json({ ...parsed, locations: stripBlockedFromLocations(parsed.locations, blockedIds) });
+            const cappedByRadius = Number.isFinite(maxRadiusM) && (parsed.locations?.length || 0) < NEARBY_MIN_LIMIT;
+            return res.json({ ...parsed, radiusCapM: maxRadiusM, cappedByRadius, locations: stripBlockedFromLocations(parsed.locations, blockedIds) });
           }
         } catch (e) {
           console.warn('[getLocations] Redis cache read failed:', e.message);
@@ -165,7 +167,8 @@ export const LocationController = {
         }
       );
 
-      return res.json({ ...payload, locations: stripBlockedFromLocations(payload.locations, blockedIds) });
+      const cappedByRadius = Number.isFinite(maxRadiusM) && (payload.locations?.length || 0) < NEARBY_MIN_LIMIT;
+      return res.json({ ...payload, radiusCapM: maxRadiusM, cappedByRadius, locations: stripBlockedFromLocations(payload.locations, blockedIds) });
     } catch (err) {
       next(err);
     }
@@ -329,6 +332,41 @@ export const LocationController = {
         .map((r) => ({ user: r.otherUserId, lastSeenAt: r.lastSeenAt, crossCount: r.crossCount }));
 
       return res.json({ page, limit, total, items, isPremium });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // POST /locations/:id/correction — correction proposée par un utilisateur
+  // (nom / type incorrect). Va en file de modération (source: 'user_report').
+  submitCorrection: async (req, res, next) => {
+    try {
+      const cr = await proposeUserCorrection(req.params.id, req.user.id, {
+        name: req.body.name,
+        type: req.body.type,
+        reason: req.body.reason,
+      });
+      return res.status(201).json({ success: true, id: cr._id, status: cr.status });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // GET /locations/corrections/pending — file des corrections utilisateurs (modération)
+  listPendingCorrections: async (req, res, next) => {
+    try {
+      const items = await listPendingUserCorrections();
+      return res.json({ items });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // POST /locations/corrections/:crId/review — approuve / rejette (modération)
+  reviewCorrection: async (req, res, next) => {
+    try {
+      const cr = await reviewUserCorrection(req.params.crId, req.body.decision);
+      return res.json({ success: true, status: cr.status });
     } catch (err) {
       next(err);
     }

@@ -88,19 +88,6 @@ const UserSchema = new mongoose.Schema(
     // (case "Je certifie avoir 18 ans ou plus"). Piste d'audit, distincte du
     // simple contrôle isAtLeast18(birthdate).
     ageAttestedAt: { type: Date },
-    // Verification d'age renforcee via prestataire (Didit). Inerte tant que
-    // DIDIT_AGE_VERIFICATION_ENABLED !== 'true'. Voir ageVerification.service.js.
-    ageVerification: {
-      provider: { type: String, enum: ['didit', null], default: null },
-      status: {
-        type: String,
-        enum: ['unverified', 'pending', 'approved', 'declined'],
-        default: 'unverified',
-      },
-      sessionId: { type: String, default: null },
-      verifiedAt: { type: Date },
-      updatedAt: { type: Date },
-    },
     gender: { type: String, enum: ['male', 'female', 'other', 'prefer_not_to_say'] },
     // Moderation & safety
     moderation: {

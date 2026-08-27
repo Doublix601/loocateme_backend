@@ -5,6 +5,9 @@ const FeatureFlagSchema = new mongoose.Schema(
     key: { type: String, required: true, unique: true, index: true },
     enabled: { type: Boolean, default: false },
     description: { type: String, default: '' },
+    // Piste d'audit : qui a basculé ce flag global en dernier, et quand.
+    lastChangedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    lastChangedAt: { type: Date },
   },
   { timestamps: true }
 );

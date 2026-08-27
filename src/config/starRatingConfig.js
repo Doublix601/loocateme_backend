@@ -25,3 +25,12 @@ export const CITY_TIER3_PERCENTILE = envFloat('STAR_CITY_TIER3_PERCENTILE', 0.85
 // villes peu actives.
 export const GLOBAL_TIER2_PERCENTILE = envFloat('STAR_GLOBAL_TIER2_PERCENTILE', 0.50);
 export const GLOBAL_TIER3_PERCENTILE = envFloat('STAR_GLOBAL_TIER3_PERCENTILE', 0.85);
+
+// Garde-fou en nombre ABSOLU, complément aux percentiles ci-dessus : tant qu'un
+// lieu n'a pas atteint ce nombre de visiteurs uniques sur 30 jours, il reste
+// plafonné à 1 étoile — "gagner" un percentile dans un échantillon minuscule
+// (ville ou app encore peu active) n'est pas significatif. Volontairement bas.
+export const STAR_MIN_VISITORS_FOR_MULTI = Math.max(1, Math.round(envFloat('STAR_MIN_VISITORS_FOR_MULTI', 5)));
+// Nombre minimal de lieux actifs dans TOUTE l'app pour qu'un palier 3 étoiles
+// ait un sens (empêche la saturation quand n global est tout petit).
+export const STAR_MIN_ACTIVE_SET = Math.max(1, Math.round(envFloat('STAR_MIN_ACTIVE_SET', 8)));

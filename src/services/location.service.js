@@ -6,6 +6,8 @@ import {
   CITY_TIER3_PERCENTILE,
   GLOBAL_TIER2_PERCENTILE,
   GLOBAL_TIER3_PERCENTILE,
+  STAR_MIN_VISITORS_FOR_MULTI,
+  STAR_MIN_ACTIVE_SET,
 } from '../config/starRatingConfig.js';
 import { applyNotBannedFilter } from './user.service.js';
 import { PRESENCE_FRESHNESS_MS } from '../config/presenceWindows.js';
@@ -59,7 +61,7 @@ function getExcludedTypesForVibe(vibe) {
 // Pagination simple par "limit" (min 40, max 80). Le client demande au
 // minimum 40 lieux et peut en charger plus jusqu'à 80 en faisant défiler la
 // liste (cf. LocationListScreen onEndReached).
-const NEARBY_MIN_LIMIT = 40;
+export const NEARBY_MIN_LIMIT = 40;
 const NEARBY_MAX_LIMIT = 80;
 // 10km → 500km : on veut au minimum `limit` lieux. Si la zone proche ne
 // contient pas assez de lieux pour la vibe demandée, on élargit
@@ -152,16 +154,23 @@ async function getAggregatedLocations({ lat, lon, allowedTypes, limit, maxDistan
           $add: [
             { $multiply: [WEIGHT_DISTANCE, { $exp: { $multiply: [-1, { $divide: ['$distance', DISTANCE_REF_METERS] }] } }] },
             { $multiply: [WEIGHT_STARS, { $divide: [{ $ifNull: ['$stars', 0] }, 3] }] },
-            { $multiply: [WEIGHT_USERS, { $divide: [{ $min: ['$userCount', USERCOUNT_CAP] }, USERCOUNT_CAP] }] },
+            // userCount bucketisé (paliers de ~1/3 du cap) : un check-in/out
+            // isolé ne doit pas réordonner la liste entre deux appels (BUG-06).
+            { $multiply: [WEIGHT_USERS, { $divide: [
+              { $min: [3, { $ceil: { $divide: [{ $min: ['$userCount', USERCOUNT_CAP] }, 3] } }] },
+              3,
+            ] }] },
           ],
         },
       },
     },
     {
+      // `_id` en dernier départage : ordre stable entre deux appels identiques
+      // (BUG-06) même quand plusieurs lieux ont exactement le même score.
       $sort:
         SCORING_ALGO === 'legacy'
-          ? { stars: -1, distance: 1 }
-          : { score: -1 },
+          ? { stars: -1, distance: 1, _id: 1 }
+          : { score: -1, _id: 1 },
     },
   ]);
 }
@@ -233,6 +242,7 @@ export async function findNearbyLocations({ lat, lon, vibe, limitParam, maxRadiu
           query: { type: { $in: allowedTypes, $nin: ['Lieu 📍'] }, name: { $ne: 'Lieu OSM' } },
         },
       },
+      { $sort: { distance: 1, _id: 1 } },
     ]);
   }
 
@@ -258,6 +268,7 @@ export async function findNearbyLocations({ lat, lon, vibe, limitParam, maxRadiu
           query: { type: { $nin: [...excludedTypes, 'Lieu 📍'] }, name: { $ne: 'Lieu OSM' } },
         },
       },
+      { $sort: { distance: 1, _id: 1 } },
       { $limit: limit * 3 },
     ]);
     for (const loc of fillers) {
@@ -336,14 +347,24 @@ function buildPercentileMap(activeSortedAsc) {
  */
 function assignStars(cityActiveSortedAsc, globalPercentileMap) {
   const localPercentileMap = buildPercentileMap(cityActiveSortedAsc);
+  const globalActiveCount = globalPercentileMap.size;
   return cityActiveSortedAsc.map((loc) => {
     const localPercentile = localPercentileMap.get(String(loc._id)) || 0;
     const globalPercentile = globalPercentileMap.get(String(loc._id)) || 0;
     let stars = 1;
-    if (localPercentile >= CITY_TIER3_PERCENTILE && globalPercentile >= GLOBAL_TIER3_PERCENTILE) {
-      stars = 3;
-    } else if (localPercentile >= CITY_TIER2_PERCENTILE && globalPercentile >= GLOBAL_TIER2_PERCENTILE) {
-      stars = 2;
+    // Garde-fou anti-bruit (cf. starRatingConfig.js) : en dessous d'un plancher
+    // de visiteurs uniques 30j, un lieu ne dépasse pas 1 étoile même s'il
+    // "gagne" les percentiles — typique d'un échantillon minuscule.
+    if (loc.popularity >= STAR_MIN_VISITORS_FOR_MULTI) {
+      if (
+        globalActiveCount >= STAR_MIN_ACTIVE_SET &&
+        localPercentile >= CITY_TIER3_PERCENTILE &&
+        globalPercentile >= GLOBAL_TIER3_PERCENTILE
+      ) {
+        stars = 3;
+      } else if (localPercentile >= CITY_TIER2_PERCENTILE && globalPercentile >= GLOBAL_TIER2_PERCENTILE) {
+        stars = 2;
+      }
     }
     return { _id: loc._id, stars };
   });

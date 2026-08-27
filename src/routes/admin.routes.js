@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middlewares/auth.js';
 import { User } from '../models/User.js';
-import { FeatureFlag } from '../models/FeatureFlag.js';
+import { FeatureFlag, DEFAULT_FLAGS } from '../models/FeatureFlag.js';
 import { CronService } from '../services/cron.service.js';
 import { sendMail, verifyMailTransport } from '../services/email.service.js';
 import { sendUnifiedNotification } from '../services/fcm.service.js';
@@ -183,22 +183,34 @@ router.get('/flags', requireAuth, requireAdmin, async (req, res, next) => {
 });
 
 // PUT /api/admin/flags/:key - Update a feature flag (admin only)
-// Body: { enabled: boolean }
+// Body: { enabled: boolean, confirm: true }
+// Ces flags sont GLOBAUX (tout utilisateur en production) : on exige `confirm`
+// explicite, on whiteliste les clés connues, et on trace l'auteur du changement.
 router.put('/flags/:key', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const key = String(req.params.key || '').trim();
     if (!key) {
       return res.status(400).json({ code: 'KEY_REQUIRED', message: 'Clé du flag requise' });
     }
-    const { enabled } = req.body;
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_FLAGS, key)) {
+      return res.status(400).json({ code: 'UNKNOWN_FLAG', message: `Flag inconnu: ${key}` });
+    }
+    const { enabled, confirm } = req.body;
     if (typeof enabled !== 'boolean') {
       return res.status(400).json({ code: 'ENABLED_REQUIRED', message: 'Le champ enabled (boolean) est requis' });
     }
+    if (confirm !== true) {
+      return res.status(409).json({
+        code: 'CONFIRMATION_REQUIRED',
+        message: 'Ce flag affecte tous les utilisateurs en production. Renvoyez { confirm: true } pour valider.',
+      });
+    }
     const flag = await FeatureFlag.findOneAndUpdate(
       { key },
-      { enabled },
+      { enabled, lastChangedBy: req.user.id, lastChangedAt: new Date() },
       { new: true, upsert: true }
     );
+    console.warn('[FeatureFlag] %s -> %s by user %s', key, enabled, req.user.id);
     return res.json({ success: true, flag });
   } catch (err) {
     next(err);

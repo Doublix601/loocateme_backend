@@ -317,6 +317,13 @@ export const validators = {
     body('subject').exists().bail().isString().trim().isLength({ min: 1, max: 150 }),
     body('message').exists().bail().isString().trim().isLength({ min: 1, max: 5000 }),
   ],
+  locationCorrection: [
+    body('name').optional({ checkFalsy: true }).isString().trim().isLength({ min: 2, max: 120 }),
+    body('type').optional({ checkFalsy: true }).isString().isLength({ max: 40 }),
+    body('reason').optional({ checkFalsy: true }).isString().isLength({ max: 500 }),
+    body().custom((_v, { req }) => Boolean(req.body?.name || req.body?.type)).withMessage('name ou type requis'),
+  ],
+  locationCorrectionReview: [body('decision').isIn(['approve', 'reject'])],
   waitlistSignup: [
     body('email').isString().bail().trim().isEmail().normalizeEmail({
       gmail_remove_dots: false,

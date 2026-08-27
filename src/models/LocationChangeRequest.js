@@ -13,6 +13,7 @@ const LocationChangeRequestSchema = new mongoose.Schema(
     proposedChanges: {
       name: { type: String },
       city: { type: String },
+      type: { type: String },
       location: {
         type: { type: String, enum: ['Point'] },
         coordinates: { type: [Number] },
@@ -22,12 +23,18 @@ const LocationChangeRequestSchema = new mongoose.Schema(
     previousValues: {
       name: { type: String },
       city: { type: String },
+      type: { type: String },
       location: {
         type: { type: String, enum: ['Point'] },
         coordinates: { type: [Number] },
       },
     },
     status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
+    // 'osm' : dérive détectée par la sync OSM sur un lieu revendiqué (flux gérant).
+    // 'user_report' : correction proposée in-app par un utilisateur (flux modération).
+    source: { type: String, enum: ['osm', 'user_report'], default: 'osm', index: true },
+    submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    reason: { type: String },
     reviewedAt: { type: Date },
   },
   { timestamps: true }

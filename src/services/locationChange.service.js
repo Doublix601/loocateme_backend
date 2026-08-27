@@ -123,3 +123,95 @@ export async function reviewChangeRequest(changeRequestId, ownerId, decision) {
 
   return changeRequest;
 }
+
+
+// --- Corrections proposées par les utilisateurs (in-app), flux modération ---
+
+const VALID_LOCATION_TYPES = [
+  'Café ☕', 'Coworking 🧑‍💻', 'Salle de sport 🏋️', 'Centre sportif 🏟️',
+  'Parc 🌳', 'Plage 🏖️', "Parc d'attractions 🎢", 'Bibliothèque 📚',
+  'Éducation 🎓', 'Glacier 🍦', 'Marché 🛒', 'Musée 🏛️', 'Brunch 🥞',
+  'Bar 🍺', 'Boîte de nuit 💃', 'Restaurant 🍴', 'Cinéma 🎬', 'Loisir 🎯',
+  'Rooftop 🌆', 'Karaoké 🎤', 'Club de jeux 🎮',
+];
+
+export async function proposeUserCorrection(locationId, userId, { name, type, reason } = {}) {
+  const location = await Location.findById(locationId);
+  if (!location) {
+    throw Object.assign(new Error('Lieu introuvable'), { status: 404, code: 'LOCATION_NOT_FOUND' });
+  }
+  const changes = {};
+  const previous = {};
+  const trimmedName = typeof name === 'string' ? name.trim() : '';
+  if (trimmedName && trimmedName !== location.name) {
+    changes.name = trimmedName;
+    previous.name = location.name;
+  }
+  if (type && type !== location.type) {
+    if (!VALID_LOCATION_TYPES.includes(type)) {
+      throw Object.assign(new Error('Type de lieu invalide'), { status: 400, code: 'INVALID_TYPE' });
+    }
+    changes.type = type;
+    previous.type = location.type;
+  }
+  if (Object.keys(changes).length === 0) {
+    throw Object.assign(new Error('Aucune modification proposée'), { status: 400, code: 'NO_CHANGE' });
+  }
+  const safeReason = String(reason || '').slice(0, 500);
+
+  const existing = await LocationChangeRequest.findOne({
+    locationId,
+    submittedBy: userId,
+    source: 'user_report',
+    status: 'pending',
+  });
+  if (existing) {
+    existing.proposedChanges = changes;
+    existing.previousValues = previous;
+    existing.reason = safeReason;
+    await existing.save();
+    return existing;
+  }
+  return LocationChangeRequest.create({
+    locationId,
+    proposedChanges: changes,
+    previousValues: previous,
+    source: 'user_report',
+    submittedBy: userId,
+    reason: safeReason,
+  });
+}
+
+export async function listPendingUserCorrections() {
+  return LocationChangeRequest.find({ source: 'user_report', status: 'pending' })
+    .populate('locationId', 'name city type isPro')
+    .populate('submittedBy', 'username')
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .lean();
+}
+
+export async function reviewUserCorrection(changeRequestId, decision) {
+  const cr = await LocationChangeRequest.findById(changeRequestId);
+  if (!cr) {
+    throw Object.assign(new Error('Demande introuvable'), { status: 404, code: 'CHANGE_REQUEST_NOT_FOUND' });
+  }
+  if (cr.status !== 'pending') {
+    throw Object.assign(new Error('Cette demande a déjà été traitée'), { status: 409, code: 'CHANGE_REQUEST_ALREADY_REVIEWED' });
+  }
+  if (decision === 'approve') {
+    const location = await Location.findById(cr.locationId);
+    if (location) {
+      const applied = {};
+      if (cr.proposedChanges.name) applied.name = cr.proposedChanges.name;
+      if (cr.proposedChanges.type) applied.type = cr.proposedChanges.type;
+      Object.assign(location, applied);
+      await location.save({ validateModifiedOnly: true });
+      await invalidateLocationDetailCache(location._id);
+    }
+  }
+  cr.status = decision === 'approve' ? 'approved' : 'rejected';
+  cr.reviewedAt = new Date();
+  await cr.save();
+  return cr;
+}
