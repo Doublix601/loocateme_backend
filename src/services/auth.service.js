@@ -50,7 +50,7 @@ function generateUsername({ firstName = '', lastName = '', email = '' } = {}) {
   return `${slug}${suffix}`;
 }
 
-export async function signup({ email, password, username, firstName = '', lastName = '', customName = '', birthdate, gender }) {
+export async function signup({ email, password, username, firstName = '', lastName = '', customName = '', birthdate, gender, ageAttested = false }) {
   // Refuse signup if an account already exists for this email (do NOT delete existing accounts)
   const existing = await User.findOne({ email }).select('_id');
   if (existing) {
@@ -83,6 +83,7 @@ export async function signup({ email, password, username, firstName = '', lastNa
     lastName: String(lastName || '').trim(),
     customName: String(customName || '').trim(),
     birthdate: new Date(birthdate),
+    ageAttestedAt: ageAttested ? now : undefined,
     gender: gender || undefined,
     lastUsernameChangeAt: now,
     lastFirstNameChangeAt: now,

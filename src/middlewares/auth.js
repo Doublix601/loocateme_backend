@@ -5,7 +5,7 @@ async function loadAuthUser(userId) {
   const cached = await getCachedAuthUser(userId);
   if (cached) return cached;
   const { User } = await import('../models/User.js');
-  const fresh = await User.findById(userId).select('role moderation lastLoginAt invisibleMode').lean();
+  const fresh = await User.findById(userId).select('role moderation lastLoginAt invisibleMode ageVerification').lean();
   if (fresh) await setCachedAuthUser(userId, fresh);
   return fresh;
 }
@@ -21,6 +21,7 @@ export async function requireAuth(req, res, next) {
     if (!user) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
     req.user.role = user.role;
     req.user.invisibleMode = !!user.invisibleMode;
+    req.user.ageVerification = user.ageVerification || { status: 'unverified' };
     const mod = user.moderation || {};
     const now = new Date();
     if (mod.bannedPermanent) {
@@ -62,5 +63,19 @@ export async function requireActiveUser(req, res, next) {
     next();
   } catch (err) {
     return res.status(401).json({ code: 'AUTH_INVALID', message: 'Invalid or expired access token' });
+  }
+}
+
+// Bloque l'acces au contenu tant que la verification d'age Didit n'est pas
+// approuvee. NO-OP tant que DIDIT_AGE_VERIFICATION_ENABLED !== 'true'.
+// A placer apres requireAuth sur les routes de contenu (locations, users/nearby,
+// messagerie) quand la verification passe en production.
+export async function requireAgeVerified(req, res, next) {
+  try {
+    const { isUserAgeCleared } = await import('../services/ageVerification.service.js');
+    if (isUserAgeCleared(req.user)) return next();
+    return res.status(403).json({ code: 'AGE_VERIFICATION_REQUIRED', message: 'Age verification required' });
+  } catch (err) {
+    return next();
   }
 }

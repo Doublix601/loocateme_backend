@@ -68,6 +68,7 @@ export const validators = {
       .optional({ checkFalsy: true })
       .isIn(['male', 'female', 'other', 'prefer_not_to_say'])
       .withMessage('Genre invalide'),
+    body('ageAttested').optional().isBoolean().toBoolean(),
   ],
   login: [body('email').isEmail(), body('password').isString()],
   forgot: [body('email').isEmail()],

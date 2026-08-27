@@ -113,7 +113,7 @@ Le site loocate.me peut utiliser des cookies techniques strictement nécessaires
 
 ## 9. Mineurs
 
-L'application est strictement réservée aux personnes majeures (18 ans et plus). L'inscription est soumise à une vérification d'âge par un tiers de confiance (Didit), en complément de votre date de naissance déclarée, avant de pouvoir accéder au Service. Si vous pensez qu'un mineur a néanmoins pu créer un compte, contactez-nous afin que nous puissions procéder à sa suppression.
+L'application est strictement réservée aux personnes majeures (18 ans et plus). Lors de l'inscription, votre date de naissance est obligatoire et vérifiée automatiquement, à la fois sur votre appareil et sur nos serveurs : une date correspondant à un âge inférieur à 18 ans empêche la création du compte. Vous devez également confirmer explicitement être majeur·e. Nous travaillons à l'ajout d'une vérification d'âge renforcée par un prestataire spécialisé ; lorsqu'elle sera activée, elle vous sera présentée avant l'accès complet au Service et cette section sera mise à jour en conséquence. Si vous pensez qu'un mineur a néanmoins pu créer un compte, contactez-nous à contact@loocate.me afin que nous puissions procéder à sa suppression.
 
 ## 10. Évolution de cette politique
 

@@ -50,6 +50,12 @@ services:
       - STRIPE_PRICE_PRO1=${STRIPE_PRICE_PRO1:?STRIPE_PRICE_PRO1 must be set in .env}
       - STRIPE_PRICE_PRO2=${STRIPE_PRICE_PRO2:?STRIPE_PRICE_PRO2 must be set in .env}
       - STRIPE_PRICE_PRO3=${STRIPE_PRICE_PRO3:?STRIPE_PRICE_PRO3 must be set in .env}
+      # Verification d'age Didit (inerte tant que DIDIT_AGE_VERIFICATION_ENABLED != true)
+      - DIDIT_AGE_VERIFICATION_ENABLED=${DIDIT_AGE_VERIFICATION_ENABLED:-false}
+      - DIDIT_API_KEY=${DIDIT_API_KEY:-}
+      - DIDIT_WORKFLOW_ID=${DIDIT_WORKFLOW_ID:-}
+      - DIDIT_WEBHOOK_SECRET=${DIDIT_WEBHOOK_SECRET:-}
+      - DIDIT_CALLBACK_URL=${DIDIT_CALLBACK_URL:-loocateme://age-verification/complete}
     volumes:
       - ./data/uploads:/app/uploads
     depends_on:
