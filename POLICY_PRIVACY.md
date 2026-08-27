@@ -1,6 +1,6 @@
 # Politique de confidentialité — LoocateMe
 
-Version 1.1 — en vigueur depuis sa date de publication dans l'application (mise à jour : relèvement de l'âge minimum à 18 ans).
+En vigueur depuis sa date de publication dans l'application. Le numéro de version en cours et l'historique des évolutions sont indiqués dans les réglages de l'application (voir § 10).
 
 ## 1. Qui sommes-nous
 
