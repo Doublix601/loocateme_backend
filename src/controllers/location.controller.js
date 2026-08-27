@@ -1,11 +1,12 @@
 import { Location } from '../models/Location.js';
 import { User } from '../models/User.js';
 import { applyNotBannedFilter, getBlockedIds, isUserBanned } from '../services/user.service.js';
-import { findNearbyLocations, normalizeVibe } from '../services/location.service.js';
+import { findNearbyLocations, normalizeVibe, FREE_DISCOVERY_RADIUS_M, PREMIUM_DISCOVERY_RADIUS_M } from '../services/location.service.js';
 import { CrossedPath } from '../models/CrossedPath.js';
 import { redisClient } from '../config/redis.js';
 import { singleflight, singleflightRedis } from '../utils/singleflight.js';
 import { PRESENCE_FRESHNESS_MS } from '../config/presenceWindows.js';
+import { FeatureFlag } from '../models/FeatureFlag.js';
 
 // Cache de la liste des lieux à proximité : la position d'un utilisateur ne
 // change pas de zone assez souvent pour justifier une agrégation Mongo
@@ -97,7 +98,23 @@ export const LocationController = {
       }
 
       const vibeParam = normalizeVibe(req.query.vibe);
-      const cacheKey = `locations:v1:${lat.toFixed(3)}:${lon.toFixed(3)}:${vibeParam}:${req.query.limit || ''}`;
+
+      // Rayon de découverte : plafonné à 2 km pour les comptes gratuits, 30 km
+      // en Premium. Quand le système premium est désactivé (feature flag
+      // premiumEnabled), tout le monde bénéficie du rayon étendu. Le plafond
+      // fait partie de la clé de cache : un résultat 2 km ne doit jamais être
+      // resservi à un premium (ni l'inverse).
+      const now = new Date();
+      const [me, premiumFlag] = await Promise.all([
+        User.findById(req.user.id).select('isPremium premiumTrialEnd').lean(),
+        FeatureFlag.findOne({ key: 'premiumEnabled' }).lean(),
+      ]);
+      const premiumGatingActive = !!premiumFlag?.enabled;
+      const isPremium = !!me?.isPremium || (me?.premiumTrialEnd && me.premiumTrialEnd > now);
+      const maxRadiusM =
+        !premiumGatingActive || isPremium ? PREMIUM_DISCOVERY_RADIUS_M : FREE_DISCOVERY_RADIUS_M;
+
+      const cacheKey = `locations:v1:${lat.toFixed(3)}:${lon.toFixed(3)}:${vibeParam}:${req.query.limit || ''}:r${maxRadiusM}`;
       const blockedIds = await getBlockedIds(req.user?.id);
       // Un refresh manuel (pull-to-refresh) doit renvoyer une donnée réellement
       // fraîche : le cache (TTL 60s) n'est invalidé que sur un changement de
@@ -131,7 +148,7 @@ export const LocationController = {
       const payload = await singleflightRedis(
         cacheKey,
         async () => {
-          const locations = await findNearbyLocations({ lat, lon, vibe: vibeParam, limitParam: req.query.limit });
+          const locations = await findNearbyLocations({ lat, lon, vibe: vibeParam, limitParam: req.query.limit, maxRadiusM });
           const result = { locations: locations.map(sanitizePublicLocation) };
           try {
             await redisClient.set(cacheKey, JSON.stringify(result), { EX: LOCATIONS_CACHE_TTL_SECONDS });

@@ -67,6 +67,15 @@ const NEARBY_MAX_LIMIT = 80;
 // atteindre une recherche sans limite de distance.
 const NEARBY_RADIUS_STEPS = [10000, 30000, 100000, 500000];
 
+// Rayon de decouverte maximal selon le statut premium de l'utilisateur, applique
+// a toutes les requetes $geoNear de findNearbyLocations. Gratuit : 2 km.
+// Premium : 30 km. Au-dela du plafond, la liste peut contenir moins que
+// NEARBY_MIN_LIMIT lieux (l'app affiche alors son empty-state / bouton
+// "elargir le rayon") : c'est volontaire, le plafond premium prime sur la
+// garantie de remplissage minimal.
+export const FREE_DISCOVERY_RADIUS_M = 2000;
+export const PREMIUM_DISCOVERY_RADIUS_M = 30000;
+
 async function getAggregatedLocations({ lat, lon, allowedTypes, limit, maxDistance }) {
   return await Location.aggregate([
     {
@@ -191,24 +200,30 @@ async function attachLiveUserData(location) {
  * utilisateurs bloqués restent au niveau du controller (concerns
  * HTTP/caching, pas métier).
  */
-export async function findNearbyLocations({ lat, lon, vibe, limitParam }) {
+export async function findNearbyLocations({ lat, lon, vibe, limitParam, maxRadiusM }) {
   let limit = parseInt(limitParam, 10);
   if (!Number.isFinite(limit) || limit < NEARBY_MIN_LIMIT) limit = NEARBY_MIN_LIMIT;
   if (limit > NEARBY_MAX_LIMIT) limit = NEARBY_MAX_LIMIT;
+
+  // Plafond de distance (premium/gratuit). Infinity = pas de plafond (appelant
+  // qui ne passe pas le parametre : comportement historique preserve).
+  const radiusCap = Number.isFinite(maxRadiusM) && maxRadiusM > 0 ? maxRadiusM : Infinity;
 
   const normalizedVibe = normalizeVibe(vibe);
   const allowedTypes = getAllowedTypesForVibe(normalizedVibe);
   const excludedTypes = getExcludedTypesForVibe(normalizedVibe);
 
   let locations = [];
-  for (const maxDistance of NEARBY_RADIUS_STEPS) {
+  for (const step of NEARBY_RADIUS_STEPS) {
+    const maxDistance = Math.min(step, radiusCap);
     locations = await getAggregatedLocations({ lat, lon, allowedTypes, limit, maxDistance });
-    if (locations.length >= limit) break;
+    if (locations.length >= limit || maxDistance >= radiusCap) break;
   }
   // Dernier recours: aucune limite de distance (toute la collection). $geoNear
   // nécessite maxDistance optionnel; sans maxDistance on prend tous les lieux
-  // triés par distance croissante.
-  if (locations.length < limit) {
+  // triés par distance croissante. Ignoré si un plafond premium/gratuit est
+  // actif : on ne doit jamais dépasser radiusCap.
+  if (locations.length < limit && radiusCap === Infinity) {
     locations = await Location.aggregate([
       {
         $geoNear: {
@@ -234,6 +249,7 @@ export async function findNearbyLocations({ lat, lon, vibe, limitParam }) {
           near: { type: 'Point', coordinates: [lon, lat] },
           distanceField: 'distance',
           spherical: true,
+          ...(radiusCap === Infinity ? {} : { maxDistance: radiusCap }),
           // On prend les plus proches, mais on EXCLUT toujours les types
           // strictement réservés à la vibe opposée (ex : un Bar ne doit
           // jamais apparaître en mode jour, même en remplissage). Les types
@@ -279,7 +295,7 @@ export async function findNearbyLocations({ lat, lon, vibe, limitParam }) {
     } else {
       const [sLon, sLat] = sponsor.location.coordinates;
       const distance = haversineMeters(lat, lon, sLat, sLon);
-      if (distance <= 200000) {
+      if (distance <= Math.min(200000, radiusCap)) {
         locations.push(await attachLiveUserData({ ...sponsor, distance, isSponsored: true }));
       }
     }
