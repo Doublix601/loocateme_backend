@@ -374,11 +374,18 @@ export async function checkInViaBleOnly(userId) {
 // rafraîchie depuis STALE_PRESENCE_THRESHOLD_MS (cf. cron.service.js).
 // Les utilisateurs avec un boost actif sont exclus : rester "présent" sans
 // heartbeat pendant un boost est le comportement voulu (cf. updateLocation).
+// Les utilisateurs en mode de check-in MANUEL sont exclus : par design lapp
+// nenvoie plus aucun heartbeat GPS dans ce mode (cf. app usePresence.js,
+// LocationService.js, BackgroundLocation.js) et lutilisateur pilote sa
+// presence via les boutons Je suis la / Je ne suis plus ici. Les auto-
+// checkout ici les sortaient de leur lieu apres ~20 min avec une notif
+// Check-out automatique trompeuse. Filet restant : forceCheckOut() client a 6h.
 export async function expireStalePresence() {
   const threshold = new Date(Date.now() - STALE_PRESENCE_THRESHOLD_MS);
 
   const staleUsers = await User.find({
     currentLocation: { $ne: null },
+    checkInMode: { $ne: 'manual' },
     $and: [
       { $or: [{ boostUntil: null }, { boostUntil: { $lte: new Date() } }] },
       { $or: [{ 'location.updatedAt': { $lt: threshold } }, { 'location.updatedAt': { $exists: false } }] },
