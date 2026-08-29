@@ -9,6 +9,8 @@ import { filterOptedOutUsers } from '../services/push.service.js';
 import { sanitize } from '../services/auth.service.js';
 import { getUninstallCorrelationReport } from '../services/churnRisk.service.js';
 import { invalidateAuthCache } from '../utils/authCache.js';
+import { Location } from '../models/Location.js';
+import { BOOST_CAPS, BOOST_BALANCE_FIELD } from '../constants/boosts.js';
 
 const router = Router();
 
@@ -307,6 +309,218 @@ router.post('/sync-locations', requireAuth, requireAdmin, async (req, res, next)
   try {
     await CronService.updateLocationStats();
     return res.json({ success: true, message: 'Recalcul des stats lieux terminé.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Debug / QA — gestion fine d'un compte utilisateur et de son compte pro.
+// Toutes ces routes sont réservées aux admins et pilotées depuis le DebugScreen
+// de l'app. Les overrides "compte pro" écrivent directement en base (businessTier,
+// subscription, proOffers) SANS toucher à Stripe : pour un compte pro avec un
+// abonnement Stripe réellement actif, le prochain webhook Stripe réécrasera la
+// valeur — d'où le garde-fou `force` sur le changement de palier.
+// ---------------------------------------------------------------------------
+
+const ISO_OR_NULL = (v) => {
+  if (v === null || v === '') return null;
+  if (v === undefined) return undefined;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? undefined : d;
+};
+
+// PATCH /api/admin/users/:id/premium
+// Body: { isPremium?, premiumSource?, premiumExpiresAt?, premiumTrialStart?, premiumTrialEnd? }
+// Ne modifie que les champs fournis. Dates: ISO string, ou null pour effacer.
+router.patch('/users/:id/premium', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const user = await User.findById(String(req.params.id || '').trim());
+    if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'Utilisateur introuvable' });
+
+    const b = req.body || {};
+    if (typeof b.isPremium === 'boolean') user.isPremium = b.isPremium;
+    if (b.premiumSource !== undefined) {
+      const allowed = ['paid', 'trial', 'referral_reward', 'promo', null];
+      if (!allowed.includes(b.premiumSource)) {
+        return res.status(400).json({ code: 'SOURCE_INVALID', message: 'premiumSource invalide' });
+      }
+      user.premiumSource = b.premiumSource;
+    }
+    for (const field of ['premiumExpiresAt', 'premiumTrialStart', 'premiumTrialEnd']) {
+      if (field in b) {
+        const parsed = ISO_OR_NULL(b[field]);
+        if (parsed === undefined) return res.status(400).json({ code: 'DATE_INVALID', message: `${field} invalide` });
+        user[field] = parsed;
+      }
+    }
+    await user.save();
+    return res.json({ success: true, user: sanitize(user) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/users/:id/consumables
+// Body: { mode: 'add' | 'set', boost?, superlike?, boostUntil? }
+// 'add' → incrémente (peut être négatif, plancher 0) ; 'set' → valeur absolue.
+router.post('/users/:id/consumables', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const user = await User.findById(String(req.params.id || '').trim());
+    if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'Utilisateur introuvable' });
+
+    const b = req.body || {};
+    const mode = b.mode === 'set' ? 'set' : 'add';
+    const applyNum = (current, delta) => {
+      if (delta === undefined || delta === null || delta === '') return current;
+      const n = Number(delta);
+      if (!Number.isFinite(n)) return current;
+      return Math.max(0, mode === 'set' ? n : current + n);
+    };
+    user.boostBalance = applyNum(user.boostBalance || 0, b.boost);
+    user.superlikeBalance = applyNum(user.superlikeBalance || 0, b.superlike);
+    if ('boostUntil' in b) {
+      const parsed = ISO_OR_NULL(b.boostUntil);
+      if (parsed === undefined) return res.status(400).json({ code: 'DATE_INVALID', message: 'boostUntil invalide' });
+      user.boostUntil = parsed;
+    }
+    await user.save();
+    return res.json({
+      success: true,
+      boostBalance: user.boostBalance,
+      superlikeBalance: user.superlikeBalance,
+      boostUntil: user.boostUntil,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/users/:id/account-flags
+// Body: { invisibleMode?, checkInMode? }
+router.patch('/users/:id/account-flags', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const user = await User.findById(String(req.params.id || '').trim());
+    if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'Utilisateur introuvable' });
+
+    const b = req.body || {};
+    if (typeof b.invisibleMode === 'boolean') user.invisibleMode = b.invisibleMode;
+    if (b.checkInMode !== undefined) {
+      if (!['auto', 'manual'].includes(b.checkInMode)) {
+        return res.status(400).json({ code: 'MODE_INVALID', message: 'checkInMode invalide (auto|manual)' });
+      }
+      user.checkInMode = b.checkInMode;
+    }
+    await user.save();
+    return res.json({ success: true, user: sanitize(user) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/users/:id/business
+// Renvoie le lieu possédé par l'utilisateur (relation 1:1 ownerId) et l'état de
+// son abonnement pro, ou { location: null } s'il n'en gère aucun.
+router.get('/users/:id/business', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const location = await Location.findOne({ ownerId: id })
+      .select('name businessTier subscription proOffers sponsorship ultraBoost ownerId')
+      .lean();
+    if (!location) return res.json({ location: null });
+    return res.json({ location });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/admin/business/:locationId/tier
+// Body: { businessTier: 'none'|'pro1'|'pro2'|'pro3', periodDays?=30, grantProOffers?=false, force?=false }
+// Override DB uniquement. Refuse si un abonnement Stripe est actif, sauf force:true.
+router.patch('/business/:locationId/tier', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const location = await Location.findById(String(req.params.locationId || '').trim());
+    if (!location) return res.status(404).json({ code: 'LOCATION_NOT_FOUND', message: 'Lieu introuvable' });
+
+    const b = req.body || {};
+    const tier = b.businessTier;
+    if (!['none', 'pro1', 'pro2', 'pro3'].includes(tier)) {
+      return res.status(400).json({ code: 'TIER_INVALID', message: 'businessTier invalide' });
+    }
+
+    const sub = location.subscription || {};
+    const stripeActive = !!sub.stripeSubscriptionId && ['active', 'trialing', 'past_due'].includes(sub.status);
+    if (stripeActive && b.force !== true) {
+      return res.status(409).json({
+        code: 'STRIPE_SUBSCRIPTION_ACTIVE',
+        message:
+          "Un abonnement Stripe est actif sur ce lieu : l'override sera écrasé au prochain webhook. Renvoyez { force: true } pour forcer.",
+        subscription: { status: sub.status, stripeSubscriptionId: sub.stripeSubscriptionId },
+      });
+    }
+
+    location.businessTier = tier;
+    location.subscription = location.subscription || {};
+    if (tier === 'none') {
+      location.subscription.status = 'canceled';
+    } else {
+      const periodDays = Number.isFinite(Number(b.periodDays)) ? Math.max(1, Number(b.periodDays)) : 30;
+      location.subscription.status = 'active';
+      location.subscription.currentPeriodEnd = new Date(Date.now() + periodDays * 24 * 60 * 60 * 1000);
+      location.subscription.cancelAtPeriodEnd = false;
+      if (b.grantProOffers === true) {
+        location.proOffers = location.proOffers || {};
+        location.proOffers.ultraBoostBalance = BOOST_CAPS.ultra;
+        location.proOffers.proBoostBalance = BOOST_CAPS.pro;
+        location.proOffers.eventBoostBalance = BOOST_CAPS.event;
+      }
+    }
+    await location.save();
+    console.warn('[admin] businessTier override %s -> %s by %s', location._id, tier, req.user.id);
+    return res.json({
+      success: true,
+      location: {
+        _id: location._id,
+        name: location.name,
+        businessTier: location.businessTier,
+        subscription: location.subscription,
+        proOffers: location.proOffers,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/business/:locationId/boosts
+// Body: { mode: 'add'|'set', ultra?, pro?, event? } — clampé à BOOST_CAPS.
+router.post('/business/:locationId/boosts', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const location = await Location.findById(String(req.params.locationId || '').trim());
+    if (!location) return res.status(404).json({ code: 'LOCATION_NOT_FOUND', message: 'Lieu introuvable' });
+
+    const b = req.body || {};
+    const mode = b.mode === 'set' ? 'set' : 'add';
+    location.proOffers = location.proOffers || {};
+    for (const type of ['ultra', 'pro', 'event']) {
+      const raw = b[type];
+      if (raw === undefined || raw === null || raw === '') continue;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) continue;
+      const field = BOOST_BALANCE_FIELD[type];
+      const current = location.proOffers[field] || 0;
+      const next = mode === 'set' ? n : current + n;
+      location.proOffers[field] = Math.max(0, Math.min(next, BOOST_CAPS[type]));
+    }
+    await location.save();
+    return res.json({
+      success: true,
+      proOffers: {
+        ultraBoostBalance: location.proOffers.ultraBoostBalance || 0,
+        proBoostBalance: location.proOffers.proBoostBalance || 0,
+        eventBoostBalance: location.proOffers.eventBoostBalance || 0,
+      },
+    });
   } catch (err) {
     next(err);
   }
