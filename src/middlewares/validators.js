@@ -108,7 +108,11 @@ export const validators = {
   nearby: [
     query('lat').isFloat({ min: -90, max: 90 }),
     query('lon').isFloat({ min: -180, max: 180 }),
-    query('radius').optional().isInt({ min: 1, max: 5000 }),
+    // Le contrôleur borne déjà le rayon au max autorisé selon le statut
+    // (2 km gratuit / 30 km Premium) via Math.min — on accepte donc jusqu'à
+    // PREMIUM_DISCOVERY_RADIUS_M (30000) ici, sinon l'app Premium qui demande
+    // 30000 se prend un 400 VALIDATION_ERROR.
+    query('radius').optional().isInt({ min: 1, max: 30000 }),
   ],
   popular: [
     query('limit').optional().isInt({ min: 1, max: 50 }),
