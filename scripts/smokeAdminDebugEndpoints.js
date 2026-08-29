@@ -55,6 +55,9 @@ async function run() {
     username: `smokeuser${stamp}`,
     password: 'x',
     birthdate: new Date('1990-01-01'),
+    // compte en mode invisible : doit rester trouvable via la recherche admin
+    status: 'red',
+    invisibleMode: true,
   });
   const location = await Location.create({
     name: `Smoke Venue ${stamp}`,
@@ -69,8 +72,20 @@ async function run() {
   });
 
   try {
+    // 0. recherche modération : le compte invisible doit remonter
+    let r = await api('GET', `/admin/users/search?q=smokeuser${stamp}`, token);
+    check(
+      'search admin trouve le compte invisible',
+      r.status === 200 && r.json?.users?.some((u) => String(u._id) === String(target._id)),
+      `status ${r.status}, ${r.json?.users?.length} résultats`,
+    );
+    r = await api('GET', `/admin/users/search?q=${target._id}`, token);
+    check('search admin par ObjectId', r.status === 200 && String(r.json?.users?.[0]?._id) === String(target._id));
+    r = await api('GET', `/admin/users/search?q=a`, token);
+    check('search admin < 2 caractères -> 400', r.status === 400);
+
     // 1. premium
-    let r = await api('PATCH', `/admin/users/${target._id}/premium`, token, {
+    r = await api('PATCH', `/admin/users/${target._id}/premium`, token, {
       isPremium: true,
       premiumSource: 'promo',
       premiumExpiresAt: new Date(Date.now() + 3600e3).toISOString(),

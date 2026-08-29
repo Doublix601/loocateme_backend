@@ -11,6 +11,7 @@ import { getUninstallCorrelationReport } from '../services/churnRisk.service.js'
 import { invalidateAuthCache } from '../utils/authCache.js';
 import { Location } from '../models/Location.js';
 import { BOOST_CAPS, BOOST_BALANCE_FIELD } from '../constants/boosts.js';
+import { adminSearchUsers } from '../services/user.service.js';
 
 const router = Router();
 
@@ -329,6 +330,24 @@ const ISO_OR_NULL = (v) => {
   const d = new Date(v);
   return isNaN(d.getTime()) ? undefined : d;
 };
+
+// GET /api/admin/users/search?q=...&limit=20
+// Recherche de modération : AUCUN filtre de visibilité / ban / blocage —
+// contrairement à /api/users/search, un admin doit pouvoir retrouver un compte
+// en mode invisible ou banni pour le gérer. Accepte aussi un ObjectId exact.
+router.get('/users/search', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) {
+      return res.status(400).json({ code: 'QUERY_TOO_SHORT', message: 'Au moins 2 caractères requis' });
+    }
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const users = await adminSearchUsers({ q, limit });
+    return res.json({ users });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // PATCH /api/admin/users/:id/premium
 // Body: { isPremium?, premiumSource?, premiumExpiresAt?, premiumTrialStart?, premiumTrialEnd? }

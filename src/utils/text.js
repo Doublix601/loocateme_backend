@@ -13,13 +13,17 @@ export function buildDiacriticRegex(input) {
     y: '[yÿYŸ]',
     n: '[nñNÑ]',
   };
-  const escaped = String(input || '')
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // On échappe chaque caractère NON mappé individuellement. Échapper la chaîne
+  // entière d'abord puis itérer dessus est buggé : ça sépare une séquence
+  // d'échappement « \) » et peut ensuite transformer le caractère qui suit un
+  // backslash (ex. « \a » -> « \[aàá…] », classe de caractères cassée), d'où des
+  // « unmatched parentheses » côté moteur regex de MongoDB.
+  const escapeRe = /[.*+?^${}()|[\]\\]/g;
   let pattern = '';
-  for (const ch of escaped) {
+  for (const ch of String(input || '')) {
     const lower = ch.toLowerCase();
     if (map[lower]) pattern += map[lower];
-    else pattern += ch;
+    else pattern += ch.replace(escapeRe, '\\$&');
   }
   return new RegExp(pattern, 'i');
 }

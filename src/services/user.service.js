@@ -838,3 +838,35 @@ export async function searchUsers({ q = '', limit = 10, excludeUserId = null } =
     .lean();
   return users;
 }
+
+// Recherche réservée aux admins (DebugScreen / modération) : AUCUN filtre de
+// visibilité, de ban ou de blocage — contrairement à searchUsers(), il faut
+// pouvoir retrouver un compte en mode invisible (status 'red') ou banni pour
+// le gérer. Ne jamais exposer cette fonction hors d'une route requireAdmin.
+export async function adminSearchUsers({ q = '', limit = 20 } = {}) {
+  const safeLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 20));
+  const s = String(q || '').trim();
+  if (!s || s.length < 2) return [];
+
+  // Recherche exacte par id si la requête ressemble à un ObjectId.
+  if (/^[a-f0-9]{24}$/i.test(s)) {
+    const byId = await User.findById(s).select('-password').lean();
+    return byId ? [byId] : [];
+  }
+
+  const re = buildDiacriticRegex(s);
+  const users = await User.find({
+    $or: [
+      { username: re },
+      { firstName: re },
+      { lastName: re },
+      { customName: re },
+      { name: re },
+      { email: { $regex: re } },
+    ],
+  })
+    .limit(safeLimit)
+    .select('-password')
+    .lean();
+  return users;
+}
