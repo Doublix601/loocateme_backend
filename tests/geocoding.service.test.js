@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldRefreshCity } from '../src/services/geocoding.service.js';
+import { shouldRefreshCity, cityCellKey } from '../src/services/geocoding.service.js';
 
 // shouldRefreshCity is the pure throttling decision used by maybeRefreshCity
 // (called fire-and-forget from user.service.js/updateLocation). Testing it in
@@ -49,4 +49,24 @@ test('shouldRefreshCity: does not refresh when fresh (< 7 days) and no coordinat
     lastGeocodedCoordinates: null,
   };
   assert.equal(shouldRefreshCity(user, 48.8566, 2.3522), false);
+});
+
+// cityCellKey regroupe les coordonnées voisines dans la même maille pour ne
+// déclencher qu'un seul appel Nominatim par zone lors du backfill des villes.
+test('cityCellKey: deux POI du même centre-ville tombent dans la même maille', () => {
+  // ~350 m d'écart en plein Compiègne
+  const a = cityCellKey(49.4179, 2.8261);
+  const b = cityCellKey(49.4200, 2.8290);
+  assert.equal(a, b);
+});
+
+test('cityCellKey: deux communes distinctes tombent dans des mailles différentes', () => {
+  // Compiègne vs Margny-lès-Compiègne (~2,5 km)
+  const compiegne = cityCellKey(49.4179, 2.8261);
+  const margny = cityCellKey(49.4300, 2.8050);
+  assert.notEqual(compiegne, margny);
+});
+
+test('cityCellKey: stable et symétrique pour une même position', () => {
+  assert.equal(cityCellKey(48.8566, 2.3522), cityCellKey(48.8566, 2.3522));
 });

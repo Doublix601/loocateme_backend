@@ -1,4 +1,5 @@
 import { User } from '../models/User.js';
+import { Location } from '../models/Location.js';
 
 // Reverse geocoding via l'API Nominatim d'OpenStreetMap (gratuite, pas de clé
 // API). Politique d'usage Nominatim (https://operations.osmfoundation.org/policies/nominatim/) :
@@ -39,6 +40,107 @@ async function reverseGeocode(lat, lon) {
   const address = data?.address || {};
   const city = address.city || address.town || address.village || address.municipality || '';
   return city;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Backfill de la ville des LIEUX (Location) quand OSM ne fournit pas de tag
+// addr:city / addr:town / … : la plupart des POI OpenStreetMap n'ont aucun tag
+// d'adresse, la ville n'étant portée que par le polygone administratif englobant.
+// On reverse-géocode alors les coordonnées via Nominatim, mais en respectant sa
+// politique d'usage (pas de géocodage en masse) : on ne géocode qu'UNE fois par
+// « maille » géographique (~2 km), et on met le résultat en cache mémoire — deux
+// bars de la même rue ne déclenchent qu'un seul appel réseau, et le 2ᵉ
+// utilisateur qui synchronise la même zone n'en déclenche aucun.
+// ───────────────────────────────────────────────────────────────────────────
+
+// ~0,02° ≈ 2,2 km de latitude (et ~1,5 km de longitude à 45°N) : assez fin pour
+// ne pas confondre deux communes voisines, assez large pour regrouper tous les
+// POI d'un même centre-ville en un seul appel.
+const CITY_CELL_DEG = 0.02;
+const CITY_CELL_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 jours
+const CITY_CELL_CACHE_MAX = 5000;
+// Plafond d'appels Nominatim par backfill : un sync couvre un rayon de 50 km, on
+// ne veut pas enchaîner 100+ requêtes (throttle 1,1 s) en tâche de fond même si
+// le cache est froid. Les mailles non traitées le seront au prochain sync.
+const MAX_CELLS_PER_BACKFILL = 30;
+
+// cellKey -> { city, at } (city peut être '' : on met aussi en cache les échecs
+// « pas de ville trouvée » pour ne pas les retenter à chaque sync).
+const cityCellCache = new Map();
+
+export function cityCellKey(lat, lon) {
+  const cl = Math.round(lat / CITY_CELL_DEG) * CITY_CELL_DEG;
+  const co = Math.round(lon / CITY_CELL_DEG) * CITY_CELL_DEG;
+  return `${cl.toFixed(3)}_${co.toFixed(3)}`;
+}
+
+async function resolveCityForCell(lat, lon) {
+  const key = cityCellKey(lat, lon);
+  const hit = cityCellCache.get(key);
+  if (hit && Date.now() - hit.at < CITY_CELL_TTL_MS) return hit.city;
+
+  let city;
+  try {
+    city = await reverseGeocode(lat, lon); // throttlé en interne
+  } catch (e) {
+    // Erreur réseau/Nominatim : ne PAS mettre en cache → nouvelle tentative au
+    // prochain sync.
+    console.warn('[geocoding] cell reverse geocode failed', key, e?.message || e);
+    return null;
+  }
+
+  if (cityCellCache.size >= CITY_CELL_CACHE_MAX) {
+    // Éviction FIFO grossière des ~10 % plus anciennes entrées (Map itère dans
+    // l'ordre d'insertion).
+    let toDrop = Math.ceil(CITY_CELL_CACHE_MAX * 0.1);
+    for (const k of cityCellCache.keys()) {
+      cityCellCache.delete(k);
+      if (--toDrop <= 0) break;
+    }
+  }
+  cityCellCache.set(key, { city: city || '', at: Date.now() });
+  return city || '';
+}
+
+// items : [{ osmId, coordinates: [lon, lat] }] — les lieux de ce sync qui n'ont
+// pas de ville. Regroupe par maille, reverse-géocode les mailles non cachées, et
+// remplit `Location.city` pour les lieux encore vides de chaque maille.
+// Fire-and-forget : ne jette jamais.
+export async function backfillCitiesForLocations(items, { maxCells = MAX_CELLS_PER_BACKFILL } = {}) {
+  try {
+    const byCell = new Map(); // cellKey -> { lat, lon, osmIds: [] }
+    for (const it of Array.isArray(items) ? items : []) {
+      const c = it?.coordinates;
+      if (!Array.isArray(c) || c.length !== 2) continue;
+      const [lon, lat] = c;
+      if (typeof lat !== 'number' || typeof lon !== 'number') continue;
+      if (it.osmId == null) continue;
+      const key = cityCellKey(lat, lon);
+      if (!byCell.has(key)) byCell.set(key, { lat, lon, osmIds: [] });
+      byCell.get(key).osmIds.push(it.osmId);
+    }
+
+    let processed = 0;
+    for (const cell of byCell.values()) {
+      if (processed >= maxCells) break;
+      processed += 1;
+      const city = await resolveCityForCell(cell.lat, cell.lon);
+      if (!city) continue;
+      try {
+        await Location.updateMany(
+          {
+            osmId: { $in: cell.osmIds },
+            $or: [{ city: { $exists: false } }, { city: '' }],
+          },
+          { $set: { city, cityGeocodedAt: new Date() } },
+        );
+      } catch (e) {
+        console.warn('[geocoding] backfill updateMany failed', cell?.osmIds?.length, e?.message || e);
+      }
+    }
+  } catch (e) {
+    console.warn('[geocoding] backfillCitiesForLocations failed', e?.message || e);
+  }
 }
 
 // Distance haversine simplifiée (mètres) — suffisante pour la décision de

@@ -5,6 +5,10 @@ const LocationSchema = new mongoose.Schema(
     osmId: { type: Number, unique: true, sparse: true },
     name: { type: String, required: true },
     city: { type: String },
+    // Date du dernier reverse-geocoding réussi pour `city` (backfill Nominatim
+    // quand OSM ne fournit pas de tag addr:city — cf. geocoding.service.js).
+    // Absent pour les villes issues directement d'un tag OSM ou saisies par un pro.
+    cityGeocodedAt: { type: Date },
     type: { type: String, enum: [
       // ── Mode ☀️ Jour ──────────────────────────────────────────
       'Café ☕', 'Coworking 🧑‍💻', 'Salle de sport 🏋️', 'Centre sportif 🏟️',

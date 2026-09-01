@@ -8,6 +8,7 @@ import { singleflight, singleflightRedis } from '../utils/singleflight.js';
 import { PRESENCE_FRESHNESS_MS } from '../config/presenceWindows.js';
 import { FeatureFlag } from '../models/FeatureFlag.js';
 import { proposeUserCorrection, listPendingUserCorrections, reviewUserCorrection } from '../services/locationChange.service.js';
+import { backfillCitiesForLocations } from '../services/geocoding.service.js';
 
 // Cache de la liste des lieux à proximité : la position d'un utilisateur ne
 // change pas de zone assez souvent pour justifier une agrégation Mongo
@@ -50,6 +51,22 @@ export function sanitizePublicLocation(location) {
   delete obj.subscription;
   delete obj.documents;
   return obj;
+}
+
+// Construit le `$set` d'un upsert OSM. On n'écrit `city` que si le client en
+// fournit une non-vide : sinon on préserve la ville déjà en base (backfill
+// Nominatim d'un sync précédent, ou ville saisie par un pro sur le dashboard) au
+// lieu de l'écraser par '' à chaque re-sync quotidien.
+export function buildOsmLocationUpdate({ osmId, name, city, type, coordinates }, now) {
+  const set = {
+    osmId,
+    name,
+    type,
+    location: { type: 'Point', coordinates },
+    lastOsmSyncAt: now,
+  };
+  if (typeof city === 'string' && city.trim()) set.city = city.trim();
+  return set;
 }
 
 // La liste des lieux et la fiche détail sont mises en cache Redis partagé
@@ -456,35 +473,19 @@ export const LocationController = {
       const now = new Date();
       const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-      const ops = locations.map((loc) => {
-        const { osmId, name, city, type, coordinates } = loc;
-
-        return {
-          updateOne: {
-            filter: {
-              osmId: osmId,
-              $or: [
-                { lastOsmSyncAt: { $exists: false } },
-                { lastOsmSyncAt: { $lt: yesterday } },
-              ],
-            },
-            update: {
-              $set: {
-                osmId: osmId,
-                name: name,
-                city: city,
-                type: type,
-                location: {
-                  type: 'Point',
-                  coordinates: coordinates,
-                },
-                lastOsmSyncAt: now,
-              },
-            },
-            upsert: true,
+      const ops = locations.map((loc) => ({
+        updateOne: {
+          filter: {
+            osmId: loc.osmId,
+            $or: [
+              { lastOsmSyncAt: { $exists: false } },
+              { lastOsmSyncAt: { $lt: yesterday } },
+            ],
           },
-        };
-      });
+          update: { $set: buildOsmLocationUpdate(loc, now) },
+          upsert: true,
+        },
+      }));
 
       // On utilise bulkWrite mais on doit faire attention :
       // Si le filtre (lastOsmSyncAt < yesterday) ne matche pas, l'opération sera ignorée ou fera un upsert si non trouvé.
@@ -495,6 +496,19 @@ export const LocationController = {
         // si le process crashe entre les deux opérations.
         try {
           const result = await Location.bulkWrite(ops, { ordered: false });
+
+          // Beaucoup de POI OSM n'ont aucun tag d'adresse : on complète leur
+          // ville par reverse-geocoding (regroupé par maille + caché, cf.
+          // geocoding.service.js). Fire-and-forget : jamais bloquant, jamais
+          // fatal pour le sync.
+          const cityless = locations.filter(
+            (l) => !(typeof l.city === 'string' && l.city.trim()) && Array.isArray(l.coordinates) && l.osmId != null,
+          );
+          if (cityless.length > 0) {
+            backfillCitiesForLocations(cityless).catch((e) =>
+              console.warn('[syncOsmLocations] city backfill failed:', e?.message || e),
+            );
+          }
 
           // Cleanup old manual test locations (without osmId) that are not persistent (stars < 3)
           // OR locations explicitly marked for deletion (shouldDelete: true)

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { User } from '../src/models/User.js';
 import { Location } from '../src/models/Location.js';
 import { redisClient } from '../src/config/redis.js';
-import { LocationController } from '../src/controllers/location.controller.js';
+import { LocationController, buildOsmLocationUpdate } from '../src/controllers/location.controller.js';
 
 // Written before extracting getLocations' business logic (radius widening,
 // scoring, sponsor injection) into location.service.js — captures the
@@ -247,4 +247,32 @@ test('getLocationById returns 404 when the location does not exist', async () =>
     restoreBlocks();
     redis.restore();
   }
+});
+
+// buildOsmLocationUpdate ne doit écrire `city` que lorsque le client OSM en
+// fournit une non-vide : sinon le re-sync quotidien écraserait la ville
+// complétée par reverse-geocoding (ou saisie par un pro) avec ''.
+test('buildOsmLocationUpdate: sets city when the client provides one', () => {
+  const now = new Date();
+  const set = buildOsmLocationUpdate(
+    { osmId: 1, name: 'Bar A', city: 'Compiègne', type: 'Bar 🍺', coordinates: [2.82, 49.41] },
+    now,
+  );
+  assert.equal(set.city, 'Compiègne');
+  assert.equal(set.name, 'Bar A');
+  assert.equal(set.lastOsmSyncAt, now);
+  assert.deepEqual(set.location, { type: 'Point', coordinates: [2.82, 49.41] });
+});
+
+test('buildOsmLocationUpdate: omits city entirely when the client sends an empty string', () => {
+  const set = buildOsmLocationUpdate(
+    { osmId: 2, name: 'Bar B', city: '', type: 'Bar 🍺', coordinates: [2.82, 49.41] },
+    new Date(),
+  );
+  assert.equal('city' in set, false);
+});
+
+test('buildOsmLocationUpdate: omits city when it is whitespace or missing', () => {
+  assert.equal('city' in buildOsmLocationUpdate({ osmId: 3, name: 'C', type: 'Bar 🍺', coordinates: [0, 0] }, new Date()), false);
+  assert.equal('city' in buildOsmLocationUpdate({ osmId: 4, name: 'D', city: '   ', type: 'Bar 🍺', coordinates: [0, 0] }, new Date()), false);
 });
