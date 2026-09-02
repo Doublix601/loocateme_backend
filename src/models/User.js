@@ -114,6 +114,13 @@ const UserSchema = new mongoose.Schema(
     // Premium & Monetization
     isPremium: { type: Boolean, default: false, index: true },
     boostBalance: { type: Number, default: 0 },
+    // Part de `boostBalance` provenant du plancher mensuel Premium encore non
+    // dépensée (0→3). Sert au calcul du top-up mensuel (cf. premium.service.js
+    // grantPremiumBoostFloor) : on ne recharge que ce qu'il manque pour
+    // atteindre 3, sans jamais cumuler au-delà.
+    premiumBoostBalance: { type: Number, default: 0 },
+    // Dernière recharge du plancher de boosts Premium (mensuelle).
+    lastBoostAllowanceAt: { type: Date },
     superlikeBalance: { type: Number, default: 0 },
     boostUntil: { type: Date, index: true },
     premiumTrialStart: { type: Date },

@@ -2,8 +2,13 @@ import { User } from '../models/User.js';
 import { Superlike } from '../models/Superlike.js';
 import { sendPushUnified } from '../services/push.service.js';
 import { computeMutualConnection } from '../services/user.service.js';
-import { activatePremium, hasActivePremium } from '../services/premium.service.js';
-import { SUPERLIKE_WEEKLY_ALLOWANCE } from '../constants/premium.js';
+import {
+  activatePremium,
+  hasActivePremium,
+  grantPremiumBoostFloor,
+  consumePremiumBoostCounter,
+} from '../services/premium.service.js';
+import { PREMIUM_BOOST_ALLOWANCE_MS } from '../constants/premium.js';
 
 const SUPERLIKE_PROFILE_FIELDS =
   'customName username firstName lastName bio profileImageUrl birthdate gender socialNetworks isPremium role status updatedAt';
@@ -72,11 +77,15 @@ export const PremiumController = {
 
       const isMock = req.body.isMock === true && process.env.NODE_ENV !== 'production';
 
-      if (!isMock && (sender.superlikeBalance || 0) <= 0) {
+      // Premium = superlikes illimités : ni contrôle de solde, ni décompte.
+      // Les comptes non-Premium consomment leur solde (packs achetés).
+      const senderPremium = hasActivePremium(sender);
+
+      if (!isMock && !senderPremium && (sender.superlikeBalance || 0) <= 0) {
         return res.status(403).json({ code: 'NO_SUPERLIKES', message: 'Aucun superlike disponible' });
       }
 
-      if (!isMock) {
+      if (!isMock && !senderPremium) {
         sender.superlikeBalance = Math.max(0, (sender.superlikeBalance || 0) - 1);
         await sender.save();
       }
@@ -101,7 +110,11 @@ export const PremiumController = {
         console.error('[PremiumController] Failed to send superlike push notification', err);
       }
 
-      return res.json({ success: true, superlikeBalance: sender.superlikeBalance });
+      return res.json({
+        success: true,
+        superlikesUnlimited: senderPremium,
+        superlikeBalance: senderPremium ? null : sender.superlikeBalance,
+      });
     } catch (err) {
       next(err);
     }
@@ -210,29 +223,44 @@ export const PremiumController = {
     }
   },
 
-  getWeeklyAllowance: async (req, res, next) => {
+  // GET /premium/allowance — recharge mensuelle du plancher de boosts Premium
+  // (idempotente, fenêtre 30 j) + indique que les superlikes sont illimités en
+  // Premium. Appelé par l'app à l'hydratation (PremiumService.refreshFromBackend).
+  getPremiumAllowance: async (req, res, next) => {
     try {
       const userId = req.user?.id;
       const me = await User.findById(userId);
       if (!me) return res.status(404).json({ code: 'USER_NOT_FOUND' });
 
-      if (!me.isPremium) {
-        return res.json({ granted: false, superlikeBalance: me.superlikeBalance || 0 });
+      if (!hasActivePremium(me)) {
+        return res.json({
+          superlikesUnlimited: false,
+          superlikeBalance: me.superlikeBalance || 0,
+          boostGranted: false,
+          boostBalance: me.boostBalance || 0,
+          premiumBoostBalance: 0,
+        });
       }
 
       const now = new Date();
-      const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
-      const needsReset = !me.lastAllowanceAt || (now.getTime() - new Date(me.lastAllowanceAt).getTime()) >= oneWeekMs;
+      const needsReset =
+        !me.lastBoostAllowanceAt ||
+        now.getTime() - new Date(me.lastBoostAllowanceAt).getTime() >= PREMIUM_BOOST_ALLOWANCE_MS;
 
+      let granted = 0;
       if (needsReset) {
-        // Top up to the weekly floor without wiping out a larger balance from purchased packs
-        me.superlikeBalance = Math.max(me.superlikeBalance || 0, SUPERLIKE_WEEKLY_ALLOWANCE);
-        me.lastAllowanceAt = now;
+        granted = grantPremiumBoostFloor(me, now);
         await me.save();
-        return res.json({ granted: true, superlikeBalance: me.superlikeBalance });
       }
 
-      return res.json({ granted: false, superlikeBalance: me.superlikeBalance });
+      return res.json({
+        superlikesUnlimited: true,
+        superlikeBalance: null,
+        boostGranted: granted > 0,
+        grantedBoosts: granted,
+        boostBalance: me.boostBalance || 0,
+        premiumBoostBalance: me.premiumBoostBalance || 0,
+      });
     } catch (err) {
       next(err);
     }
@@ -267,9 +295,11 @@ export const PremiumController = {
         return res.status(403).json({ code: 'NO_BOOSTS', message: 'Aucun boost disponible' });
       }
 
-      // Use one boost (if not mock)
+      // Use one boost (if not mock). Les boosts premium sont consommés en
+      // premier (ils se rechargent chaque mois), les packs achetés ensuite.
       if (!isMock) {
         me.boostBalance -= 1;
+        consumePremiumBoostCounter(me);
       } else {
         console.log(`[PremiumController] Mock boost activation for user ${me.username}`);
       }

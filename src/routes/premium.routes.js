@@ -6,7 +6,7 @@ const router = Router();
 
 router.post('/trial/start', requireAuth, PremiumController.startTrial);
 router.post('/verify', requireAuth, PremiumController.verifyPurchase);
-router.get('/allowance', requireAuth, PremiumController.getWeeklyAllowance);
+router.get('/allowance', requireAuth, PremiumController.getPremiumAllowance);
 router.post('/boost/activate', requireAuth, PremiumController.activateBoost);
 router.post('/superlike', requireAuth, PremiumController.sendSuperlike);
 router.get('/superlikes/received', requireAuth, PremiumController.getReceivedSuperlikes);

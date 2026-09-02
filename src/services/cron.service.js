@@ -192,17 +192,36 @@ export const CronService = {
       }
     });
 
-    // Reset Boost Balance and Grant Weekly Boost for Premium: Tous les lundis à 04:00
-    nodeCron.schedule('0 4 * * 1', async () => {
-      console.log('[cron] Granting weekly boost for Premium users...');
+    // Recharge du plancher mensuel de boosts Premium : le 1er du mois à 04:00.
+    // Remonte la part premium du solde à 3 (premiumBoostBalance), sans cumuler
+    // au-delà (cf. premium.service.js grantPremiumBoostFloor — même logique via
+    // pipeline). Filet de sécurité : l'app appelle aussi /premium/allowance à
+    // l'hydratation, mais le cron garantit la recharge même sans ouverture.
+    nodeCron.schedule('0 4 1 * *', async () => {
+      console.log('[cron] Monthly premium boost floor top-up...');
       try {
-        await User.updateMany(
-          { isPremium: true },
-          { $inc: { boostBalance: 1 } }
+        const now = new Date();
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const result = await User.updateMany(
+          {
+            isPremium: true,
+            $or: [{ lastBoostAllowanceAt: null }, { lastBoostAllowanceAt: { $lte: monthAgo } }],
+          },
+          [
+            { $set: { __grant: { $max: [0, { $subtract: [3, { $ifNull: ['$premiumBoostBalance', 0] }] }] } } },
+            {
+              $set: {
+                boostBalance: { $add: [{ $ifNull: ['$boostBalance', 0] }, '$__grant'] },
+                premiumBoostBalance: { $add: [{ $ifNull: ['$premiumBoostBalance', 0] }, '$__grant'] },
+                lastBoostAllowanceAt: now,
+              },
+            },
+            { $unset: '__grant' },
+          ],
         );
-        console.log('[cron] Weekly boost granted.');
+        console.log(`[cron] Premium boost floor top-up: ${result.modifiedCount} compte(s).`);
       } catch (e) {
-        console.error('[cron] Weekly boost error:', e);
+        console.error('[cron] Monthly premium boost error:', e);
       }
     });
 
