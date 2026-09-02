@@ -37,10 +37,11 @@ async function run() {
   );
   console.log(`(B) essais expirés repassés Free : ${stuck.modifiedCount}`);
 
-  // (A) Comptes Free avec une date d'essai résiduelle dans le passé → on nettoie.
+  // (A) Comptes Free avec une date d'essai résiduelle (passée OU future : dans
+  // les deux cas c'était la source de la fuite via l'ancien fallback) → nettoyage.
   const residual = await User.updateMany(
-    { isPremium: false, premiumTrialEnd: { $lt: now } },
-    { $set: { premiumTrialEnd: null } },
+    { isPremium: false, premiumTrialEnd: { $ne: null } },
+    { $set: { premiumTrialEnd: null, premiumExpiresAt: null } },
   );
   console.log(`(A) premiumTrialEnd résiduels nettoyés : ${residual.modifiedCount}`);
 
