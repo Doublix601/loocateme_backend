@@ -171,6 +171,27 @@ export const CronService = {
       }
     });
 
+    // Expiration de l'essai maison 7 jours : repasse isPremium=false une fois
+    // premiumTrialEnd dépassé. Ciblé sur premiumSource='trial' uniquement — ne
+    // touche donc JAMAIS un abonnement payant (géré par les webhooks RevenueCat)
+    // ni un mois offert par parrainage (cron dédié expireReferralRewards...).
+    // Sans ce cron, un compte gardait isPremium=true indéfiniment après l'essai,
+    // ce qui laissait fuiter le rayon de découverte 30 km en Free.
+    nodeCron.schedule('*/30 * * * *', async () => {
+      try {
+        const now = new Date();
+        const result = await User.updateMany(
+          { isPremium: true, premiumSource: 'trial', premiumTrialEnd: { $lte: now } },
+          { $set: { isPremium: false, premiumTrialEnd: null, planChangedAt: now } },
+        );
+        if (result.modifiedCount) {
+          console.log(`[cron] Essai maison expiré pour ${result.modifiedCount} compte(s).`);
+        }
+      } catch (e) {
+        console.error('[cron] Home trial expiry error:', e);
+      }
+    });
+
     // Reset Boost Balance and Grant Weekly Boost for Premium: Tous les lundis à 04:00
     nodeCron.schedule('0 4 * * 1', async () => {
       console.log('[cron] Granting weekly boost for Premium users...');

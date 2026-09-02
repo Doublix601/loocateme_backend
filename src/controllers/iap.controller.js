@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { User } from '../models/User.js';
+import { activatePremium, deactivatePremium } from '../services/premium.service.js';
 
 const CONSUMABLE_GRANTS = {
   loocateme_boost_pack_1: { field: 'boostBalance', amount: 1 },
@@ -50,8 +51,13 @@ export const handleWebhook = async (req, res) => {
       case 'CANCELLATION':
       case 'EXPIRATION':
       case 'BILLING_ISSUE': {
-        const hasPremium = entitlement_ids && entitlement_ids.includes('LoocateMe Premium');
-        user.isPremium = hasPremium;
+        const hasPremium = !!(entitlement_ids && entitlement_ids.includes('LoocateMe Premium'));
+        if (hasPremium) {
+          // activatePremium gère aussi le grant de bienvenue (idempotent).
+          activatePremium(user, { source: 'paid' });
+        } else {
+          deactivatePremium(user);
+        }
         await user.save();
         console.log(`[RevenueCat Webhook] User ${user.username} premium status updated to: ${hasPremium}`);
         break;

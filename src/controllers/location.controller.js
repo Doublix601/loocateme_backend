@@ -9,6 +9,7 @@ import { PRESENCE_FRESHNESS_MS } from '../config/presenceWindows.js';
 import { FeatureFlag } from '../models/FeatureFlag.js';
 import { proposeUserCorrection, listPendingUserCorrections, reviewUserCorrection } from '../services/locationChange.service.js';
 import { backfillCitiesForLocations } from '../services/geocoding.service.js';
+import { hasActivePremium } from '../services/premium.service.js';
 
 // Cache de la liste des lieux à proximité : la position d'un utilisateur ne
 // change pas de zone assez souvent pour justifier une agrégation Mongo
@@ -124,11 +125,11 @@ export const LocationController = {
       // resservi à un premium (ni l'inverse).
       const now = new Date();
       const [me, premiumFlag] = await Promise.all([
-        User.findById(req.user.id).select('isPremium premiumTrialEnd').lean(),
+        User.findById(req.user.id).select('isPremium').lean(),
         FeatureFlag.findOne({ key: 'premiumEnabled' }).lean(),
       ]);
       const premiumGatingActive = !!premiumFlag?.enabled;
-      const isPremium = !!me?.isPremium || (me?.premiumTrialEnd && me.premiumTrialEnd > now);
+      const isPremium = hasActivePremium(me);
       const maxRadiusM =
         !premiumGatingActive || isPremium ? PREMIUM_DISCOVERY_RADIUS_M : FREE_DISCOVERY_RADIUS_M;
 
@@ -318,8 +319,8 @@ export const LocationController = {
       }
 
       const now = new Date();
-      const me = await User.findById(req.user.id).select('isPremium premiumTrialEnd').lean();
-      const isPremium = !!me?.isPremium || (me?.premiumTrialEnd && me.premiumTrialEnd > now);
+      const me = await User.findById(req.user.id).select('isPremium').lean();
+      const isPremium = hasActivePremium(me);
       const windowDays = isPremium ? 7 : 1;
       const since = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
 

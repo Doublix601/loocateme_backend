@@ -2,6 +2,8 @@ import { User } from '../models/User.js';
 import { Superlike } from '../models/Superlike.js';
 import { sendPushUnified } from '../services/push.service.js';
 import { computeMutualConnection } from '../services/user.service.js';
+import { activatePremium, hasActivePremium } from '../services/premium.service.js';
+import { SUPERLIKE_WEEKLY_ALLOWANCE } from '../constants/premium.js';
 
 const SUPERLIKE_PROFILE_FIELDS =
   'customName username firstName lastName bio profileImageUrl birthdate gender socialNetworks isPremium role status updatedAt';
@@ -13,19 +15,15 @@ export const PremiumController = {
       const me = await User.findById(userId);
       if (!me) return res.status(404).json({ code: 'USER_NOT_FOUND' });
       const now = new Date();
-      // If already premium or trial active, don't recreate
-      if (me.isPremium || (me.premiumTrialEnd && me.premiumTrialEnd > now)) {
-        return res.json({ success: true, trialActive: true, premium: !!me.isPremium, premiumTrialEnd: me.premiumTrialEnd });
+      // Déjà Premium (abonnement ou essai en cours) → ne pas recréer l'essai.
+      if (hasActivePremium(me)) {
+        return res.json({ success: true, trialActive: true, premium: true, premiumTrialEnd: me.premiumTrialEnd });
       }
       const end = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       me.premiumTrialStart = now;
       me.premiumTrialEnd = end;
-      // Grant premium during trial and mark plan change for UI reload
-      const before = !!me.isPremium;
-      me.isPremium = true;
-      if (before !== true) {
-        me.planChangedAt = now;
-      }
+      // Active le Premium + grant de bienvenue (idempotent via premiumWelcomeGrantedAt).
+      activatePremium(me, { source: 'trial' });
       await me.save();
       return res.json({ success: true, trialActive: true, premium: !!me.isPremium, premiumTrialEnd: end });
     } catch (err) {
@@ -42,8 +40,7 @@ export const PremiumController = {
       const isMock = req.body.isMock === true;
       if (isMock && process.env.NODE_ENV !== 'production') {
         console.log(`[PremiumController] Mock premium activation for user ${me.username}`);
-        me.isPremium = true;
-        me.planChangedAt = new Date();
+        activatePremium(me, { source: 'paid' });
         await me.save();
         return res.json({ success: true, premium: true });
       }
@@ -229,7 +226,7 @@ export const PremiumController = {
 
       if (needsReset) {
         // Top up to the weekly floor without wiping out a larger balance from purchased packs
-        me.superlikeBalance = Math.max(me.superlikeBalance || 0, 3);
+        me.superlikeBalance = Math.max(me.superlikeBalance || 0, SUPERLIKE_WEEKLY_ALLOWANCE);
         me.lastAllowanceAt = now;
         await me.save();
         return res.json({ granted: true, superlikeBalance: me.superlikeBalance });

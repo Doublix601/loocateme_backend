@@ -128,6 +128,11 @@ const UserSchema = new mongoose.Schema(
     // attente, appliquée par le webhook Stripe d'annulation (payment.controller.js) au lieu
     // d'être perdue silencieusement.
     pendingReferralReward: { type: Boolean, default: false },
+    // Horodatage du grant de bienvenue Premium (3 boosts + 3 superlikes offerts
+    // au tout premier passage Premium, achat ou essai — cf. premium.service.js
+    // activatePremium). Rend le grant idempotent : renouvellement / re-abonnement
+    // ne re-créditent pas.
+    premiumWelcomeGrantedAt: { type: Date },
     lastAllowanceAt: { type: Date },
     expoPushToken: { type: String, index: true },
     lastLoginAt: { type: Date, default: Date.now },

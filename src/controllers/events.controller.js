@@ -3,6 +3,7 @@ import { User } from '../models/User.js';
 import { NotificationDedup } from '../models/NotificationDedup.js';
 import { FeatureFlag } from '../models/FeatureFlag.js';
 import { sendPushUnified } from '../services/push.service.js';
+import { hasActivePremium } from '../services/premium.service.js';
 
 const SOCIAL_CLICK_DEDUP_MS = 24 * 60 * 60 * 1000;
 // Anti-abus : empêche un même viewer de spammer la cible en rouvrant son
@@ -21,10 +22,7 @@ async function isPremiumEnabled() {
 }
 
 function hasPremiumAccess(user) {
-  if (!user) return false;
-  const now = new Date();
-  const trialActive = user.premiumTrialEnd && user.premiumTrialEnd > now;
-  return !!user.isPremium || !!trialActive;
+  return hasActivePremium(user);
 }
 
 export const EventsController = {

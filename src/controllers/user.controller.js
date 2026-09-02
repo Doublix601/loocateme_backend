@@ -1,6 +1,7 @@
 import { getNearbyUsers, updateLocation, forceCheckIn, forceCheckOut, getUsersByEmails, getPopularUsers, searchUsers, getUserByIdForViewer } from '../services/user.service.js';
 import { requestEmailChange, confirmEmailChange } from '../services/auth.service.js';
 import { FREE_DISCOVERY_RADIUS_M, PREMIUM_DISCOVERY_RADIUS_M } from '../services/location.service.js';
+import { hasActivePremium } from '../services/premium.service.js';
 import { debugLog } from '../utils/logger.js';
 
 export const UserController = {
@@ -113,12 +114,12 @@ export const UserController = {
     try {
       const { lat, lon, radius } = req.query;
       const { User } = await import('../models/User.js');
-      const me = await User.findById(req.user.id).select('status isPremium premiumTrialEnd');
+      const me = await User.findById(req.user.id).select('status isPremium');
       if (!me) return res.status(401).json({ code: 'USER_NOT_FOUND', message: 'User not found' });
       if (me.status === 'red') return res.status(403).json({ code: 'INVISIBLE', message: 'Visibility is disabled' });
       // Aligné sur le rayon de découverte des lieux (findNearbyLocations) :
-      // gratuit 2 km, Premium 30 km. Le premium par essai/offre compte aussi.
-      const isPremium = !!me.isPremium || (me.premiumTrialEnd && me.premiumTrialEnd > new Date());
+      // gratuit 2 km, Premium 30 km. L'essai maison met isPremium=true.
+      const isPremium = hasActivePremium(me);
       const maxRadius = isPremium ? PREMIUM_DISCOVERY_RADIUS_M : FREE_DISCOVERY_RADIUS_M;
       const radiusMeters = radius ? Math.min(parseInt(radius, 10), maxRadius) : maxRadius;
       const users = await getNearbyUsers({

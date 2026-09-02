@@ -10,6 +10,7 @@ import { sanitize } from '../services/auth.service.js';
 import { getUninstallCorrelationReport } from '../services/churnRisk.service.js';
 import { invalidateAuthCache } from '../utils/authCache.js';
 import { Location } from '../models/Location.js';
+import { activatePremium, deactivatePremium } from '../services/premium.service.js';
 import { BOOST_CAPS, BOOST_BALANCE_FIELD } from '../constants/boosts.js';
 import { adminSearchUsers } from '../services/user.service.js';
 
@@ -167,7 +168,8 @@ router.put('/users/:id/role', requireAuth, requireAdmin, async (req, res, next) 
 
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'Utilisateur introuvable' });
-    user.isPremium = isPremium;
+    if (isPremium) activatePremium(user, { source: 'promo' });
+    else deactivatePremium(user);
     await user.save();
     return res.json({ success: true, user: sanitize(user) });
   } catch (err) {
@@ -358,7 +360,13 @@ router.patch('/users/:id/premium', requireAuth, requireAdmin, async (req, res, n
     if (!user) return res.status(404).json({ code: 'NOT_FOUND', message: 'Utilisateur introuvable' });
 
     const b = req.body || {};
-    if (typeof b.isPremium === 'boolean') user.isPremium = b.isPremium;
+    if (typeof b.isPremium === 'boolean') {
+      // Passe par le helper pour rester cohérent avec les autres chemins
+      // (grant de bienvenue idempotent à l'activation). Les dates explicites
+      // fournies dans le même body sont appliquées juste après et l'emportent.
+      if (b.isPremium) activatePremium(user, { source: b.premiumSource || undefined });
+      else deactivatePremium(user);
+    }
     if (b.premiumSource !== undefined) {
       const allowed = ['paid', 'trial', 'referral_reward', 'promo', null];
       if (!allowed.includes(b.premiumSource)) {
