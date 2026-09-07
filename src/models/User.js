@@ -64,11 +64,6 @@ const UserSchema = new mongoose.Schema(
     privacyPreferences: {
       analytics: { type: Boolean, default: false },
       doNotSell: { type: Boolean, default: true },
-      // Opt-in distinct du consentement de localisation GPS (finalité RGPD
-      // différente : détection de proximité Bluetooth entre appareils, y
-      // compris hors connexion réseau). Défaut false — activation explicite
-      // requise via un écran de consentement dédié.
-      bluetoothProximity: { type: Boolean, default: false },
       // Affiche aux autres utilisateurs le nom précis du lieu où l'utilisateur
       // est actuellement check-in (`currentLocation`), en plus de la ville.
       // Donnée bien plus sensible que la ville (localisation en direct, risque

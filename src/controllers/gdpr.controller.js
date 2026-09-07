@@ -201,8 +201,8 @@ export const GdprController = {
     }
     // Mutation ciblée des deux champs concernés par cet endpoint : un
     // remplacement intégral de user.privacyPreferences effacerait
-    // silencieusement bluetoothProximity et shareCurrentLocation, gérés par
-    // des endpoints dédiés (ble.controller.js, user.controller.js).
+    // silencieusement shareCurrentLocation, géré par un endpoint dédié
+    // (user.controller.js).
     user.privacyPreferences.analytics = !!analytics;
     user.privacyPreferences.doNotSell = !!doNotSell;
     await user.save();

@@ -7,7 +7,6 @@ import { sendPushUnified } from './push.service.js';
 import { NotificationDedup } from '../models/NotificationDedup.js';
 import { singleflightRedis } from '../utils/singleflight.js';
 import { recordCrossedPaths } from './crossedPaths.service.js';
-import { resolveAmbiguousVenueViaBle, resolveVenueFromBlePeersOnly } from './ble.service.js';
 import { debugLog } from '../utils/logger.js';
 import { haversineMeters } from '../utils/geo.js';
 import { buildDiacriticRegex } from '../utils/text.js';
@@ -293,72 +292,6 @@ export async function forceCheckOut(userId) {
   return user;
 }
 
-// Cas "réseau dispo mais pas de GPS" (ex : sous-sol avec wifi, satellites
-// bloqués) : updateLocation exige des coordonnées, donc inutilisable ici.
-// On check-in directement via les pairs BLE déjà confirmés à proximité,
-// sans aucune coordonnée. Retourne { user, resolved: false } si aucun pair
-// fiable n'est actuellement à portée (l'app garde alors sa position
-// précédente / propose la sélection manuelle côté client).
-export async function checkInViaBleOnly(userId) {
-  const requestStartedAt = Date.now();
-
-  const existingUser = await User.findById(userId).select('boostUntil currentLocation');
-  if (existingUser?.boostUntil && existingUser.boostUntil > new Date()) {
-    throw Object.assign(new Error('Boost actif : impossible de changer de lieu tant que le boost est en cours.'), {
-      status: 409,
-      code: 'BOOST_ACTIVE',
-    });
-  }
-
-  const venueId = await resolveVenueFromBlePeersOnly(userId);
-  if (!venueId) return { user: null, resolved: false };
-
-  if (existingUser?.currentLocation && String(existingUser.currentLocation) === String(venueId)) {
-    // Déjà confirmé ici : rien à changer, on évite de repartir un compteur
-    // de séjour "5 minutes minimum" pour rien.
-    const user = await User.findById(userId);
-    return { user, resolved: true };
-  }
-
-  // Même garde d'ordre que forceCheckIn/forceCheckOut/updateLocation (cf.
-  // commentaires là-bas) : la résolution BLE peut prendre un moment, donc ce
-  // check-in "automatique" peut terminer après un check-in manuel plus
-  // récent et l'écraser sans cette garde.
-  const user = await User.findOneAndUpdate(
-    {
-      _id: userId,
-      $or: [{ lastForceCheckInRequestAt: null }, { lastForceCheckInRequestAt: { $lte: requestStartedAt } }],
-    },
-    {
-      $set: {
-        currentLocation: venueId,
-        currentLocationSince: new Date(),
-        pendingLocation: null,
-        pendingLocationSince: null,
-        boostUntil: null,
-        lastForceCheckInRequestAt: requestStartedAt,
-        // Sans ceci, ce check-in reste sur un timestamp GPS potentiellement
-        // ancien : expireStalePresence() et le filtre de fraîcheur de
-        // getLocationById (cf. location.controller.js) l'expirent/l'excluent
-        // prématurément alors que l'utilisateur vient tout juste d'arriver.
-        'location.updatedAt': new Date(),
-      },
-    },
-    { new: true }
-  );
-  if (!user) {
-    const current = await User.findById(userId);
-    if (!current) throw Object.assign(new Error('User not found'), { status: 404 });
-    return { user: current, resolved: true };
-  }
-
-  await invalidateLocationsListCache();
-  if (existingUser?.currentLocation) await invalidateLocationDetailCache(existingUser.currentLocation);
-  await invalidateLocationDetailCache(venueId);
-
-  return { user, resolved: true };
-}
-
 // Seuil au-delà duquel une présence est considérée "fantôme" : le heartbeat
 // GPS (foreground, cf. usePresence.js) s'arrête dès que l'app quitte l'état
 // 'active', et le relais censé prendre le relai en arrière-plan (5 min
@@ -484,22 +417,9 @@ export async function updateLocation(userId, { lat, lon }) {
         if (hasMinLead) {
           matchedLocationId = nearest._id;
         } else {
-          // Ambiguïté GPS (deux lieux trop proches) : si l'utilisateur a
-          // activé la proximité Bluetooth et détecte tout près un pair déjà
-          // confirmé dans l'un des candidats, on tranche immédiatement sans
-          // attendre un heartbeat GPS de confirmation supplémentaire.
-          const candidateIds = geoNearResult
-            .filter((c) => (c.dist - nearest.dist) < MIN_LEAD_M)
-            .map((c) => c._id);
-          let bleResolved = null;
-          try {
-            bleResolved = await resolveAmbiguousVenueViaBle(userId, candidateIds);
-          } catch (_) {
-            // Best-effort : une erreur BLE ne doit jamais bloquer le check-in GPS normal
-          }
-          if (bleResolved) {
-            matchedLocationId = bleResolved;
-          } else if (oldPendingLocationId && String(oldPendingLocationId) === String(nearest._id)) {
+          // Ambiguïté GPS (deux lieux trop proches) : on ne matche pas
+          // immédiatement, on attend un heartbeat de confirmation.
+          if (oldPendingLocationId && String(oldPendingLocationId) === String(nearest._id)) {
             // Ambiguïté persistante (lieux trop proches, ex: deux POIs à 7 m l'un de
             // l'autre) mais ce même lieu ressort déjà comme le plus proche au heartbeat
             // précédent : ça n'est pas du bruit GPS ponctuel, on confirme l'entrée.

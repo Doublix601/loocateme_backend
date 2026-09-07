@@ -90,12 +90,6 @@ export const validators = {
   ],
   confirmEmailChange: [body('token').isString().isLength({ min: 1 })],
   updateLocation: [body('lat').isFloat({ min: -90, max: 90 }), body('lon').isFloat({ min: -180, max: 180 })],
-  bleSightings: [
-    body('sightings').isArray({ max: 50 }),
-    body('sightings.*.token').isString().isLength({ min: 1, max: 64 }),
-    body('sightings.*.rssi').isFloat({ min: -120, max: 0 }),
-    body('sightings.*.seenAt').optional().isISO8601(),
-  ],
   forceCheckIn: [
     body('locationId').isString().isLength({ min: 1 }),
     body('lat').isFloat({ min: -90, max: 90 }),
@@ -271,7 +265,6 @@ export const validators = {
     body('version').optional().isString().isLength({ max: 20 }),
     body('analytics').optional().isBoolean(),
   ],
-  bluetoothConsent: [body('enabled').isBoolean()],
   reportCreate: [
     body('reportedUserId').isMongoId(),
     body('category').isIn(['harassment', 'spam', 'inappropriate', 'impersonation', 'scam', 'other']),
